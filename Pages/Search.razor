@@ -1,0 +1,196 @@
+@page "/search"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@implements IDisposable
+@using System.Net
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>Search - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Search</h1>
+    <p>Search across courses, materials, plans, notifications and pages.</p>
+</div>
+
+<div class="search-section">
+    <div class="search-box-large">
+        <span class="search-icon">&#128269;</span>
+        <input type="text" placeholder="Type to search..." @bind="_query" @bind:event="oninput" @bind:after="SearchChangedAsync" autofocus aria-label="Search" />
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="RunSearchAsync">Retry</button></div>
+}
+else if (!string.IsNullOrWhiteSpace(_query))
+{
+    <div class="card">
+        <div class="card-header">
+            <h3>Results for "@_query" (@TotalCount)</h3>
+        </div>
+        @if (_loading)
+        {
+            <div class="loading">Searching...</div>
+        }
+        else if (_groups is null || !_groups.Any())
+        {
+            <div class="empty-state">No results found for "@_query".</div>
+        }
+        else
+        {
+            @foreach (var group in _groups)
+            {
+                <div class="search-group-label">@group.Label</div>
+                <div class="search-results">
+                    @foreach (var result in group.Items)
+                    {
+                        <div class="search-result-item" @onclick="() => NavigateToResult(result)">
+                            <span class="result-type">@result.Icon @group.Type</span>
+                            <div class="result-info">
+                                <h4>@Highlight(result.Title)</h4>
+                                <p>@result.Subtitle</p>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    private string _query = "";
+    private List<SearchGroupDto>? _groups;
+    private string? _error;
+    private bool _loading;
+    private CancellationTokenSource? _searchCts;
+    private int TotalCount => _groups?.Sum(g => g.Items.Count) ?? 0;
+    // Deferred first-search guard (see OnAfterRenderAsync): prerender /
+    // pre-restore passes must not 401-logout a signed-in user.
+    private bool _started;
+
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? InitialQuery { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _query = InitialQuery ?? "";
+        // F5 with ?q=: the persisted token is not restored yet (restore
+        // needs JS interop in OnAfterRenderAsync). Searching now would 401
+        // without a bearer header and log a signed-in user out. Defer.
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        if (!string.IsNullOrWhiteSpace(_query))
+            await RunSearchAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized && !string.IsNullOrWhiteSpace(_query))
+            {
+                await RunSearchAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task SearchChangedAsync()
+    {
+        _searchCts?.Cancel();
+        _searchCts = new CancellationTokenSource();
+        var token = _searchCts.Token;
+        if (_query.Trim().Length < 2)
+        {
+            _groups = new();
+            _error = null;
+            _loading = false;
+            return;
+        }
+        _loading = true;
+        try
+        {
+            await Task.Delay(300, token);
+            await RunSearchAsync(token);
+        }
+        catch (TaskCanceledException)
+        {
+            // Superseded by newer keystrokes.
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RunSearchAsync() => await RunSearchAsync(CancellationToken.None);
+
+    private async Task RunSearchAsync(CancellationToken token)
+    {
+        _error = null;
+        try
+        {
+            var result = await Http.GetFromJsonAsync<SearchResponseDto>(
+                $"/api/search?q={Uri.EscapeDataString(_query.Trim())}&take=20", token);
+            if (token.IsCancellationRequested) return;
+            _groups = result?.Groups.ToList() ?? new();
+        }
+        catch (TaskCanceledException)
+        {
+            throw;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // Genuine expiry only: the initial search is deferred until
+            // auth resolves (see OnInitializedAsync), so a 401 here is
+            // never the pre-restore "no bearer header yet" case on F5.
+            if (!AuthService.IsInitialized)
+            {
+                _error = "Search failed. Check your connection and try again.";
+                return;
+            }
+            await AuthService.LogoutAsync();
+            Nav.NavigateTo("/login?expired=1");
+        }
+        catch
+        {
+            _error = "Search failed. Check your connection and try again.";
+        }
+    }
+
+    private void NavigateToResult(SearchItemDto result) => Nav.NavigateTo(result.Route);
+
+    private Microsoft.AspNetCore.Components.MarkupString Highlight(string text)
+    {
+        var term = _query.Trim();
+        var index = string.IsNullOrWhiteSpace(term)
+            ? -1
+            : text.IndexOf(term, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+            return new(System.Net.WebUtility.HtmlEncode(text));
+        return new(System.Net.WebUtility.HtmlEncode(text[..index])
+            + "<mark>" + System.Net.WebUtility.HtmlEncode(text.Substring(index, term.Length)) + "</mark>"
+            + System.Net.WebUtility.HtmlEncode(text[(index + term.Length)..]));
+    }
+
+    public void Dispose()
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+    }
+}

@@ -1,0 +1,87 @@
+@page "/profile"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@inject HttpClient Http
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+
+<PageTitle>My Profile - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>My Profile</h1>
+    <p>View and edit your personal information.</p>
+</div>
+
+<div class="card" style="max-width: 600px;">
+    <div class="card-header">
+        <h3>Personal Information</h3>
+    </div>
+    @if (_user is null)
+    {
+        <div class="loading">Loading profile...</div>
+    }
+    else
+    {
+        <form @onsubmit="SaveProfile" class="profile-form">
+            <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" @bind="_user.FullName" required />
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" value="@_user.Email" disabled />
+            </div>
+            <div class="form-group">
+                <label>Major</label>
+                <input type="text" @bind="_user.Major" required />
+            </div>
+            <div class="form-group">
+                <label>Role</label>
+                <input type="text" value="@_user.Role" disabled />
+            </div>
+            <div class="form-group">
+                <label>Avatar URL</label>
+                <input type="url" @bind="_user.AvatarUrl" placeholder="https://..." />
+            </div>
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+        </form>
+    }
+</div>
+
+@code {
+    private ProfileUser? _user;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _user = await Http.GetFromJsonAsync<ProfileUser>("/api/users/me");
+    }
+
+    private async Task SaveProfile(EventArgs e)
+    {
+        if (_user is null) return;
+        var response = await Http.PutAsJsonAsync($"/api/users/{_user.Id}", new
+        {
+            fullName = _user.FullName,
+            major = _user.Major,
+            avatarUrl = _user.AvatarUrl
+        });
+        if (response.IsSuccessStatusCode)
+        {
+            // Show success message
+        }
+    }
+}
+
+public class ProfileUser
+{
+    public int Id { get; set; }
+    public string FullName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string? AvatarUrl { get; set; }
+    public string Major { get; set; } = "";
+    public int RoleId { get; set; }
+    public string Role { get; set; } = "";
+}

@@ -1,0 +1,106 @@
+@page "/settings"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+
+<PageTitle>Settings - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Settings</h1>
+    <p>Manage your account preferences.</p>
+</div>
+
+<div class="card" style="max-width: 600px;">
+    <div class="card-header">
+        <h3>Change Password</h3>
+    </div>
+    <form @onsubmit="ChangePassword" class="settings-form">
+        <div class="form-group">
+            <label>Current Password</label>
+            <input type="password" @bind="_currentPassword" required />
+        </div>
+        <div class="form-group">
+            <label>New Password</label>
+            <input type="password" @bind="_newPassword" required minlength="8" />
+        </div>
+        <div class="form-group">
+            <label>Confirm New Password</label>
+            <input type="password" @bind="_confirmPassword" required />
+        </div>
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_isError ? "alert-error" : "alert-success")">@_message</div>
+        }
+        <button type="submit" class="btn btn-primary">Update Password</button>
+    </form>
+</div>
+
+<div class="card" style="max-width: 600px; margin-top: 24px;">
+    <div class="card-header">
+        <h3>Account Actions</h3>
+    </div>
+    <div class="settings-actions">
+        <button class="btn btn-danger" @onclick="Logout">Logout</button>
+    </div>
+</div>
+
+@code {
+    private string _currentPassword = "";
+    private string _newPassword = "";
+    private string _confirmPassword = "";
+    private string? _message;
+    private bool _isError;
+
+    private async Task ChangePassword(EventArgs e)
+    {
+        _message = null;
+
+        if (_newPassword != _confirmPassword)
+        {
+            _message = "New passwords do not match.";
+            _isError = true;
+            return;
+        }
+
+        try
+        {
+            var response = await Http.PostAsJsonAsync("/api/auth/change-password", new
+            {
+                currentPassword = _currentPassword,
+                newPassword = _newPassword
+            });
+
+            if (response.IsSuccessStatusCode)
+            {
+                _message = "Password updated successfully.";
+                _isError = false;
+                _currentPassword = "";
+                _newPassword = "";
+                _confirmPassword = "";
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                _message = "Failed to update password. Please check your current password.";
+                _isError = true;
+            }
+        }
+        catch
+        {
+            _message = "An error occurred. Please try again.";
+            _isError = true;
+        }
+    }
+
+    private async Task Logout()
+    {
+        await AuthService.LogoutAsync();
+        Nav.NavigateTo("/login", replace: true);
+    }
+}

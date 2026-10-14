@@ -1,0 +1,338 @@
+@page "/analytics"
+@*
+[Authorize(Roles = "Student,Graduate")] removed on purpose (see
+Dashboard.razor): the server challenges every F5 to /login because
+the browser never sends the localStorage JWT as a bearer header.
+Access is still enforced: OnInitializedAsync below redirects other
+roles, and every /api endpoint is [Authorize]-guarded server-side.
+*@
+@using System.Net
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>My Analytics - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>My Analytics</h1>
+    <p>Are you on the right track? Here's what your data says.</p>
+</div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_analysis is null)
+{
+    <div class="loading">Loading your analytics...</div>
+}
+else
+{
+    <!-- Header card: status, score, predicted GPA -->
+    <div class="card analytics-hero">
+        <div class="hero-status">
+            <span class="status-badge @RiskBadgeClass(_analysis.RiskLevel)">@RiskLabel(_analysis.RiskLevel)</span>
+            <div class="hero-score">
+                <svg viewBox="0 0 140 140" class="gauge" role="img" aria-label="Score @_analysis.Score of 100">
+                    <circle cx="70" cy="70" r="54" class="gauge-track" />
+                    <circle cx="70" cy="70" r="54" class="gauge-fill @RiskBadgeClass(_analysis.RiskLevel)"
+                            stroke-dasharray="@GaugeDash(_analysis.Score)" transform="rotate(-90 70 70)" />
+                    <text x="70" y="66" text-anchor="middle" class="gauge-value">@_analysis.Score.ToString("0")</text>
+                    <text x="70" y="86" text-anchor="middle" class="gauge-sub">/ 100</text>
+                </svg>
+            </div>
+        </div>
+        <div class="hero-stats">
+            <div class="hero-stat">
+                <span class="card-label">Predicted GPA</span>
+                <span class="card-value">@_analysis.PredictedGpa.ToString("0.00")</span>
+            </div>
+            <div class="hero-stat">
+                <span class="card-label">Confidence</span>
+                <span class="card-value">@((_analysis.Confidence * 100).ToString("0"))%</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="two-column" style="margin-top: 24px;">
+        <!-- Grades & attendance chart -->
+        <div class="card">
+            <div class="card-header"><h3>Grades &amp; attendance per course</h3></div>
+            <div class="chart-container">
+                @if (_performance is null)
+                {
+                    <div class="loading">Loading courses...</div>
+                }
+                else if (!_performance.Any())
+                {
+                    <div class="empty-state">No enrolled courses yet.</div>
+                }
+                else
+                {
+                    <div class="bar-chart">
+                        @foreach (var row in _performance)
+                        {
+                            <div class="bar-item">
+                                <span class="bar-label">@row.CourseName</span>
+                                <div class="bar-wrapper">
+                                    <div class="bar" style="width: @(row.GradePoints / 4.0 * 100.0)%"></div>
+                                </div>
+                                <span class="bar-value">@row.GradeLetter · @row.AttendancePercent%</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- GPA trend chart -->
+        <div class="card">
+            <div class="card-header"><h3>GPA trend by semester</h3></div>
+            <div class="chart-container">
+                @if (_trend is null)
+                {
+                    <div class="loading">Loading trend...</div>
+                }
+                else if (_trend.Count < 2)
+                {
+                    <div class="empty-state">Finish this semester to start your trend line.</div>
+                }
+                else
+                {
+                    <svg viewBox="0 0 320 160" class="trend-chart" role="img" aria-label="GPA trend">
+                        @TrendGrid()
+                        <polyline points="@TrendPoints()" class="trend-line" />
+                        @for (var i = 0; i < _trend.Count; i++)
+                        {
+                            var p = TrendPoint(i, _trend.Count);
+                            <circle cx="@p.X" cy="@p.Y" r="4" class="trend-dot" />
+                            @TrendPointLabels(i)
+                        }
+                    </svg>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Why this result -->
+    <div class="card" style="margin-top: 24px;">
+        <div class="card-header"><h3>Why this result</h3></div>
+        <div class="chart-container">
+            <div class="bar-chart">
+                @foreach (var factor in _analysis.Factors)
+                {
+                    <div class="bar-item">
+                        <span class="bar-label">@factor.Factor (@((factor.Weight * 100).ToString("0"))%)</span>
+                        <div class="bar-wrapper">
+                            <div class="bar" style="width: @factor.Value%"></div>
+                        </div>
+                        <span class="bar-value">+@factor.Contribution.ToString("0.0")</span>
+                    </div>
+                }
+            </div>
+            <div class="factor-notes">
+                @foreach (var factor in _analysis.Factors)
+                {
+                    <p><strong>@factor.Factor:</strong> @factor.Description</p>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="two-column" style="margin-top: 24px;">
+        <div class="card">
+            <div class="card-header"><h3>Strengths</h3></div>
+            <div class="chart-container">
+                @if (!_analysis.Strengths.Any())
+                {
+                    <div class="empty-state">No standout strengths yet — your first win is coming.</div>
+                }
+                else
+                {
+                    <ul class="plain-list">
+                        @foreach (var s in _analysis.Strengths)
+                        {
+                            <li>&#9989; @s</li>
+                        }
+                    </ul>
+                }
+                <h3 style="margin-top: 16px;">Areas to improve</h3>
+                @if (!_analysis.Weaknesses.Any())
+                {
+                    <div class="empty-state">Nothing flagged. Keep it up!</div>
+                }
+                else
+                {
+                    <ul class="plain-list">
+                        @foreach (var w in _analysis.Weaknesses)
+                        {
+                            <li>&#9888;&#65039; @w</li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h3>Recommendations</h3></div>
+            <div class="chart-container">
+                @if (!_analysis.Recommendations.Any())
+                {
+                    <div class="empty-state">No recommendations right now.</div>
+                }
+                else
+                {
+                    <ul class="plain-list">
+                        @foreach (var r in _analysis.Recommendations)
+                        {
+                            <li>&#128161; @r</li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private PerformanceAnalysisDto? _analysis;
+    private List<DashboardPerformanceRowDto>? _performance;
+    private List<GpaTrendPointDto>? _trend;
+    private string? _error;
+    // Deferred first-run guard (see OnAfterRenderAsync): prerender /
+    // pre-restore passes must not redirect or 401-logout a signed-in user.
+    private bool _started;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // F5: auth restores in OnAfterRenderAsync (JS interop). Never
+        // redirect to /login while it is still resolving: GetUserAsync()
+        // is null until the persisted token is read.
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        // The router does not enforce roles client-side, so check here:
+        // non-students go back to their dashboard with an access message.
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        if (user.Role is not ("Student" or "Graduate"))
+        {
+            Nav.NavigateTo("/dashboard?denied=1", replace: true);
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            await Task.WhenAll(LoadAnalysisAsync(), LoadPerformanceAsync(), LoadTrendAsync());
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // Genuine expiry only: loads are deferred until auth resolves.
+            if (!AuthService.IsInitialized)
+            {
+                _error = "Could not load your analytics. Check your connection and try again.";
+                return;
+            }
+            await AuthService.LogoutAsync();
+            Nav.NavigateTo("/login?expired=1");
+        }
+        catch
+        {
+            _error = "Could not load your analytics. Check your connection and try again.";
+        }
+    }
+
+    private async Task LoadAnalysisAsync() =>
+        _analysis = await Http.GetFromJsonAsync<PerformanceAnalysisDto>("/api/analytics/me/performance");
+
+    private async Task LoadPerformanceAsync() =>
+        _performance = await Http.GetFromJsonAsync<List<DashboardPerformanceRowDto>>("/api/dashboard/performance?semester=current") ?? new();
+
+    private async Task LoadTrendAsync() =>
+        _trend = await Http.GetFromJsonAsync<List<GpaTrendPointDto>>("/api/analytics/me/gpa-trend") ?? new();
+
+    private static string RiskLabel(string risk) => risk switch
+    {
+        "OnTrack" => "On Track",
+        "NeedsAttention" => "Needs Attention",
+        "AtRisk" => "At Risk",
+        _ => risk
+    };
+
+    private static string RiskBadgeClass(string risk) => risk switch
+    {
+        "OnTrack" => "excellent",
+        "NeedsAttention" => "good",
+        _ => "needs-attention"
+    };
+
+    private static string GaugeDash(double score) =>
+        $"{Math.Clamp(score, 0, 100) / 100.0 * 339.3:0.0} 339.3";
+
+    private (double X, double Y) TrendPoint(int index, int count)
+    {
+        var x = 30 + (260.0 * index / Math.Max(1, count - 1));
+        var values = _trend!.Select(t => t.Gpa).ToList();
+        var min = Math.Min(0, values.Min() - 0.2);
+        var max = Math.Max(4.0, values.Max() + 0.2);
+        var y = 130 - (130.0 * (values[index] - min) / Math.Max(0.01, max - min));
+        return (Math.Round(x, 1), Math.Round(y, 1));
+    }
+
+    private string TrendPoints()
+    {
+        var n = _trend!.Count;
+        return string.Join(" ", Enumerable.Range(0, n).Select(i =>
+        {
+            var p = TrendPoint(i, n);
+            return $"{p.X},{p.Y}";
+        }));
+    }
+
+    private Microsoft.AspNetCore.Components.MarkupString TrendGrid() =>
+        new("<line x1=\"30\" y1=\"10\" x2=\"30\" y2=\"140\" class=\"trend-axis\" />" +
+            "<line x1=\"30\" y1=\"140\" x2=\"300\" y2=\"140\" class=\"trend-axis\" />");
+
+    private Microsoft.AspNetCore.Components.MarkupString TrendPointLabels(int i)
+    {
+        // Built as markup because Razor reserves the <text> tag: SVG text
+        // elements with dynamic attributes don't parse as Blazor markup.
+        var pt = _trend![i];
+        var p = TrendPoint(i, _trend.Count);
+        var label = System.Net.WebUtility.HtmlEncode(pt.Label);
+        return new($"<text x=\"{p.X}\" y=\"155\" text-anchor=\"middle\" class=\"trend-label\">{label}</text>" +
+            $"<text x=\"{p.X}\" y=\"{p.Y - 8}\" text-anchor=\"middle\" class=\"trend-value\">{pt.Gpa:0.00}</text>");
+    }
+}

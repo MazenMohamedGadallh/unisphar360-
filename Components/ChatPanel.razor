@@ -1,0 +1,567 @@
+@using System.Net
+@using System.Text.Json
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject ProtectedLocalStorage BrowserStorage
+@inject BlazorAuthService AuthService
+@inject NavigationManager Nav
+@implements IAsyncDisposable
+
+<div class="chat-root @(Compact ? "chat-compact" : "")">
+    @if (ShowConversations && !Compact)
+    {
+        <aside class="chat-side">
+            <button class="btn btn-primary btn-sm chat-new" @onclick="NewChatAsync" disabled="@_streaming">+ New chat</button>
+            @if (_conversations is null)
+            {
+                <div class="loading">Loading…</div>
+            }
+            else if (!_conversations.Any())
+            {
+                <div class="empty-state">No conversations yet.</div>
+            }
+            else
+            {
+                @foreach (var c in _conversations)
+                {
+                    <div class="chat-conv-item @(_activeId == c.Id ? "selected" : "")">
+                        @if (_renameId == c.Id)
+                        {
+                            <input value="@_renameText" @onchange="(e) => _renameText = e.Value?.ToString() ?? string.Empty"
+                                   @onkeydown="(e) => RenameKeyDown(e, c.Id)" maxlength="100" aria-label="Conversation title" />
+                            <button class="btn btn-sm btn-primary" @onclick="() => RenameAsync(c.Id)">Save</button>
+                        }
+                        else
+                        {
+                            <button class="chat-conv-title" @onclick="() => SelectConversationAsync(c.Id)" title="@c.Title">@c.Title</button>
+                            <button class="icon-btn" title="Rename" aria-label="Rename conversation" @onclick="() => StartRename(c)">&#9998;</button>
+                            <button class="icon-btn" title="Delete" aria-label="Delete conversation" @onclick="() => AskDelete(c.Id)">🗑</button>
+                        }
+                    </div>
+                }
+            }
+        </aside>
+    }
+
+    <section class="chat-main">
+        <div class="chat-toolbar">
+            <select value="@_provider" @onchange="ProviderChangedAsync" disabled="@(_streaming || !_providers.Any())" aria-label="AI provider">
+                @if (!_providers.Any())
+                {
+                    <option value="">@_providersEmptyText</option>
+                }
+                @foreach (var p in _providers)
+                {
+                    <option value="@p.Name">@p.DisplayName (@p.Model)</option>
+                }
+            </select>
+            @if (_confirmDeleteId is not null)
+            {
+                <span class="chat-confirm">Delete this chat?
+                    <button class="btn btn-sm btn-danger" @onclick="DeleteConfirmedAsync">Delete</button>
+                    <button class="btn btn-sm btn-secondary" @onclick="CancelDelete">Cancel</button>
+                </span>
+            }
+            else if (!Compact && _activeId is not null)
+            {
+                <button class="btn btn-sm btn-secondary" @onclick="() => AskDelete(_activeId.Value)" disabled="@_streaming">Delete chat</button>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-error">@_error</div>
+        }
+        @if (!_providers.Any() && !string.IsNullOrEmpty(_providersReason))
+        {
+            <div class="alert alert-error">@_providersReason</div>
+        }
+
+        <div class="chat-messages" id="@ElementId" role="log" aria-live="polite">
+            @if (_messages is null)
+            {
+                <div class="loading">Loading messages…</div>
+            }
+            else if (!_messages.Any() && !_streaming)
+            {
+                <div class="empty-state">Ask about your courses, study plan or grades — I reply with your own materials as context.</div>
+            }
+            else
+            {
+                @foreach (var msg in _messages)
+                {
+                    <div class="chat-msg @(msg.Role == "user" ? "chat-user" : "chat-assistant")">
+                        <div class="chat-bubble" dir="auto">
+                            @foreach (var block in SimpleMarkdown.Parse(msg.Content))
+                            {
+                                @RenderBlock(block)
+                            }
+                        </div>
+                        @if (msg.Role == "assistant")
+                        {
+                            <button class="btn btn-sm btn-secondary chat-copy" @onclick="() => CopyAsync(msg.Content)">Copy</button>
+                        }
+                    </div>
+                }
+                @if (_streaming)
+                {
+                    <div class="chat-msg chat-assistant">
+                        <div class="chat-bubble" dir="auto">
+                            @foreach (var block in SimpleMarkdown.Parse(_streamingText))
+                            {
+                                @RenderBlock(block)
+                            }
+                            @if (string.IsNullOrEmpty(_streamingText))
+                            {
+                                <span class="typing" aria-label="Assistant is typing"><span></span><span></span><span></span></span>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="chat-input-row">
+            <textarea id="@InputElementId" @bind="_input" @bind:event="oninput" @onkeydown="InputKeyDown"
+                      rows="2" placeholder="Ask about your courses..." aria-label="Message"
+                      disabled="@(_streaming || string.IsNullOrEmpty(_provider))"></textarea>
+            @if (_streaming)
+            {
+                <button class="btn btn-danger" @onclick="StopAsync">Stop</button>
+            }
+            else
+            {
+                <button class="btn btn-primary" @onclick="() => SendAsync(false)" disabled="@(string.IsNullOrWhiteSpace(_input) || string.IsNullOrEmpty(_provider))">Send</button>
+            }
+        </div>
+        @if (CanRegenerate)
+        {
+            <button class="btn btn-sm btn-secondary" @onclick="() => SendAsync(true)" disabled="@_streaming">↻ Regenerate</button>
+        }
+        <p class="chat-note">AI can make mistakes. Check important information.</p>
+    </section>
+</div>
+
+@code {
+    [Parameter] public bool ShowConversations { get; set; } = true;
+    [Parameter] public bool Compact { get; set; } = false;
+    [Parameter] public string ElementId { get; set; } = "chat-messages";
+
+    private string InputElementId => ElementId + "-input";
+
+    private const string ProviderKey = "unisphere.chat.provider";
+
+    private List<ChatProviderDto> _providers = new();
+    private string _provider = "";
+    private string _providersEmptyText = "No AI provider configured";
+    private string _providersReason = "";
+    private List<ChatConversationDto>? _conversations;
+    private int? _activeId;
+    private List<ChatMessageDto>? _messages;
+    private string _input = "";
+    private bool _streaming;
+    private string _streamingText = "";
+    private string? _error;
+    private CancellationTokenSource? _cts;
+    private IJSObjectReference? _chatModule;
+    private DateTime _lastScroll = DateTime.MinValue;
+    private int? _confirmDeleteId;
+    private int? _renameId;
+    private string _renameText = "";
+
+    private bool CanRegenerate => !_streaming
+        && _messages is { Count: > 0 }
+        && _messages[^1].Role == "assistant";
+
+    private RenderFragment RenderBlock(MdBlock block) => builder =>
+    {
+        switch (block)
+        {
+            case MdHeading h:
+                builder.OpenElement(0, $"h{h.Level}");
+                builder.AddAttribute(1, "dir", "auto");
+                builder.AddMarkupContent(2, h.Text);
+                builder.CloseElement();
+                break;
+            case MdCode code:
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "md-code");
+                builder.OpenElement(2, "div");
+                builder.AddAttribute(3, "class", "md-code-head");
+                builder.OpenElement(4, "span");
+                builder.AddContent(5, string.IsNullOrEmpty(code.Language) ? "code" : code.Language);
+                builder.CloseElement();
+                builder.OpenElement(6, "button");
+                builder.AddAttribute(7, "class", "btn btn-sm btn-secondary");
+                builder.AddAttribute(8, "onclick", EventCallback.Factory.Create(this, () => CopyAsync(code.Code)));
+                builder.AddContent(9, "Copy");
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.OpenElement(10, "pre");
+                builder.AddAttribute(11, "dir", "auto");
+                builder.AddContent(12, code.Code);
+                builder.CloseElement();
+                builder.CloseElement();
+                break;
+            case MdList list:
+                builder.OpenElement(0, list.Ordered ? "ol" : "ul");
+                foreach (var item in list.Items)
+                {
+                    builder.OpenElement(1, "li");
+                    builder.AddAttribute(2, "dir", "auto");
+                    builder.AddMarkupContent(3, item);
+                    builder.CloseElement();
+                }
+                builder.CloseElement();
+                break;
+            case MdParagraph p:
+                builder.OpenElement(0, "p");
+                builder.AddAttribute(1, "dir", "auto");
+                builder.AddMarkupContent(2, p.Html);
+                builder.CloseElement();
+                break;
+        }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProvidersAsync();
+        await LoadConversationsAsync(selectMostRecent: true);
+    }
+
+    private async Task LoadProvidersAsync()
+    {
+        try
+        {
+            _providers = await Http.GetFromJsonAsync<List<ChatProviderDto>>("/api/chat/providers") ?? new();
+            string? stored = null;
+            try
+            {
+                var saved = await BrowserStorage.GetAsync<string>(ProviderKey);
+                if (saved.Success) stored = saved.Value;
+            }
+            catch { /* best effort */ }
+            _provider = _providers.Any(p => p.Name == stored) ? stored! : _providers.FirstOrDefault()?.Name ?? "";
+            if (!_providers.Any())
+                await LoadProvidersReasonAsync();
+            else
+            {
+                _providersReason = "";
+                _providersEmptyText = "No AI provider configured";
+            }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            _error = "Session expired. Please sign in again.";
+        }
+        catch
+        {
+            _error = "Could not load AI providers.";
+        }
+    }
+
+    private async Task LoadProvidersReasonAsync()
+    {
+        try
+        {
+            var statuses = await Http.GetFromJsonAsync<List<ChatProviderStatusDto>>("/api/chat/providers/status");
+            if (statuses is { Count: > 0 })
+            {
+                var reasons = statuses
+                    .Where(s => !s.Available && !string.IsNullOrWhiteSpace(s.Reason))
+                    .Select(s => s.Reason)
+                    .ToList();
+                _providersReason = reasons.Count > 0 ? string.Join(" ", reasons.ToArray()) : "";
+                _providersEmptyText = reasons.Count > 0
+                    ? "No AI provider configured — " + string.Join("; ", reasons)
+                    : "No AI provider configured";
+            }
+            else
+            {
+                _providersReason = "";
+                _providersEmptyText = "No AI provider configured";
+            }
+        }
+        catch
+        {
+            _providersReason = "";
+            _providersEmptyText = "No AI provider configured";
+        }
+    }
+
+    private async Task ProviderChangedAsync(ChangeEventArgs e)
+    {
+        _provider = e.Value?.ToString() ?? "";
+        try
+        {
+            await BrowserStorage.SetAsync(ProviderKey, _provider);
+        }
+        catch { /* best effort */ }
+    }
+
+    private async Task LoadConversationsAsync(bool selectMostRecent)
+    {
+        try
+        {
+            _conversations = await Http.GetFromJsonAsync<List<ChatConversationDto>>("/api/chat/conversations") ?? new();
+            if (selectMostRecent && _activeId is null && _conversations.Count > 0)
+                await SelectConversationAsync(_conversations[0].Id);
+            else if (_activeId is not null && _conversations.All(c => c.Id != _activeId))
+                _activeId = null;
+        }
+        catch
+        {
+            _conversations = new();
+        }
+    }
+
+    private async Task SelectConversationAsync(int id)
+    {
+        _activeId = id;
+        _messages = null;
+        _error = null;
+        try
+        {
+            var detail = await Http.GetFromJsonAsync<ChatConversationDetailDto>($"/api/chat/conversations/{id}");
+            _messages = detail?.Messages.ToList() ?? new();
+        }
+        catch
+        {
+            _error = "Could not load this conversation.";
+            _messages = new();
+        }
+    }
+
+    private Task NewChatAsync()
+    {
+        _activeId = null;
+        _messages = new();
+        _error = null;
+        _input = "";
+        return Task.CompletedTask;
+    }
+
+    private async Task SendAsync(bool regenerate)
+    {
+        string text = regenerate
+            ? _messages?.LastOrDefault(m => m.Role == "user")?.Content?.Trim() ?? ""
+            : _input.Trim();
+        if (string.IsNullOrEmpty(text) || _streaming || string.IsNullOrEmpty(_provider)) return;
+
+        _error = null;
+        if (!regenerate) _input = "";
+        _streaming = true;
+        _streamingText = "";
+        _cts = new CancellationTokenSource();
+        try
+        {
+            if (regenerate && _messages is { Count: > 0 } && _messages[^1].Role == "assistant")
+                _messages.RemoveAt(_messages.Count - 1);
+
+            var convId = _activeId?.ToString() ?? "new";
+            var url = $"/api/chat/conversations/{convId}/messages" + (regenerate ? "?regenerate=true" : "");
+            using var request = new HttpRequestMessage(HttpMethod.Post, url);
+            request.Content = JsonContent.Create(new { provider = _provider, content = text });
+            using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, _cts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                await HandleSendErrorAsync(response);
+                return;
+            }
+            if (response.Headers.TryGetValues("X-Conversation-Id", out var ids)
+                && int.TryParse(ids.FirstOrDefault(), out var newId))
+            {
+                _activeId = newId;
+                await LoadConversationsAsync(selectMostRecent: false);
+            }
+            if (!regenerate || _messages is null || !_messages.Any(m => m.Role == "user"))
+                (_messages ??= new()).Add(new ChatMessageDto(0, "user", text, DateTime.UtcNow));
+
+            await using var stream = await response.Content.ReadAsStreamAsync(_cts.Token);
+            using var reader = new StreamReader(stream);
+            string? currentEvent = null;
+            string? line;
+            while ((line = await reader.ReadLineAsync(_cts.Token)) is not null)
+            {
+                if (line.StartsWith("event:")) { currentEvent = line["event:".Length..].Trim(); continue; }
+                if (!line.StartsWith("data:")) continue;
+                var payload = line["data:".Length..].Trim();
+                if (payload == "[DONE]") break;
+                if (currentEvent == "error")
+                {
+                    try
+                    {
+                        using var err = JsonDocument.Parse(payload);
+                        _error = err.RootElement.TryGetProperty("error", out var m)
+                            ? m.GetString() : "The assistant ran into a problem.";
+                    }
+                    catch { _error = "The assistant ran into a problem."; }
+                    break;
+                }
+                try
+                {
+                    var token = JsonSerializer.Deserialize<string>(payload);
+                    if (token is not null)
+                    {
+                        _streamingText += token;
+                        StateHasChanged();
+                        await MaybeAutoScrollAsync();
+                    }
+                }
+                catch { /* skip malformed token */ }
+            }
+            if (!string.IsNullOrEmpty(_streamingText))
+                (_messages ??= new()).Add(new ChatMessageDto(0, "assistant", _streamingText, DateTime.UtcNow));
+            _streamingText = "";
+            await MaybeAutoScrollAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            _streamingText = ""; // stopped by user: discard partial reply
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            _error = "Session expired. Please sign in again.";
+        }
+        catch
+        {
+            _error = "Couldn't reach the assistant. Please try again.";
+        }
+        finally
+        {
+            _streaming = false;
+            _cts?.Dispose();
+            _cts = null;
+        }
+    }
+
+    private async Task HandleSendErrorAsync(HttpResponseMessage response)
+    {
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            _error = "Session expired. Please sign in again.";
+            return;
+        }
+        try
+        {
+            using var doc = await response.Content.ReadFromJsonAsync<JsonDocument>();
+            if (doc is not null && doc.RootElement.TryGetProperty("message", out var message))
+            {
+                _error = message.GetString();
+                return;
+            }
+        }
+        catch { /* fall through */ }
+        _error = response.StatusCode == HttpStatusCode.TooManyRequests
+            ? "Too many messages. Please wait a bit and try again."
+            : "The assistant is unavailable right now. Please try again later.";
+    }
+
+    private Task StopAsync()
+    {
+        _cts?.Cancel();
+        return Task.CompletedTask;
+    }
+
+    private async Task CopyAsync(string text)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        }
+        catch
+        {
+            // Clipboard unavailable (permissions): no-op.
+        }
+    }
+
+    private void AskDelete(int id) => _confirmDeleteId = id;
+    private void CancelDelete() => _confirmDeleteId = null;
+
+    private async Task DeleteConfirmedAsync()
+    {
+        if (_confirmDeleteId is null) return;
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/chat/conversations/{_confirmDeleteId}");
+            if (!response.IsSuccessStatusCode) { _error = "Could not delete the conversation."; return; }
+            if (_activeId == _confirmDeleteId) { _activeId = null; _messages = new(); }
+            await LoadConversationsAsync(selectMostRecent: false);
+        }
+        catch { _error = "Could not delete the conversation."; }
+        finally { _confirmDeleteId = null; }
+    }
+
+    private void StartRename(ChatConversationDto c)
+    {
+        _renameId = c.Id;
+        _renameText = c.Title;
+    }
+
+    private async Task RenameKeyDown(KeyboardEventArgs e, int id)
+    {
+        if (e.Key == "Enter") await RenameAsync(id);
+        else if (e.Key == "Escape") _renameId = null;
+    }
+
+    private async Task RenameAsync(int id)
+    {
+        if (string.IsNullOrWhiteSpace(_renameText)) { _renameId = null; return; }
+        try
+        {
+            var response = await Http.PatchAsJsonAsync($"/api/chat/conversations/{id}", new { title = _renameText.Trim() });
+            if (!response.IsSuccessStatusCode) _error = "Could not rename the conversation.";
+            await LoadConversationsAsync(selectMostRecent: false);
+        }
+        catch { _error = "Could not rename the conversation."; }
+        finally { _renameId = null; }
+    }
+
+    private async Task InputKeyDown(KeyboardEventArgs e)
+    {
+        // Enter sends, Shift+Enter inserts a newline. The stray newline is
+        // suppressed by the JS keydown helper (preventDefault for Enter
+        // without Shift); see chat.js preventChatEnterNewline.
+        if (e.Key == "Enter" && !e.ShiftKey)
+            await SendAsync(false);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _chatModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/chat.js");
+                await _chatModule.InvokeVoidAsync("preventChatEnterNewline", InputElementId);
+            }
+            catch { /* best effort */ }
+        }
+    }
+
+    private async Task MaybeAutoScrollAsync()
+    {
+        if ((DateTime.UtcNow - _lastScroll).TotalMilliseconds < 400) return;
+        _lastScroll = DateTime.UtcNow;
+        try
+        {
+            _chatModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/chat.js");
+            if (await _chatModule.InvokeAsync<bool>("shouldAutoScroll", ElementId))
+                await _chatModule.InvokeVoidAsync("scrollToBottom", ElementId);
+        }
+        catch { /* best effort */ }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        if (_chatModule is not null)
+        {
+            try { await _chatModule.DisposeAsync(); } catch { /* released */ }
+        }
+    }
+}

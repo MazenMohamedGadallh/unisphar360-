@@ -1,0 +1,140 @@
+@page "/study-planner"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<PageTitle>Study Planner - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Study Planner</h1>
+    <p>Plan and track your weekly study activities.</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Weekly Study Plan</h3>
+        <div class="planner-nav">
+            <button class="btn btn-sm" @onclick="PreviousWeek">&larr; Prev</button>
+            <span class="week-label">@(_planner?.WeekLabel ?? "Loading...")</span>
+            <button class="btn btn-sm" @onclick="NextWeek">Next &rarr;</button>
+        </div>
+    </div>
+
+    @if (_planner is null)
+    {
+        <div class="loading">Loading study plan...</div>
+    }
+    else
+    {
+        <div class="planner-grid">
+            @foreach (var item in _planner.Days)
+            {
+                <div class="planner-day @(item.IsDone ? "completed" : "")" @onclick="() => ToggleItem(item.Id)">
+                    <div class="day-header">
+                        <span class="day-name">@item.DayLabel</span>
+                        <span class="day-date">@item.DayNumber</span>
+                    </div>
+                    <div class="day-content">
+                        <h4>@item.Title</h4>
+                        <p>@item.Hours hours</p>
+                        @if (!string.IsNullOrEmpty(item.Note))
+                        {
+                            <small>@item.Note</small>
+                        }
+                    </div>
+                    <div class="day-status">
+                        @if (item.IsDone)
+                        {
+                            <span class="status-icon completed">&#10003;</span>
+                        }
+                        else
+                        {
+                            <span class="status-icon">&#9675;</span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Add Study Item Form -->
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <h3>Add Study Item</h3>
+    </div>
+    <form @onsubmit="AddItem" class="form-inline">
+        <div class="form-group">
+            <label>Date</label>
+            <input type="date" @bind="_newDate" required />
+        </div>
+        <div class="form-group">
+            <label>Title</label>
+            <input type="text" @bind="_newTitle" placeholder="Study topic..." required />
+        </div>
+        <div class="form-group">
+            <label>Hours</label>
+            <input type="number" @bind="_newHours" min="0" max="12" required />
+        </div>
+        <div class="form-group">
+            <label>Note</label>
+            <input type="text" @bind="_newNote" placeholder="Optional note..." />
+        </div>
+        <button type="submit" class="btn btn-primary">Add</button>
+    </form>
+</div>
+
+@code {
+    private StudyPlannerResponse? _planner;
+    private DateTime _currentWeekStart = DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek);
+    private DateTime _newDate = DateTime.Today;
+    private string _newTitle = "";
+    private int _newHours = 1;
+    private string? _newNote;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPlanner();
+    }
+
+    private async Task LoadPlanner()
+    {
+        _planner = await Http.GetFromJsonAsync<StudyPlannerResponse>($"/api/study-planner?weekStart={_currentWeekStart:yyyy-MM-dd}");
+    }
+
+    private async Task PreviousWeek()
+    {
+        _currentWeekStart = _currentWeekStart.AddDays(-7);
+        await LoadPlanner();
+    }
+
+    private async Task NextWeek()
+    {
+        _currentWeekStart = _currentWeekStart.AddDays(7);
+        await LoadPlanner();
+    }
+
+    private async Task ToggleItem(int id)
+    {
+        await Http.PostAsync($"/api/study-planner/{id}/toggle", null);
+        await LoadPlanner();
+    }
+
+    private async Task AddItem(EventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_newTitle)) return;
+
+        await Http.PostAsJsonAsync("/api/study-planner", new CreateStudyItemRequest(
+            _newDate, _newTitle, _newHours, _newNote
+        ));
+
+        _newTitle = "";
+        _newNote = null;
+        await LoadPlanner();
+    }
+}

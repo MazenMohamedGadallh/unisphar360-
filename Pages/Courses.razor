@@ -1,0 +1,144 @@
+@page "/courses"
+@page "/courses/{Id:int}"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<PageTitle>Courses - UniSphere 360+</PageTitle>
+
+@if (Id.HasValue)
+{
+    <!-- Course Detail View -->
+    <div class="page-header">
+        <NavLink href="/courses" class="back-link">&larr; Back to Courses</NavLink>
+    </div>
+
+    @if (_course is null)
+    {
+        <div class="loading">Loading course...</div>
+    }
+    else
+    {
+        <div class="card course-detail">
+            <div class="card-header">
+                <div>
+                    <h2>@_course.Code - @_course.Title</h2>
+                    <p class="course-meta">@_course.Track | @_course.Credits Credits</p>
+                </div>
+                <button class="btn btn-primary" @onclick="Enroll">Enroll</button>
+            </div>
+            <div class="card-body">
+                <h4>Description</h4>
+                <p>@_course.Description</p>
+            </div>
+        </div>
+    }
+}
+else
+{
+    <!-- Course List View -->
+    <div class="page-header">
+        <h1>Courses</h1>
+        <p>Browse available courses and enroll.</p>
+    </div>
+
+    <div class="search-section">
+        <div class="search-box-large">
+            <span class="search-icon">&#128269;</span>
+            <input type="text" placeholder="Search courses..." @bind="_searchQuery" @bind:event="oninput" @onkeyup="HandleSearch" />
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3>Available Courses</h3>
+        </div>
+        @if (_courses is null)
+        {
+            <div class="loading">Loading courses...</div>
+        }
+        else if (!_courses.Any())
+        {
+            <div class="empty-state">No courses found.</div>
+        }
+        else
+        {
+            <div class="course-grid">
+                @foreach (var course in _filteredCourses)
+                {
+                    <div class="course-card" @onclick="() => NavigateToCourse(course.Id)">
+                        <div class="course-card-header">
+                            <span class="course-code">@course.Code</span>
+                            <span class="course-track">@course.Track</span>
+                        </div>
+                        <h4>@course.Title</h4>
+                        <p>@course.Description</p>
+                        <div class="course-footer">
+                            <span>@course.Credits credits</span>
+                            <span class="view-link">View &rarr;</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private List<CourseDto>? _courses;
+    private CourseDto? _course;
+    private string _searchQuery = "";
+
+    private IEnumerable<CourseDto> _filteredCourses =>
+        string.IsNullOrWhiteSpace(_searchQuery)
+            ? _courses ?? Enumerable.Empty<CourseDto>()
+            : _courses!.Where(c =>
+                c.Title.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                c.Code.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                c.Description.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id.HasValue)
+        {
+            _course = await Http.GetFromJsonAsync<CourseDto>($"/api/courses/{Id}");
+        }
+        else
+        {
+            _courses = await Http.GetFromJsonAsync<List<CourseDto>>("/api/courses");
+        }
+    }
+
+    private async Task HandleSearch(KeyboardEventArgs e)
+    {
+        // Client-side filtering already handled by _filteredCourses
+    }
+
+    private void NavigateToCourse(int id) => Nav.NavigateTo($"/courses/{id}");
+
+    private async Task Enroll()
+    {
+        if (_course is null) return;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("/api/enrollments", new { courseId = _course.Id });
+            if (response.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo("/enrollments");
+            }
+        }
+        catch
+        {
+            // Handle error
+        }
+    }
+}
+
+public record CourseDto(int Id, string Code, string Title, string Description, string Track, int Credits);

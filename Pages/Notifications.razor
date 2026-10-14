@@ -1,0 +1,94 @@
+@page "/notifications"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<PageTitle>Notifications - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Notifications</h1>
+    <p>Stay updated with the latest announcements and reminders.</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>All Notifications</h3>
+        <button class="btn btn-sm btn-secondary" @onclick="MarkAllRead">Mark All as Read</button>
+    </div>
+
+    @if (_notifications is null)
+    {
+        <div class="loading">Loading notifications...</div>
+    }
+    else if (!_notifications.Any())
+    {
+        <div class="empty-state">You have no notifications.</div>
+    }
+    else
+    {
+        <div class="notification-list">
+            @foreach (var notification in _notifications)
+            {
+                <div class="notification-item @(notification.IsRead ? "" : "unread")" @onclick="() => MarkRead(notification.Id)">
+                    <div class="notification-indicator">
+                        @if (!notification.IsRead)
+                        {
+                            <span class="unread-dot"></span>
+                        }
+                    </div>
+                    <div class="notification-content">
+                        <h4>@notification.Title</h4>
+                        <p>@notification.Body</p>
+                        <span class="notification-time">@notification.CreatedAtUtc.ToString("MMM dd, yyyy HH:mm")</span>
+                    </div>
+                    @if (!notification.IsRead)
+                    {
+                        <button class="btn btn-sm btn-link" @onclick:stopPropagation="true" @onclick="() => MarkRead(notification.Id)">Mark Read</button>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<NotificationDto>? _notifications;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _notifications = await Http.GetFromJsonAsync<List<NotificationDto>>("/api/notifications");
+    }
+
+    private async Task MarkRead(int id)
+    {
+        await Http.PostAsync($"/api/notifications/{id}/read", null);
+        if (_notifications is not null)
+        {
+            var index = _notifications.FindIndex(n => n.Id == id);
+            if (index >= 0)
+            {
+                var updated = _notifications[index] with { IsRead = true };
+                _notifications[index] = updated;
+            }
+        }
+    }
+
+    private async Task MarkAllRead()
+    {
+        await Http.PostAsync("/api/notifications/read-all", null);
+        if (_notifications is not null)
+        {
+            for (int i = 0; i < _notifications.Count; i++)
+            {
+                _notifications[i] = _notifications[i] with { IsRead = true };
+            }
+        }
+    }
+}
+
+public record NotificationDto(int Id, string Title, string Body, DateTime CreatedAtUtc, bool IsRead);

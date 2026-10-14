@@ -1,0 +1,185 @@
+@page "/research-hub"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<PageTitle>Research Hub - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Research Hub</h1>
+    <p>Discover, search, and summarize academic papers.</p>
+</div>
+
+<!-- Search -->
+<div class="search-section">
+    <div class="search-box-large">
+        <span class="search-icon">&#128269;</span>
+        <input type="text" placeholder="Search research papers..." @bind="_searchQuery" @bind:event="oninput" @onkeyup="HandleSearch" />
+    </div>
+</div>
+
+<!-- Trending Papers -->
+@if (string.IsNullOrWhiteSpace(_searchQuery))
+{
+    <div class="card" style="margin-bottom: 24px;">
+        <div class="card-header">
+            <h3>Trending Papers</h3>
+        </div>
+        @if (_trending is null)
+        {
+            <div class="loading">Loading trending papers...</div>
+        }
+        else if (!_trending.Any())
+        {
+            <div class="empty-state">No trending papers available.</div>
+        }
+        else
+        {
+            <div class="paper-list">
+                @foreach (var paper in _trending)
+                {
+                    <div class="paper-item" @onclick="() => _selectedPaper = paper">
+                        <div class="paper-title">@paper.Title</div>
+                        <div class="paper-authors">@paper.Authors</div>
+                        @if (!string.IsNullOrEmpty(paper.Abstract))
+                        {
+                            <div class="paper-abstract">@paper.Abstract.Substring(0, Math.Min(200, paper.Abstract.Length))...</div>
+                        }
+                        <div class="paper-meta">
+                            <span class="paper-source">@paper.Source</span>
+                            @if (paper.PublishedDate.HasValue)
+                            {
+                                <span class="paper-date">@paper.PublishedDate.Value.ToString("MMM yyyy")</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+else
+{
+    <!-- Search Results -->
+    <div class="card" style="margin-bottom: 24px;">
+        <div class="card-header">
+            <h3>Search Results (@_searchResults?.Count ?? 0)</h3>
+        </div>
+        @if (_searchResults is null)
+        {
+            <div class="loading">Searching...</div>
+        }
+        else if (!_searchResults.Any())
+        {
+            <div class="empty-state">No papers found matching "@_searchQuery".</div>
+        }
+        else
+        {
+            <div class="paper-list">
+                @foreach (var paper in _searchResults)
+                {
+                    <div class="paper-item" @onclick="() => _selectedPaper = paper">
+                        <div class="paper-title">@paper.Title</div>
+                        <div class="paper-authors">@paper.Authors</div>
+                        @if (!string.IsNullOrEmpty(paper.Abstract))
+                        {
+                            <div class="paper-abstract">@paper.Abstract.Substring(0, Math.Min(200, paper.Abstract.Length))...</div>
+                        }
+                        <div class="paper-meta">
+                            <span class="paper-source">@paper.Source</span>
+                            @if (paper.PublishedDate.HasValue)
+                            {
+                                <span class="paper-date">@paper.PublishedDate.Value.ToString("MMM yyyy")}</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+<!-- Paper Detail Modal -->
+@if (_selectedPaper is not null)
+{
+    <div class="modal-overlay" @onclick="() => _selectedPaper = null">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3>@_selectedPaper.Title</h3>
+                <button class="modal-close" @onclick="() => _selectedPaper = null">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="paper-authors">@_selectedPaper.Authors</div>
+                @if (!string.IsNullOrEmpty(_selectedPaper.Abstract))
+                {
+                    <div class="paper-full-abstract">@_selectedPaper.Abstract</div>
+                }
+                <div class="paper-actions">
+                    <button class="btn btn-primary" @onclick="SummarizePaper">Summarize</button>
+                    @if (!string.IsNullOrEmpty(_selectedPaper.Url))
+                    {
+                        <a href="@_selectedPaper.Url" target="_blank" class="btn btn-secondary">View Original</a>
+                    }
+                </div>
+                @if (!string.IsNullOrEmpty(_summary))
+                {
+                    <div class="summary-result">
+                        <h4>Summary</h4>
+                        <p>@_summary</p>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string _searchQuery = "";
+    private List<ResearchPaperDto>? _trending;
+    private List<ResearchPaperDto>? _searchResults;
+    private ResearchPaperDto? _selectedPaper;
+    private string? _summary;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _trending = await Http.GetFromJsonAsync<List<ResearchPaperDto>>("/api/research/trending");
+    }
+
+    private async Task HandleSearch(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            _searchResults = await Http.GetFromJsonAsync<List<ResearchPaperDto>>($"/api/research/papers?q={Uri.EscapeDataString(_searchQuery)}");
+        }
+    }
+
+    private async Task SummarizePaper()
+    {
+        if (_selectedPaper is null) return;
+        var result = await Http.GetFromJsonAsync<SummaryResult>($"/api/research/summarize/{_selectedPaper.Id}");
+        _summary = result?.Summary;
+    }
+}
+
+public class ResearchPaperDto
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public string Authors { get; set; } = "";
+    public string? Abstract { get; set; }
+    public string? Url { get; set; }
+    public string? Source { get; set; }
+    public DateTime? PublishedDate { get; set; }
+}
+
+public class SummaryResult
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public string Summary { get; set; } = "";
+}

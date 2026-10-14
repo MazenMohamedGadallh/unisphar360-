@@ -1,0 +1,15 @@
+@inherits LayoutComponentBase
+@inject UniSphere.Api.Services.ThemeService ThemeService
+
+@Body
+
+@code {
+    // Auth pages have no other theme init (MainLayout owns the toggle):
+    // sync the service with the browser preference so light/dark stays
+    // consistent when navigating between /login, /register and the app.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await ThemeService.InitializeAsync();
+    }
+}

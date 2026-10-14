@@ -1,0 +1,905 @@
+@inherits LayoutComponentBase
+@implements IAsyncDisposable
+@using System.Net
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject NavigationManager Nav
+@inject HttpClient Http
+@inject IJSRuntime JS
+@inject ThemeService ThemeService
+@inject ProtectedLocalStorage BrowserStorage
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+
+<AuthorizeView>
+    <Authorized>
+<div class="app-container">    <!-- Sidebar -->
+    <aside class="sidebar @(_sidebarOpen ? "open" : "")">
+        <div class="sidebar-header">
+            <div class="logo">
+                <span class="logo-icon">&#9670;</span>
+                <span class="logo-text">UniSphere <span class="logo-plus">360+</span></span>
+            </div>
+            <button class="sidebar-close" @onclick="() => _sidebarOpen = false">&times;</button>
+        </div>
+
+        <nav class="sidebar-nav">
+            <NavLink href="/dashboard" class="nav-item" @onclick="() => _sidebarOpen = false">
+                <span class="nav-icon">&#8962;</span>
+                <span>Home</span>
+            </NavLink>
+            <NavLink href="/academic-advisor" class="nav-item" @onclick="() => _sidebarOpen = false">
+                <span class="nav-icon">&#127891;</span>
+                <span>Academic Advisor</span>
+            </NavLink>
+            <NavLink href="/career-assistant" class="nav-item" @onclick="() => _sidebarOpen = false">
+                <span class="nav-icon">&#128188;</span>
+                <span>Career Assistant</span>
+            </NavLink>
+            <NavLink href="/research-hub" class="nav-item" @onclick="() => _sidebarOpen = false">
+                <span class="nav-icon">&#128269;</span>
+                <span>Research Hub</span>
+            </NavLink>
+            @if (_userRole is "Student" or "Graduate" or "Doctor")
+            {
+                <NavLink href="/university" class="nav-item" @onclick="() => _sidebarOpen = false">
+                    <span class="nav-icon">&#127979;</span>
+                    <span>My University</span>
+                </NavLink>
+            }
+            <NavLink href="/student-services" class="nav-item" @onclick="() => _sidebarOpen = false">
+                <span class="nav-icon">&#127974;</span>
+                <span>Student Services</span>
+            </NavLink>
+            @if (_userRole is "Student" or "Graduate")
+            {
+                <NavLink href="/analytics" class="nav-item" @onclick="() => _sidebarOpen = false">
+                    <span class="nav-icon">&#128200;</span>
+                    <span>My Analytics</span>
+                </NavLink>
+            }
+            @if (_userRole == "Admin")
+            {
+                <NavLink href="/admin" class="nav-item" @onclick="() => _sidebarOpen = false">
+                    <span class="nav-icon">&#128202;</span>
+                    <span>Admin Panel</span>
+                </NavLink>
+            }
+            <NavLink href="/chat" class="nav-item" @onclick="() => _sidebarOpen = false">
+                <span class="nav-icon">&#128241;</span>
+                <span>AI Assistant</span>
+            </NavLink>
+        </nav>
+
+        <div class="sidebar-section sidebar-pinned">
+            <div class="sidebar-section-title">Quick Links</div>
+            <NavLink href="/profile" class="nav-item" @onclick="() => _sidebarOpen = false">
+                <span class="nav-icon">&#128100;</span>
+                <span>My Profile</span>
+            </NavLink>
+            <NavLink href="/notifications" class="nav-item" @onclick="() => _sidebarOpen = false">
+                <span class="nav-icon">&#128276;</span>
+                <span>Notifications</span>
+            </NavLink>
+            <NavLink href="/settings" class="nav-item" @onclick="() => _sidebarOpen = false">
+                <span class="nav-icon">&#9881;</span>
+                <span>Settings</span>
+            </NavLink>
+            <NavLink href="/help" class="nav-item" @onclick="() => _sidebarOpen = false">
+                <span class="nav-icon">&#10067;</span>
+                <span>Help & Support</span>
+            </NavLink>
+            <button class="nav-item logout-btn sidebar-logout" @onclick="OpenLogoutModal" title="Log out" aria-label="Log out">
+                <span class="nav-icon">&#128682;</span>
+                <span>Logout</span>
+            </button>
+        </div>
+
+        <div class="sidebar-footer">
+            @if (!string.IsNullOrEmpty(_userFullName))
+            {
+                <div class="sidebar-user">
+                    <span class="sidebar-user-avatar">@_userInitial</span>
+                    <span class="sidebar-user-name">@_userFullName</span>
+                </div>
+            }
+        </div>
+    </aside>
+
+    <!-- Main content -->
+    <div class="main-content">
+        <!-- Top bar -->
+        <header class="top-bar">
+            <button class="menu-toggle" @onclick="() => _sidebarOpen = !_sidebarOpen">&#9776;</button>
+
+            <div class="search-wrap" @onkeydown="SearchKeyDown">
+                <div class="search-box">
+                    <span class="search-icon">&#128269;</span>
+                    <input id="topbar-search" type="text" placeholder="Search courses, events, modules..."
+                           @bind="_searchQuery" @bind:event="oninput" @bind:after="SearchTextChangedAsync"
+                           @onfocus="SearchFocused" @onblur="SearchBlurred" @ref="_searchInput"
+                           autocomplete="off" role="combobox" aria-expanded="@_searchOpen" aria-label="Search" aria-controls="topbar-search-list" />
+                    @if (_searchLoading)
+                    {
+                        <span class="search-spinner" aria-hidden="true"></span>
+                    }
+                </div>
+                @if (_searchOpen)
+                {
+                    <div class="search-dropdown" id="topbar-search-list" role="listbox" aria-label="Search results">
+                        @if (!string.IsNullOrEmpty(_searchError))
+                        {
+                            <div class="alert alert-error search-alert">@_searchError</div>
+                        }
+                        else if (_showRecents)
+                        {
+                            <div class="search-group-label">Recent searches</div>
+                            @foreach (var recent in _recentSearches)
+                            {
+                                <div class="search-item" @onmousedown:preventDefault @onclick="() => SearchRecentAsync(recent)">
+                                    <span class="search-item-icon">&#128339;</span>
+                                    <span class="search-item-text">@recent</span>
+                                </div>
+                            }
+                        }
+                        else if (_searchQuery.Trim().Length < 2)
+                        {
+                            <div class="empty-state">Type at least 2 characters to search.</div>
+                        }
+                        else if (!_flat.Any() && !_searchLoading)
+                        {
+                            <div class="empty-state">No results for "@_searchQuery".</div>
+                        }
+                        else
+                        {
+                            var lastGroup = "";
+                            var flatIndex = -1;
+                            @foreach (var entry in _flat)
+                            {
+                                flatIndex++;
+                                var fi = flatIndex;
+                                @if (entry.Group != lastGroup)
+                                {
+                                    lastGroup = entry.Group;
+                                    <div class="search-group-label">@entry.Group</div>
+                                }
+                                <div role="option" aria-selected="@(fi == _selectedIndex)"
+                                     class="search-item @(fi == _selectedIndex ? "selected" : "")"
+                                     @onmousedown:preventDefault @onclick="() => SelectResultAsync(entry.Item)">
+                                    <span class="search-item-icon">@entry.Item.Icon</span>
+                                    <span class="search-item-text">@Highlight(entry.Item.Title, _searchQuery)<small>@entry.Item.Subtitle</small></span>
+                                </div>
+                            }
+                        }
+                    </div>
+                    <div class="search-backdrop" @onclick="CloseSearch"></div>
+                }
+            </div>
+
+            <div class="top-bar-actions">
+                <button type="button" class="icon-btn theme-toggle" title="Dark mode"
+                        aria-label="@(_themeDark ? "Switch to light mode" : "Switch to dark mode")"
+                        @onclick="ToggleThemeAsync">
+                    @(_themeDark ? "☀" : "🌙")
+                </button>
+                <NavLink href="/chat" class="icon-btn" title="AI Assistant">
+                    &#128241;
+                </NavLink>
+                <NavLink href="/notifications" class="icon-btn" title="Notifications">
+                    &#128276;
+                    @if (_unreadCount > 0)
+                    {
+                        <span class="badge">@_unreadCount</span>
+                    }
+                </NavLink>
+                <div class="avatar-wrap">
+                    <button type="button" class="user-avatar" title="Account"
+                            aria-label="Account menu" aria-expanded="@_avatarMenuOpen"
+                            @onclick="ToggleAvatarMenu">
+                        @if (!string.IsNullOrEmpty(_userAvatar))
+                        {
+                            <img src="@_userAvatar" alt="Profile" />
+                        }
+                        else
+                        {
+                            <span class="avatar-initial">@_userInitial</span>
+                        }
+                    </button>
+                    @if (_avatarMenuOpen)
+                    {
+                        <div class="avatar-menu" role="menu" aria-label="Account">
+                            <div class="avatar-menu-user">
+                                <span class="avatar-initial">@_userInitial</span>
+                                <span class="avatar-menu-name">@_userFullName</span>
+                            </div>
+                            <NavLink href="/profile" class="avatar-menu-item" role="menuitem" @onclick="CloseAvatarMenu">
+                                <span class="nav-icon">&#128100;</span>
+                                <span>My Profile</span>
+                            </NavLink>
+                            <button type="button" class="avatar-menu-item logout" role="menuitem" @onclick="OpenLogoutModalFromMenu">
+                                <span class="nav-icon">&#128682;</span>
+                                <span>Logout</span>
+                            </button>
+                        </div>
+                        <div class="search-backdrop" @onclick="CloseAvatarMenu"></div>
+                    }
+                </div>
+            </div>
+        </header>
+
+        <!-- Page content -->
+        <main class="page-content">
+            @Body
+        </main>
+    </div>
+</div>
+    </Authorized>
+    <NotAuthorized>
+        @if (!AuthService.IsInitialized)
+        {
+            @* Auth state still resolving from ProtectedLocalStorage: keep the
+               full shell (sidebar incl. pinned Logout) visible to avoid
+               flicker/disappear. Never render the anonymous layout here:
+               the session may still be restored a moment later. Same
+               markup/style as Authorized; main shows a small loader. *@
+            <div class="app-container">
+                <aside class="sidebar @(_sidebarOpen ? "open" : "")">
+                    <div class="sidebar-header">
+                        <div class="logo">
+                            <span class="logo-icon">&#9670;</span>
+                            <span class="logo-text">UniSphere <span class="logo-plus">360+</span></span>
+                        </div>
+                        <button class="sidebar-close" @onclick="() => _sidebarOpen = false">&times;</button>
+                    </div>
+
+                    <nav class="sidebar-nav">
+                        <NavLink href="/dashboard" class="nav-item" @onclick="() => _sidebarOpen = false">
+                            <span class="nav-icon">&#8962;</span>
+                            <span>Home</span>
+                        </NavLink>
+                        <NavLink href="/academic-advisor" class="nav-item" @onclick="() => _sidebarOpen = false">
+                            <span class="nav-icon">&#127891;</span>
+                            <span>Academic Advisor</span>
+                        </NavLink>
+                        <NavLink href="/career-assistant" class="nav-item" @onclick="() => _sidebarOpen = false">
+                            <span class="nav-icon">&#128188;</span>
+                            <span>Career Assistant</span>
+                        </NavLink>
+                        <NavLink href="/research-hub" class="nav-item" @onclick="() => _sidebarOpen = false">
+                            <span class="nav-icon">&#128269;</span>
+                            <span>Research Hub</span>
+                        </NavLink>
+                        @if (_userRole is "Student" or "Graduate" or "Doctor")
+                        {
+                            <NavLink href="/university" class="nav-item" @onclick="() => _sidebarOpen = false">
+                                <span class="nav-icon">&#127979;</span>
+                                <span>My University</span>
+                            </NavLink>
+                        }
+                        <NavLink href="/student-services" class="nav-item" @onclick="() => _sidebarOpen = false">
+                            <span class="nav-icon">&#127974;</span>
+                            <span>Student Services</span>
+                        </NavLink>
+                        @if (_userRole is "Student" or "Graduate")
+                        {
+                            <NavLink href="/analytics" class="nav-item" @onclick="() => _sidebarOpen = false">
+                                <span class="nav-icon">&#128200;</span>
+                                <span>My Analytics</span>
+                            </NavLink>
+                        }
+                        @if (_userRole == "Admin")
+                        {
+                            <NavLink href="/admin" class="nav-item" @onclick="() => _sidebarOpen = false">
+                                <span class="nav-icon">&#128202;</span>
+                                <span>Admin Panel</span>
+                            </NavLink>
+                        }
+                        <NavLink href="/chat" class="nav-item" @onclick="() => _sidebarOpen = false">
+                            <span class="nav-icon">&#128241;</span>
+                            <span>AI Assistant</span>
+                        </NavLink>
+                    </nav>
+
+                    <div class="sidebar-section sidebar-pinned">
+                        <div class="sidebar-section-title">Quick Links</div>
+                        <NavLink href="/profile" class="nav-item" @onclick="() => _sidebarOpen = false">
+                            <span class="nav-icon">&#128100;</span>
+                            <span>My Profile</span>
+                        </NavLink>
+                        <NavLink href="/notifications" class="nav-item" @onclick="() => _sidebarOpen = false">
+                            <span class="nav-icon">&#128276;</span>
+                            <span>Notifications</span>
+                        </NavLink>
+                        <NavLink href="/settings" class="nav-item" @onclick="() => _sidebarOpen = false">
+                            <span class="nav-icon">&#9881;</span>
+                            <span>Settings</span>
+                        </NavLink>
+                        <NavLink href="/help" class="nav-item" @onclick="() => _sidebarOpen = false">
+                            <span class="nav-icon">&#10067;</span>
+                            <span>Help & Support</span>
+                        </NavLink>
+                        <button class="nav-item logout-btn sidebar-logout" @onclick="OpenLogoutModal" title="Log out" aria-label="Log out">
+                            <span class="nav-icon">&#128682;</span>
+                            <span>Logout</span>
+                        </button>
+                    </div>
+
+                    <div class="sidebar-footer">
+                        @if (!string.IsNullOrEmpty(_userFullName))
+                        {
+                            <div class="sidebar-user">
+                                <span class="sidebar-user-avatar">@_userInitial</span>
+                                <span class="sidebar-user-name">@_userFullName</span>
+                            </div>
+                        }
+                    </div>
+                </aside>
+
+                <div class="main-content">
+                    <main class="page-content">
+                        <div class="auth-loading" role="status">
+                            <span class="search-spinner" aria-hidden="true"></span>
+                            <span>Loading&hellip;</span>
+                        </div>
+                    </main>
+                </div>
+            </div>
+        }
+        else if (IsPublicPath())
+        {
+            <main class="page-content">
+                @Body
+            </main>
+        }
+        @* Truly anonymous on a protected page: render nothing (no sidebar,
+           no protected @Body flash). OnParametersSetAsync / OnAfterRenderAsync
+           bounces to /login with replace: true. *@
+    </NotAuthorized>
+</AuthorizeView>
+
+@if (_showLogoutModal)
+{
+    <div class="modal-overlay" @onclick="CancelLogoutModal">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="still-signed-in-title" @onclick:stopPropagation="true" @onkeydown="OnModalKeyDown">
+            <div class="modal-header">
+                <h3 id="still-signed-in-title">You're still signed in</h3>
+            </div>
+            <div class="modal-body">
+                <p>You are already logged in as <strong>@(_userFullName ?? "this account")</strong>. Do you want to log out?</p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" @onclick="CancelLogoutModal" autofocus>Cancel</button>
+                <button class="btn btn-danger" @onclick="ConfirmLogoutAsync">Log out</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _sidebarOpen = false;
+    private string _searchQuery = "";
+    private int _unreadCount = 0;
+    private string? _userAvatar;
+    private string _userInitial = "?";
+    private string? _userFullName;
+    private string? _userRole;
+    private bool _showLogoutModal;
+    private bool _avatarMenuOpen;
+    // Set once this circuit bounces an anonymous user to /login, so the
+    // gate never navigates twice (and a later render pass can never
+    // re-render the layout as anonymous afterwards).
+    private bool _authBounced;
+    private IJSObjectReference? _guardModule;
+    private DotNetObjectReference<MainLayout>? _guardRef;
+    private bool _guardActive;
+
+    private bool _themeDark => ThemeService.Effective == "dark";
+
+    private ElementReference _searchInput;
+    private List<SearchGroupDto> _searchGroups = new();
+    private List<(string Group, SearchItemDto Item)> _flat = new();
+    private bool _searchOpen;
+    private bool _searchFocused;
+    private bool _searchLoading;
+    private string? _searchError;
+    private int _selectedIndex = -1;
+    private List<string> _recentSearches = new();
+    private CancellationTokenSource? _searchCts;
+    private IJSObjectReference? _searchModule;
+    private DotNetObjectReference<MainLayout>? _searchRef;
+    private const string RecentsKey = "unisphere.recentSearches";
+    private bool _showRecents => _searchFocused && _searchQuery.Trim().Length == 0 && _recentSearches.Count > 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await AuthService.GetUserAsync();
+        if (user is not null)
+        {
+            _userAvatar = user.AvatarUrl;
+            _userFullName = user.FullName;
+            _userRole = user.Role;
+            _userInitial = string.IsNullOrEmpty(user.FullName) ? "?" : user.FullName[0].ToString().ToUpper();
+        }
+    }
+
+    private bool IsPublicPath()
+    {
+        var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
+        return path is "" or "/login" or "/register";
+    }
+
+    private bool IsHomePath()
+    {
+        // Home = the app root (redirects to the dashboard) or the
+        // dashboard itself. Only Home arms the Back-button guard.
+        var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
+        return path is "" or "/" or "/dashboard";
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {        // Runs on every navigation (Body changes), so the badge refreshes
+        // right after login instead of staying stale at 0.
+        try
+        {
+            var count = await Http.GetFromJsonAsync<UniSphere.Api.Dtos.UnreadCountDto>("/api/notifications/unread-count");
+            _unreadCount = count?.UnreadCount ?? 0;
+        }
+        catch
+        {
+            _unreadCount = 0;
+        }
+
+        // Refresh identity on every navigation so the menu (and user chip)
+        // appear right after login without a full reload.
+        try
+        {
+            var me = await AuthService.GetUserAsync();
+            if (me is not null)
+            {
+                _userRole = me.Role;
+                _userFullName = me.FullName;
+                if (string.IsNullOrEmpty(_userAvatar)) _userAvatar = me.AvatarUrl;
+            }
+        }
+        catch
+        {
+            // Stay with whatever identity we already have.
+        }
+
+        // Client-side auth gate: after logout, a Back press can land the SPA
+        // router on a protected page without a full reload (so the server
+        // challenge never fires). Bounce anonymous users to /login.
+        // Public pages are left alone; the server stays the authority.
+        // While the persisted token is still being read (IsInitialized ==
+        // false: prerender / first render), never redirect and never render
+        // as anonymous: the session may still be restored.
+        if (!IsPublicPath() && AuthService.IsInitialized && AuthService.GetToken() is null && !_authBounced)
+        {
+            _authBounced = true;
+            Nav.NavigateTo("/login", replace: true);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // First interactive render: pull the persisted session out of
+        // browser storage (covers full reloads and reconnects, where the
+        // scoped in-memory token is gone). No-op when already signed in.
+        // JS interop is available here but never during prerender.
+        if (firstRender)
+        {
+            // Single-flight restore (shared with RedirectToLogin / pages):
+            // exactly one storage read and one Notify per circuit.
+            var restored = await AuthService.RestoreSessionAsync();
+            if (restored)
+            {
+                // Token arrived late (F5): reload identity/badge so the
+                // sidebar, role links, avatar menu and Logout appear at
+                // once instead of waiting for the next navigation.
+                await RefreshUserAsync();
+                var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
+                if (path is "/login" or "/register")
+                    Nav.NavigateTo("/dashboard", replace: true);
+                else
+                    StateHasChanged();
+            }
+            else if (AuthService.IsInitialized && !IsPublicPath() && AuthService.GetToken() is null && !_authBounced)
+            {
+                // Storage read finished and there is no usable token:
+                // truly anonymous on a protected page. Bounce once with
+                // replace: true (/login itself is public, so no loop).
+                // Never redirect while !IsInitialized: a second
+                // prerender/interactive pass must not lock in anonymous.
+                _authBounced = true;
+                Nav.NavigateTo("/login", replace: true);
+            }
+        }
+        await SyncBackGuardAsync();
+        if (firstRender)
+        {
+            await ThemeService.InitializeAsync();
+            await LoadRecentSearchesAsync();
+            await RegisterSearchKeysAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshUserAsync()
+    {
+        try
+        {
+            var me = await AuthService.GetUserAsync();
+            if (me is not null)
+            {
+                _userRole = me.Role;
+                _userFullName = me.FullName;
+                _userAvatar = me.AvatarUrl;
+                _userInitial = string.IsNullOrEmpty(me.FullName) ? "?" : me.FullName[0].ToString().ToUpper();
+            }
+        }
+        catch
+        {
+            // Stay with whatever identity we already have.
+        }
+        try
+        {
+            var count = await Http.GetFromJsonAsync<UniSphere.Api.Dtos.UnreadCountDto>("/api/notifications/unread-count");
+            _unreadCount = count?.UnreadCount ?? 0;
+        }
+        catch
+        {
+            _unreadCount = 0;
+        }
+    }
+
+    private async Task SyncBackGuardAsync()
+    {
+        // OnAfterRenderAsync only runs on an interactive circuit, so JS
+        // interop is safe here (never during static prerendering).
+        // Armed on Home only ("/" or "/dashboard") while signed in with a
+        // resolved auth state — inner pages keep fully native Back, and the
+        // guard initializes after F5 restores the session too. Leaving Home
+        // (or logout) stops the guard and disposes the .NET reference.
+        var shouldArm = AuthService.IsInitialized
+            && AuthService.GetToken() is not null
+            && IsHomePath();
+        if (shouldArm && !_guardActive)
+        {
+            try
+            {
+                _guardModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/backGuard.js");
+                _guardRef = DotNetObjectReference.Create(this);
+                await _guardModule.InvokeVoidAsync("startBackGuard", _guardRef);
+                _guardActive = true;
+            }
+            catch
+            {
+                // JS unavailable: stay unguarded rather than break the page.
+            }
+        }
+        else if (!shouldArm && _guardActive)
+        {
+            await StopBackGuardAsync();
+        }
+    }
+
+    private async Task StopBackGuardAsync()
+    {
+        _guardActive = false;
+        try
+        {
+            if (_guardModule is not null)
+                await _guardModule.InvokeVoidAsync("stopBackGuard");
+        }
+        catch
+        {
+            // Listener is already gone (logout/dispose path).
+        }
+        _guardRef?.Dispose();
+        _guardRef = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopBackGuardAsync();
+        if (_guardModule is not null)
+        {
+            try
+            {
+                await _guardModule.DisposeAsync();
+            }
+            catch
+            {
+                // Module already released.
+            }
+        }
+        try
+        {
+            if (_searchModule is not null)
+                await _searchModule.InvokeVoidAsync("unregisterSearchKeys");
+        }
+        catch
+        {
+            // Listener already gone.
+        }
+        _searchRef?.Dispose();
+        _searchRef = null;
+        if (_searchModule is not null)
+        {
+            try
+            {
+                await _searchModule.DisposeAsync();
+            }
+            catch
+            {
+                // Module already released.
+            }
+        }
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+    }
+
+    [JSInvokable]
+    public Task OnBackPressed()
+    {
+        // Back was pressed on Home (the guard only arms there): offer the
+        // modal only while still signed in on Home with a resolved auth
+        // state. Anything else (logout raced us, navigated away) is ignored
+        // so inner-page Back stays untouched.
+        if (!AuthService.IsInitialized || AuthService.GetToken() is null || !IsHomePath())
+            return Task.CompletedTask;
+        _showLogoutModal = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task OpenLogoutModal()
+    {
+        // Loading (F5 restore in flight): don't bounce to /login — the
+        // session may still restore. Show the modal optimistically.
+        if (AuthService.IsLoading)
+        {
+            _showLogoutModal = true;
+            return;
+        }
+        var user = await AuthService.GetUserAsync();
+        if (user is null && AuthService.GetToken() is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        if (user is not null)
+            _userFullName = user.FullName;
+        _showLogoutModal = true;
+    }
+
+    private void CancelLogoutModal() => _showLogoutModal = false;
+
+    private void ToggleAvatarMenu() => _avatarMenuOpen = !_avatarMenuOpen;
+
+    private void CloseAvatarMenu() => _avatarMenuOpen = false;
+
+    private async Task OpenLogoutModalFromMenu()
+    {
+        _avatarMenuOpen = false;
+        await OpenLogoutModal();
+    }
+
+    private void OnModalKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CancelLogoutModal();
+    }
+
+    private async Task ConfirmLogoutAsync()
+    {
+        _showLogoutModal = false;
+        await AuthService.LogoutAsync();
+        await StopBackGuardAsync();
+        Nav.NavigateTo("/login", replace: true);
+    }
+
+    private async Task HandleSearch(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            Nav.NavigateTo($"/search?q={Uri.EscapeDataString(_searchQuery)}");
+        }
+    }
+
+    private async Task ToggleThemeAsync() => await ThemeService.ToggleAsync();
+
+    private void SearchFocused()
+    {
+        _searchFocused = true;
+        _selectedIndex = -1;
+        if (_showRecents || _searchQuery.Trim().Length > 0)
+            _searchOpen = true;
+    }
+
+    private void SearchBlurred()
+    {
+        _searchFocused = false;
+        CloseSearch();
+    }
+
+    private void CloseSearch() => _searchOpen = false;
+
+    private async Task SearchTextChangedAsync()
+    {
+        _searchCts?.Cancel();
+        _searchCts = new CancellationTokenSource();
+        var token = _searchCts.Token;
+        _selectedIndex = -1;
+        var term = _searchQuery.Trim();
+
+        if (term.Length < 2)
+        {
+            _searchGroups = new();
+            _flat = new();
+            _searchLoading = false;
+            _searchError = null;
+            _searchOpen = _searchFocused && (term.Length > 0 || _recentSearches.Count > 0);
+            return;
+        }
+
+        _searchOpen = true;
+        _searchLoading = true;
+        _searchError = null;
+        try
+        {
+            await Task.Delay(300, token);
+            var result = await Http.GetFromJsonAsync<SearchResponseDto>(
+                $"/api/search?q={Uri.EscapeDataString(term)}&take=20", token);
+            if (token.IsCancellationRequested) return;
+            _searchGroups = result?.Groups.ToList() ?? new();
+            _flat = _searchGroups
+                .SelectMany(g => g.Items.Select(i => (g.Label, Item: i)))
+                .ToList();
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // Stay quiet: the layout auth gate owns session expiry.
+            _searchOpen = false;
+            return;
+        }
+        catch
+        {
+            _searchError = "Search failed. Please try again.";
+        }
+        finally
+        {
+            _searchLoading = false;
+        }
+    }
+
+    private async Task SearchKeyDown(KeyboardEventArgs e)
+    {
+        if (!_searchOpen) return;
+        if (e.Key == "Escape")
+        {
+            CloseSearch();
+        }
+        else if (e.Key == "ArrowDown")
+        {
+            _selectedIndex = _flat.Count == 0 ? -1 : Math.Min(_selectedIndex + 1, _flat.Count - 1);
+        }
+        else if (e.Key == "ArrowUp")
+        {
+            _selectedIndex = Math.Max(_selectedIndex - 1, -1);
+        }
+        else if (e.Key == "Enter")
+        {
+            if (_selectedIndex >= 0 && _selectedIndex < _flat.Count)
+                await SelectResultAsync(_flat[_selectedIndex].Item);
+            else if (_searchQuery.Trim().Length >= 2)
+            {
+                await AddRecentSearchAsync(_searchQuery.Trim());
+                CloseSearch();
+                Nav.NavigateTo("/search?q=" + Uri.EscapeDataString(_searchQuery.Trim()));
+            }
+        }
+    }
+
+    private async Task SelectResultAsync(SearchItemDto item)
+    {
+        await AddRecentSearchAsync(_searchQuery.Trim());
+        CloseSearch();
+        _selectedIndex = -1;
+        Nav.NavigateTo(item.Route);
+    }
+
+    private async Task SearchRecentAsync(string term)
+    {
+        _searchQuery = term;
+        _searchOpen = true;
+        await SearchTextChangedAsync();
+        try
+        {
+            _searchModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/search.js");
+            await _searchModule.InvokeVoidAsync("focusElement", "topbar-search");
+        }
+        catch
+        {
+            // Focus helper unavailable: results still load.
+        }
+    }
+
+    private async Task AddRecentSearchAsync(string term)
+    {
+        if (string.IsNullOrWhiteSpace(term)) return;
+        _recentSearches.RemoveAll(s => string.Equals(s, term, StringComparison.OrdinalIgnoreCase));
+        _recentSearches.Insert(0, term);
+        _recentSearches = _recentSearches.Take(5).ToList();
+        try
+        {
+            await BrowserStorage.SetAsync(RecentsKey, _recentSearches);
+        }
+        catch
+        {
+            // Recents are best-effort.
+        }
+    }
+
+    private async Task LoadRecentSearchesAsync()
+    {
+        try
+        {
+            var stored = await BrowserStorage.GetAsync<List<string>>(RecentsKey);
+            if (stored.Success && stored.Value is not null)
+                _recentSearches = stored.Value.Take(5).ToList();
+        }
+        catch
+        {
+            // No recents without JS interop.
+        }
+    }
+
+    private async Task RegisterSearchKeysAsync()
+    {
+        try
+        {
+            _searchModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/search.js");
+            _searchRef = DotNetObjectReference.Create(this);
+            await _searchModule.InvokeVoidAsync("registerSearchKeys", _searchRef);
+        }
+        catch
+        {
+            // Shortcuts unavailable: the input still works.
+        }
+    }
+
+    [JSInvokable]
+    public async Task FocusSearch()
+    {
+        try
+        {
+            _searchModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/search.js");
+            await _searchModule.InvokeVoidAsync("focusElement", "topbar-search");
+        }
+        catch
+        {
+            // Focus helper unavailable; the input still works by click.
+        }
+        // Focusing fires @onfocus which opens recents; force a render anyway.
+        _searchFocused = true;
+        if (_showRecents || _searchQuery.Trim().Length > 0)
+            _searchOpen = true;
+        StateHasChanged();
+    }
+
+    private static Microsoft.AspNetCore.Components.MarkupString Highlight(string text, string term)
+    {
+        // Encode first, then mark — offsets stay valid because the match is
+        // located on the raw text before encoding the fragments.
+        var index = string.IsNullOrWhiteSpace(term)
+            ? -1
+            : text.IndexOf(term.Trim(), StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+            return new(System.Net.WebUtility.HtmlEncode(text));
+        return new(System.Net.WebUtility.HtmlEncode(text[..index])
+            + "<mark>" + System.Net.WebUtility.HtmlEncode(text.Substring(index, term.Trim().Length)) + "</mark>"
+            + System.Net.WebUtility.HtmlEncode(text[(index + term.Trim().Length)..]));
+    }
+}

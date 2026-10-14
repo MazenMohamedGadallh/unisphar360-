@@ -1,0 +1,280 @@
+@page "/university"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@using System.Net
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>My University - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>My University</h1>
+    <p>@(_info?.UniversityName ?? "Course materials and summaries")</p>
+</div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="ReloadAsync">Retry</button></div>
+}
+else if (_loading && _info is null)
+{
+    <div class="loading">Loading university...</div>
+}
+else if (_info is not null && string.IsNullOrEmpty(_info.UniversityName))
+{
+    <div class="empty-state">No university assigned to your account yet.</div>
+}
+else
+{
+    <div class="card">
+        <div class="card-header"><h3>Materials</h3></div>
+        <div class="form-inline">
+            <div class="form-group">
+                <label for="courseFilter">Course</label>
+                <select id="courseFilter" @bind="_courseId" @bind:after="ApplyFiltersAsync">
+                    <option value="">All courses</option>
+                    @if (_courses is not null)
+                    {
+                        @foreach (var c in _courses)
+                        {
+                            <option value="@c.Id">@c.Title (@c.MaterialsCount)</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="typeFilter">Type</label>
+                <select id="typeFilter" @bind="_type" @bind:after="ApplyFiltersAsync">
+                    <option value="">All types</option>
+                    @foreach (var t in MaterialTypes)
+                    {
+                        <option value="@t">@t</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="materialSearch">Search</label>
+                <input id="materialSearch" @bind="_search" @bind:event="oninput" @onkeyup="SearchKeyUpAsync" placeholder="Title or description..." />
+            </div>
+        </div>
+        @if (_materials is null)
+        {
+            <div class="loading">Loading materials...</div>
+        }
+        else if (!_materials.Any())
+        {
+            <div class="empty-state">No materials match the current filters.</div>
+        }
+        else
+        {
+            <div class="recommendation-list">
+                @foreach (var m in _materials)
+                {
+                    <div class="recommendation-item @(_selected?.Id == m.Id ? "selected" : "")" @onclick="() => SelectAsync(m)">
+                        <div class="rec-info">
+                            <span class="rec-code">@m.Type</span>
+                            <span class="rec-title">@m.Title</span>
+                            <span class="rec-track">@m.CourseName | @m.CreatedAt.ToString("MMM d, yyyy")</span>
+                        </div>
+                        <span class="rec-btn">Open</span>
+                    </div>
+                }
+            </div>
+            <div class="pagination">
+                <button class="btn btn-sm btn-secondary" disabled="@(_page <= 1)" @onclick="() => ChangePageAsync(-1)">Prev</button>
+                <span>Page @_page of @TotalPages (@_total total)</span>
+                <button class="btn btn-sm btn-secondary" disabled="@(_page >= TotalPages)" @onclick="() => ChangePageAsync(1)">Next</button>
+            </div>
+        }
+    </div>
+
+    @if (_selected is not null)
+    {
+        <div class="card" style="margin-top: 24px;">
+            <div class="card-header">
+                <h3>@_selected.Title</h3>
+                <button class="btn btn-sm btn-secondary" @onclick="CloseDetail">Close</button>
+            </div>
+            <div class="chart-container">
+                <p><span class="status-badge good">@_selected.Type</span> @_selected.CourseName · @_selected.CreatedAt.ToString("MMM d, yyyy")</p>
+                @if (!string.IsNullOrWhiteSpace(_selected.Description))
+                {
+                    <p>@_selected.Description</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(_selected.Content))
+                {
+                    <div class="material-content">@_selected.Content</div>
+                }
+                @if (!string.IsNullOrEmpty(_selected.FileUrl))
+                {
+                    <a class="btn btn-primary btn-sm" href="@_selected.FileUrl" target="_blank" rel="noopener">Download file</a>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private static readonly string[] MaterialTypes =
+        { "Summary", "Lecture", "Assignment", "Exam", "Announcement" };
+
+    private MyUniversityDto? _info;
+    private List<UniversityCourseDto>? _courses;
+    private List<MaterialDto>? _materials;
+    private MaterialDto? _selected;
+    private string? _error;
+    private bool _loading = true;
+
+    private string _courseId = "";
+    private string _type = "";
+    private string _search = "";
+    private int _page = 1;
+    private const int PageSize = 10;
+    private int _total;
+    private int TotalPages => Math.Max(1, (_total + PageSize - 1) / PageSize);
+    // Deferred first-run guard: prerender / pre-restore passes must not
+    // redirect or 401-logout a signed-in user (see OnAfterRenderAsync).
+    private bool _started;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // F5: auth restores in OnAfterRenderAsync (JS interop). Never
+        // redirect to /login while it is still resolving: GetUserAsync()
+        // is null until the persisted token is read.
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            try
+            {
+                _info = await Http.GetFromJsonAsync<MyUniversityDto>("/api/university/me");
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                _info = new MyUniversityDto("", "", null, 0, 0);
+                return;
+            }
+            _courses = await Http.GetFromJsonAsync<List<UniversityCourseDto>>("/api/university/me/courses") ?? new();
+            await LoadMaterialsAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // Genuine expiry only: loads are deferred until auth resolves.
+            if (!AuthService.IsInitialized)
+            {
+                _error = "Could not load university data. Check your connection and try again.";
+            }
+            else
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+        }
+        catch
+        {
+            _error = "Could not load university data. Check your connection and try again.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadMaterialsAsync()
+    {
+        var query = $"/api/university/me/materials?page={_page}&pageSize={PageSize}" +
+            $"&search={Uri.EscapeDataString(_search)}&type={Uri.EscapeDataString(_type)}";
+        if (int.TryParse(_courseId, out var courseId))
+            query += $"&courseId={courseId}";
+        var page = await Http.GetFromJsonAsync<PagedResultDto<MaterialDto>>(query);
+        _materials = page?.Items.ToList() ?? new();
+        _total = page?.Total ?? 0;
+        _selected = null;
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        _page = 1;
+        try
+        {
+            await LoadMaterialsAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // Genuine expiry only: never log out while auth is resolving.
+            if (!AuthService.IsInitialized)
+            {
+                _error = "Could not load materials. Check your connection and try again.";
+                return;
+            }
+            await AuthService.LogoutAsync();
+            Nav.NavigateTo("/login?expired=1");
+        }
+        catch
+        {
+            _error = "Could not load materials. Check your connection and try again.";
+        }
+    }
+
+    private async Task SearchKeyUpAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ApplyFiltersAsync();
+    }
+
+    private async Task ChangePageAsync(int delta)
+    {
+        _page = Math.Max(1, _page + delta);
+        await ApplyFiltersAsync();
+    }
+
+    private Task SelectAsync(MaterialDto material)
+    {
+        _selected = _selected?.Id == material.Id ? null : material;
+        return Task.CompletedTask;
+    }
+
+    private void CloseDetail() => _selected = null;
+}
