@@ -35,7 +35,7 @@ else
     <div class="form-inline">
         <div class="form-group">
             <label>Course</label>
-            <select @bind="_courseId">
+            <select value="_courseId" @onchange="OnCourseChanged">
                 <option value="0">Select a course...</option>
                 @foreach (var c in _courses)
                 {
@@ -69,7 +69,7 @@ else
                     </div>
                     <div class="form-group">
                         <label>Number of questions</label>
-                        <input type="number" min="1" max="20" @bind="_questionCount" />
+                        <input type="number" min="1" max="15" @bind="_questionCount" />
                     </div>
                 </div>
                 <button class="btn btn-primary" @onclick="GenerateQuizAsync" disabled="@(_busy || _courseId <= 0)">
@@ -263,6 +263,12 @@ else
     private async Task SelectSummarizeAsTab()
     {
         _tab = "summarize";
+        await LoadMaterialsForCourseAsync();
+    }
+
+    private async Task OnCourseChanged(ChangeEventArgs e)
+    {
+        _courseId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
         await LoadMaterialsForCourseAsync();
     }
 
