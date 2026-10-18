@@ -1,0 +1,337 @@
+@page "/doctor/ai"
+@using System.Net
+@using UniSphere.Api.Dtos
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+
+<PageTitle>AI Teaching Assistant - UniSphere 360+</PageTitle>
+
+@if (_denied)
+{
+    <div class="alert alert-error">Access denied: this area is for doctors only.</div>
+}
+else
+{
+    <div class="page-header">
+        <h1>AI Teaching Assistant</h1>
+        <p>Draft quizzes, summarize lecture materials and ask grounded questions. Generated content is always a draft and must be reviewed by you before use.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error</div>
+    }
+
+    @if (_statusChecked && !_available)
+    {
+        <div class="alert alert-error">
+            No AI provider is configured. Set an API key (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY,
+            OPENROUTER_API_KEY) or run a local Ollama instance, then reload this page.
+            <button class="btn btn-sm btn-secondary" @onclick="CheckStatusAsync">Retry</button>
+        </div>
+    }
+
+    <div class="form-inline">
+        <div class="form-group">
+            <label>Course</label>
+            <select @bind="_courseId">
+                <option value="0">Select a course...</option>
+                @foreach (var c in _courses)
+                {
+                    <option value="@c.CourseId">@c.Code — @c.Title</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="admin-tabs">
+        <button class="admin-tab @(_tab == "quiz" ? "selected" : "")" @onclick='() => _tab = "quiz"'>Generate Quiz</button>
+        <button class="admin-tab @(_tab == "summarize" ? "selected" : "")" @onclick="SelectSummarizeAsTab">Summarize Lecture</button>
+        <button class="admin-tab @(_tab == "ask" ? "selected" : "")" @onclick='() => _tab = "ask"'>Ask a Question</button>
+    </div>
+
+    @if (_tab == "quiz")
+    {
+        <div class="card">
+            <div class="card-header"><h3>Generate a Quiz</h3></div>
+            <div class="card-body">
+                <div class="form-inline" style="padding: 0;">
+                    <div class="form-group">
+                        <label>Source material (optional)</label>
+                        <select @bind="_quizMaterialId">
+                            <option value="0">Any course material</option>
+                            @foreach (var m in _materials)
+                            {
+                                <option value="@m.Id">@m.Title</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Number of questions</label>
+                        <input type="number" min="1" max="20" @bind="_questionCount" />
+                    </div>
+                </div>
+                <button class="btn btn-primary" @onclick="GenerateQuizAsync" disabled="@(_busy || _courseId <= 0)">
+                    @(_busy ? "Generating..." : "Generate Quiz")
+                </button>
+                @if (_quiz is not null)
+                {
+                    <p class="rec-track" style="margin-top: 12px;">
+                        Provider: @_quiz.Provider / @_quiz.Model — <strong>draft content, review before use</strong>.
+                    </p>
+                    <div class="recommendation-list">
+                        @for (var i = 0; i < _quiz.Questions.Count; i++)
+                        {
+                            var q = _quiz.Questions[i];
+                            <div class="recommendation-item" style="display: block;">
+                                <div class="rec-title">@(i + 1). @q.Question</div>
+                                <ul style="margin: 8px 0 0 20px;">
+                                    @for (var o = 0; o < q.Options.Count; o++)
+                                    {
+                                        <li>
+                                            @q.Options[o]
+                                            @if (o == q.CorrectIndex)
+                                            {
+                                                <span class="status-badge excellent">Correct</span>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                                @if (!string.IsNullOrWhiteSpace(q.Explanation))
+                                {
+                                    <div class="rec-track">@q.Explanation</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(q.Reference))
+                                {
+                                    <div class="rec-track">Source: @q.Reference</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (_tab == "summarize")
+    {
+        <div class="card">
+            <div class="card-header"><h3>Summarize a Lecture</h3></div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label>Material</label>
+                    <select @bind="_summarizeMaterialId">
+                        <option value="0">Select a material...</option>
+                        @foreach (var m in _materials)
+                        {
+                            <option value="@m.Id">@m.Title (@m.Type)</option>
+                        }
+                    </select>
+                </div>
+                <button class="btn btn-primary" @onclick="SummarizeAsync" disabled="@(_busy || _summarizeMaterialId <= 0)">
+                    @(_busy ? "Summarizing..." : "Summarize")
+                </button>
+                @if (_summary is not null)
+                {
+                    <div class="chart-container">
+                        <h4>@_summary.Title</h4>
+                        <p>@_summary.Summary</p>
+                        <p class="rec-track">Provider: @_summary.Provider / @_summary.Model</p>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (_tab == "ask")
+    {
+        <div class="card">
+            <div class="card-header"><h3>Ask a Question About Your Course</h3></div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label>Your question</label>
+                    <textarea rows="3" @bind="_question" placeholder="e.g. What does the course material say about normalization?"></textarea>
+                </div>
+                <button class="btn btn-primary" @onclick="AskAsync" disabled="@(_busy || _courseId <= 0 || string.IsNullOrWhiteSpace(_question))">
+                    @(_busy ? "Thinking..." : "Ask")
+                </button>
+                @if (_answer is not null)
+                {
+                    <div class="chart-container">
+                        <p>@_answer.Answer</p>
+                        @if (_answer.Grounded && _answer.Sources.Count > 0)
+                        {
+                            <p class="rec-track">Grounded in: @string.Join(", ", _answer.Sources)</p>
+                        }
+                        else
+                        {
+                            <p class="rec-track"><span class="status-badge needs-attention">Not grounded</span> This answer was not based on course materials — verify before relying on it.</p>
+                        }
+                        <p class="rec-track">Provider: @_answer.Provider / @_answer.Model</p>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private List<DoctorCourseSummaryDto> _courses = new();
+    private List<DoctorMaterialDto> _materials = new();
+    private string _tab = "quiz";
+    private int _courseId;
+    private int _quizMaterialId;
+    private int _summarizeMaterialId;
+    private int _questionCount = 5;
+    private string _question = "";
+    private bool _busy;
+    private string? _error;
+    private bool _denied;
+    private bool _started;
+    private bool _available;
+    private bool _statusChecked;
+
+    private QuizGenerationResponse? _quiz;
+    private LectureSummaryDto? _summary;
+    private LectureAnswerDto? _answer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized) return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        if (user.Role != "Doctor")
+        {
+            _denied = true;
+            return;
+        }
+        try
+        {
+            _courses = await Http.GetFromJsonAsync<List<DoctorCourseSummaryDto>>("/api/doctor/courses") ?? new();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _denied = true;
+            return;
+        }
+        await CheckStatusAsync();
+    }
+
+    private async Task CheckStatusAsync()
+    {
+        try
+        {
+            var status = await Http.GetFromJsonAsync<AiStatusDto>("/api/doctor/ai/status");
+            _available = status?.Available ?? false;
+        }
+        catch
+        {
+            _available = false;
+        }
+        finally
+        {
+            _statusChecked = true;
+        }
+    }
+
+    private async Task SelectSummarizeAsTab()
+    {
+        _tab = "summarize";
+        await LoadMaterialsForCourseAsync();
+    }
+
+    private async Task LoadMaterialsForCourseAsync()
+    {
+        if (_courseId <= 0) { _materials = new(); return; }
+        try
+        {
+            _materials = await Http.GetFromJsonAsync<List<DoctorMaterialDto>>($"/api/doctor/courses/{_courseId}/materials") ?? new();
+        }
+        catch
+        {
+            _materials = new();
+        }
+    }
+
+    private async Task GenerateQuizAsync()
+    {
+        _error = null; _quiz = null; _busy = true;
+        try
+        {
+            var req = new QuizGenerationRequest(_courseId, _quizMaterialId > 0 ? _quizMaterialId : null, _questionCount);
+            var resp = await Http.PostAsJsonAsync("/api/doctor/ai/quiz", req);
+            if (resp.IsSuccessStatusCode)
+                _quiz = await resp.Content.ReadFromJsonAsync<QuizGenerationResponse>();
+            else
+                _error = await AiErrorAsync(resp);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task SummarizeAsync()
+    {
+        _error = null; _summary = null; _busy = true;
+        try
+        {
+            var req = new SummarizeRequest(_courseId, _summarizeMaterialId);
+            var resp = await Http.PostAsJsonAsync("/api/doctor/ai/summarize", req);
+            if (resp.IsSuccessStatusCode)
+                _summary = await resp.Content.ReadFromJsonAsync<LectureSummaryDto>();
+            else
+                _error = await AiErrorAsync(resp);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AskAsync()
+    {
+        _error = null; _answer = null; _busy = true;
+        try
+        {
+            var req = new LectureQuestionRequest(_courseId, _question);
+            var resp = await Http.PostAsJsonAsync("/api/doctor/ai/ask", req);
+            if (resp.IsSuccessStatusCode)
+                _answer = await resp.Content.ReadFromJsonAsync<LectureAnswerDto>();
+            else
+                _error = await AiErrorAsync(resp);
+        }
+        finally { _busy = false; }
+    }
+
+    private static async Task<string> AiErrorAsync(HttpResponseMessage resp)
+    {
+        if (resp.StatusCode == HttpStatusCode.ServiceUnavailable)
+            return "No AI provider is available right now. Configure a provider and try again.";
+        if (resp.StatusCode == HttpStatusCode.BadGateway)
+            return "The AI provider returned an unusable response. Please try again.";
+        return "The request failed: " + await resp.Content.ReadAsStringAsync();
+    }
+
+    private sealed record AiStatusDto(bool Available, List<string> Providers, string Message);
+}

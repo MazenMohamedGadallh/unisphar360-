@@ -1,0 +1,126 @@
+@page "/career-assistant"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<PageTitle>Career Assistant - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Career Assistant</h1>
+    <p>Explore career paths, skill gaps, and opportunities based on your academic profile.</p>
+</div>
+
+<!-- Career Recommendations -->
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-header">
+        <h3>Recommended Career Paths</h3>
+    </div>
+    @if (_recommendations is null)
+    {
+        <div class="loading">Loading career recommendations...</div>
+    }
+    else if (!_recommendations.Any())
+    {
+        <div class="empty-state">No career recommendations available. Complete more courses to unlock personalized recommendations.</div>
+    }
+    else
+    {
+        <div class="career-list">
+            @foreach (var rec in _recommendations)
+            {
+                <div class="career-item">
+                    <div class="career-header">
+                        <h4>@rec.Title</h4>
+                        <span class="match-badge @rec.MatchConfidence.ToLower()">@rec.MatchConfidence Match</span>
+                    </div>
+                    <p class="career-desc">@rec.Description</p>
+                    <div class="career-details">
+                        <div class="career-section">
+                            <strong>Required Skills:</strong> @rec.RequiredSkills
+                        </div>
+                        <div class="career-section">
+                            <strong>Recommended Courses:</strong> @rec.RecommendedCourses
+                        </div>
+                        <div class="career-section">
+                            <strong>Internship Types:</strong> @rec.InternshipTypes
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Skill Gap Analysis -->
+<div class="card">
+    <div class="card-header">
+        <h3>Skill Gap Analysis</h3>
+    </div>
+    @if (_skillGaps is null)
+    {
+        <div class="loading">Analyzing your skills...</div>
+    }
+    else
+    {
+        <div class="skill-gaps-content">
+            <div class="skill-section">
+                <h4>Completed Courses</h4>
+                @if (_skillGaps.CompletedCourses.Any())
+                {
+                    <ul>
+                        @foreach (var course in _skillGaps.CompletedCourses)
+                        {
+                            <li>@course</li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p class="empty-state">No completed courses yet.</p>
+                }
+            </div>
+            <div class="skill-section">
+                <h4>Pending Courses</h4>
+                @if (_skillGaps.PendingCourses.Any())
+                {
+                    <ul>
+                        @foreach (var course in _skillGaps.PendingCourses)
+                        {
+                            <li>@course</li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p class="empty-state">You have explored all available courses!</p>
+                }
+            </div>
+            <div class="skill-recommendation">
+                <strong>Recommendation:</strong> @_skillGaps.Recommendation
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<CareerRecommendationDto>? _recommendations = null;
+    private SkillGapAnalysis? _skillGaps = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _recommendations = await Http.GetFromJsonAsync<List<CareerRecommendationDto>>("/api/career/recommendations");
+            _skillGaps = await Http.GetFromJsonAsync<SkillGapAnalysis>("/api/career/skill-gaps");
+        }
+        catch
+        {
+            // Handle error
+        }
+    }
+}

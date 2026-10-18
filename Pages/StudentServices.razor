@@ -1,0 +1,135 @@
+@page "/student-services"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@inject HttpClient Http
+
+<PageTitle>Student Services - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Student Services</h1>
+    <p>Events, announcements, FAQs, and support.</p>
+</div>
+
+<!-- Announcements -->
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-header">
+        <h3>Announcements</h3>
+    </div>
+    @if (_announcements is null)
+    {
+        <div class="loading">Loading announcements...</div>
+    }
+    else if (!_announcements.Any())
+    {
+        <div class="empty-state">No announcements at this time.</div>
+    }
+    else
+    {
+        <div class="announcement-list">
+            @foreach (var ann in _announcements)
+            {
+                <div class="announcement-item">
+                    <div class="announcement-header">
+                        <h4>@ann.Title</h4>
+                        <span class="announcement-category">@ann.Category</span>
+                    </div>
+                    <p>@ann.Body</p>
+                    <span class="announcement-date">@ann.CreatedAtUtc.ToString("MMM dd, yyyy")</span>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Events -->
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-header">
+        <h3>Upcoming Events</h3>
+    </div>
+    @if (_events is null)
+    {
+        <div class="loading">Loading events...</div>
+    }
+    else if (!_events.Any())
+    {
+        <div class="empty-state">No upcoming events.</div>
+    }
+    else
+    {
+        <div class="event-list">
+            @foreach (var evt in _events)
+            {
+                <div class="event-item">
+                    <div class="event-date">
+                        <span class="event-day">@evt.StartsAtUtc.Day</span>
+                        <span class="event-month">@evt.StartsAtUtc.ToString("MMM")</span>
+                    </div>
+                    <div class="event-info">
+                        <h4>@evt.Title</h4>
+                        <p>&#128205; @evt.Location</p>
+                        <p>@evt.StartsAtUtc.ToString("hh:mm tt")</p>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- FAQs -->
+<div class="card">
+    <div class="card-header">
+        <h3>Frequently Asked Questions</h3>
+    </div>
+    <div class="faq-list">
+        <div class="faq-item">
+            <h4>How do I enroll in a course?</h4>
+            <p>Go to the Courses page, find a course you're interested in, and click the Enroll button. You can also ask your academic advisor for recommendations.</p>
+        </div>
+        <div class="faq-item">
+            <h4>How is my GPA calculated?</h4>
+            <p>GPA is calculated based on your grade points divided by total credits. Each grade letter corresponds to a point value (A=4.0, B+=3.3, B=3.0, etc.).</p>
+        </div>
+        <div class="faq-item">
+            <h4>How do I change my study plan?</h4>
+            <p>Navigate to the Study Planner page. You can add, edit, or delete study items. Changes are saved automatically.</p>
+        </div>
+        <div class="faq-item">
+            <h4>Who do I contact for academic support?</h4>
+            <p>Reach out to your academic advisor or visit the Student Services office during working hours.</p>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<AnnouncementDto>? _announcements;
+    private List<EventDto>? _events;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _announcements = await Http.GetFromJsonAsync<List<AnnouncementDto>>("/api/admin/announcements");
+        _events = await Http.GetFromJsonAsync<List<EventDto>>("/api/events?upcoming=true");
+    }
+}
+
+public class AnnouncementDto
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public string Body { get; set; } = "";
+    public string? Category { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public class EventDto
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public string Location { get; set; } = "";
+    public DateTime StartsAtUtc { get; set; }
+    public string? ImageUrl { get; set; }
+    public string? Description { get; set; }
+}

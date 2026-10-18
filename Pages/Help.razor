@@ -1,0 +1,54 @@
+@page "/help"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+
+<PageTitle>Help & Support - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Help & Support</h1>
+    <p>Get help with using UniSphere 360+.</p>
+</div>
+
+<div class="card" style="max-width: 600px;">
+    <div class="card-header">
+        <h3>Frequently Asked Questions</h3>
+    </div>
+    <div class="faq-list">
+        <div class="faq-item">
+            <h4>How do I navigate the dashboard?</h4>
+            <p>Use the sidebar on the left to navigate between sections. You can also use the search bar at the top to quickly find courses, events, or modules.</p>
+        </div>
+        <div class="faq-item">
+            <h4>How do I track my academic progress?</h4>
+            <p>Visit the Academic Advisor page to see your GPA, completed courses, attendance rate, and personalized insights.</p>
+        </div>
+        <div class="faq-item">
+            <h4>How do I plan my study schedule?</h4>
+            <p>Use the Study Planner to create and manage weekly study activities. Mark them as complete as you finish them.</p>
+        </div>
+        <div class="faq-item">
+            <h4>How do I find career opportunities?</h4>
+            <p>Visit the Career Assistant page to explore career paths, skill gaps, and internship recommendations based on your academic profile.</p>
+        </div>
+        <div class="faq-item">
+            <h4>How do I search for research papers?</h4>
+            <p>Go to the Research Hub and use the search bar to find academic papers. You can also view trending papers on the main page.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="max-width: 600px; margin-top: 24px;">
+    <div class="card-header">
+        <h3>Contact Support</h3>
+    </div>
+    <div class="contact-info">
+        <p><strong>Email:</strong> support@unisphere.edu</p>
+        <p><strong>Phone:</strong> +20 123 456 7890</p>
+        <p><strong>Office Hours:</strong> Sunday - Thursday, 9:00 AM - 4:00 PM</p>
+        <p><strong>Location:</strong> Student Services Building, Room 204</p>
+    </div>
+</div>

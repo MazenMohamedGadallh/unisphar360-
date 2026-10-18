@@ -1,0 +1,244 @@
+@page "/doctor"
+@*
+Route guard here is UX only. The server enforces [Authorize(Roles="Doctor")]
+on every /api/doctor endpoint, so a non-doctor who reaches this page gets
+no data regardless of what the UI shows.
+*@
+@using System.Net
+@using UniSphere.Api.Dtos
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+
+<PageTitle>Doctor Dashboard - UniSphere 360+</PageTitle>
+
+@if (_denied)
+{
+    <div class="alert alert-error">Access denied: this area is for doctors only.</div>
+}
+else
+{
+    <div class="page-header">
+        <h1>Doctor Dashboard</h1>
+        <p>Welcome back@(string.IsNullOrEmpty(_data?.DoctorName) ? "" : $", {_data.DoctorName}") — here is your teaching overview.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error <button class="btn btn-sm btn-secondary" @onclick="LoadAsync">Retry</button></div>
+    }
+
+    @if (_loading && _data is null)
+    {
+        <div class="loading">Loading your dashboard...</div>
+    }
+    else if (_data is not null)
+    {
+        <div class="summary-cards">
+            <div class="card">
+                <div class="card-icon">&#128218;</div>
+                <div class="card-info">
+                    <span class="card-label">My Courses</span>
+                    <span class="card-value">@_data.CourseCount</span>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-icon">&#128101;</div>
+                <div class="card-info">
+                    <span class="card-label">Enrolled Students</span>
+                    <span class="card-value">@_data.StudentCount</span>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-icon">&#127942;</div>
+                <div class="card-info">
+                    <span class="card-label">Average Grade</span>
+                    <span class="card-value">@(_data.AverageGradePoints?.ToString("0.00") ?? "—")</span>
+                    <span class="card-delta">out of 4.00</span>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-icon">&#128197;</div>
+                <div class="card-info">
+                    <span class="card-label">Average Attendance</span>
+                    <span class="card-value">@(_data.AverageAttendance.HasValue ? $"{_data.AverageAttendance:0.#}%" : "—")</span>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-icon">&#9888;</div>
+                <div class="card-info">
+                    <span class="card-label">Academic Alerts</span>
+                    <span class="card-value">@_data.Alerts.Count</span>
+                    <span class="card-delta">Students needing support</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="two-column">
+            <div class="card">
+                <div class="card-header">
+                    <h3>My Courses</h3>
+                    <NavLink href="/doctor/courses" class="view-all">Manage &rarr;</NavLink>
+                </div>
+                @if (_data.Courses.Count == 0)
+                {
+                    <div class="empty-state">You are not assigned to any course yet. Contact an administrator.</div>
+                }
+                else
+                {
+                    <div class="table-wrapper">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Course</th>
+                                    <th>Students</th>
+                                    <th>Avg Grade</th>
+                                    <th>Attendance</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in _data.Courses)
+                                {
+                                    <tr>
+                                        <td><strong>@c.Code</strong> — @c.Title</td>
+                                        <td>@c.StudentCount</td>
+                                        <td>@(c.AverageGradePoints?.ToString("0.00") ?? "—")</td>
+                                        <td>@(c.AverageAttendance.HasValue ? $"{c.AverageAttendance:0.#}%" : "—")</td>
+                                        <td><NavLink href="@($"/doctor/courses/{c.CourseId}")" class="btn btn-sm btn-secondary">Open</NavLink></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h3>Recent Course Announcements</h3></div>
+                @if (_data.RecentAnnouncements.Count == 0)
+                {
+                    <div class="empty-state">No course announcements yet.</div>
+                }
+                else
+                {
+                    <div class="recommendation-list">
+                        @foreach (var a in _data.RecentAnnouncements)
+                        {
+                            <div class="recommendation-item">
+                                <div class="rec-info">
+                                    <span class="rec-title">@a.Title</span>
+                                    <span class="rec-track">@a.CourseName · @a.CreatedAtUtc.ToString("MMM d, yyyy")</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 24px;">
+            <div class="card-header"><h3>Academic Alerts</h3></div>
+            @if (_data.Alerts.Count == 0)
+            {
+                <div class="empty-state">No students currently need additional support.</div>
+            }
+            else
+            {
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Student</th><th>Reason</th><th>Severity</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var alert in _data.Alerts)
+                            {
+                                <tr>
+                                    <td>@alert.StudentName</td>
+                                    <td>@alert.Reason</td>
+                                    <td>
+                                        <span class="status-badge @(alert.Severity == "High" ? "needs-attention" : "good")">@alert.Severity</span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-body">
+                    <p class="rec-track">Advisory only — based on recorded grades and attendance. These flags never affect a student automatically.</p>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private DoctorDashboardDto? _data;
+    private string? _error;
+    private bool _loading = true;
+    private bool _denied;
+    private bool _started;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized) return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        if (user.Role != "Doctor")
+        {
+            _denied = true;
+            _loading = false;
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _data = await Http.GetFromJsonAsync<DoctorDashboardDto>("/api/doctor/dashboard");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _denied = true;
+        }
+        catch
+        {
+            _error = "Could not load your dashboard. Please try again.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

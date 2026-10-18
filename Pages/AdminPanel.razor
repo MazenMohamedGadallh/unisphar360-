@@ -1,0 +1,600 @@
+@page "/admin"
+@*
+[Authorize(Roles = "Admin")] removed on purpose (see Dashboard.razor):
+the server challenges every F5 to /login because the browser never
+sends the localStorage JWT as a bearer header. Access is still
+enforced: OnInitializedAsync below redirects non-admins, and every
+/api endpoint is [Authorize]-guarded server-side.
+*@
+@using System.Net
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>Admin Panel - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Admin Panel</h1>
+    <p>System analytics, users and control.</p>
+</div>
+
+@if (!string.IsNullOrEmpty(_toast))
+{
+    <div class="alert @(_toastIsError ? "alert-error" : "alert-success")">@_toast</div>
+}
+
+<div class="admin-tabs" role="tablist">
+    @foreach (var tab in Tabs)
+    {
+        <button type="button" role="tab" aria-selected="@(_tab == tab.Key)"
+                class="@("admin-tab" + (_tab == tab.Key ? " selected" : ""))"
+                @onclick="() => SelectTabAsync(tab.Key)">
+            @tab.Value
+        </button>
+    }
+</div>
+
+@if (_tab == "overview")
+{
+    @if (_overview is null)
+    {
+        <div class="loading">Loading overview...</div>
+    }
+    else
+    {
+        <div class="summary-cards admin-kpis">
+            <div class="card"><div class="card-info"><span class="card-label">Students</span><span class="card-value">@_overview.TotalStudents</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">Graduates</span><span class="card-value">@_overview.TotalGraduates</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">Doctors</span><span class="card-value">@_overview.TotalDoctors</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">Admins</span><span class="card-value">@_overview.TotalAdmins</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">New (7d / 30d)</span><span class="card-value">@_overview.NewRegistrations7d / @_overview.NewRegistrations30d</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">Active today</span><span class="card-value">@_overview.ActiveUsersToday</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">Avg GPA</span><span class="card-value">@_overview.AverageGpa.ToString("0.00")</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">Avg attendance</span><span class="card-value">@_overview.AverageAttendance.ToString("0")%</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">Courses</span><span class="card-value">@_overview.CoursesCount</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">On track</span><span class="card-value">@_overview.OnTrackStudents</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">Needs attention</span><span class="card-value">@_overview.NeedsAttentionStudents</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">At risk</span><span class="card-value">@_overview.AtRiskStudents</span></div></div>
+        </div>
+        <div class="card" style="margin-top: 24px;">
+            <div class="card-header"><h3>Logins per day (last 14 days)</h3></div>
+            <div class="chart-container">
+                @if (!_overview.LoginsPerDay.Any())
+                {
+                    <div class="empty-state">No logins recorded yet.</div>
+                }
+                else
+                {
+                    <svg viewBox="0 0 340 170" class="trend-chart" role="img" aria-label="Logins per day">
+                        @{
+                            var max = Math.Max(1, _overview.LoginsPerDay.Max(d => d.Count));
+                            var bw = 300.0 / _overview.LoginsPerDay.Count;
+                        }
+                        @for (var i = 0; i < _overview.LoginsPerDay.Count; i++)
+                        {
+                            var d = _overview.LoginsPerDay[i];
+                            var h = 130.0 * d.Count / max;
+                            <rect x="@(30 + i * bw + 2)" y="@(140 - h)" width="@(bw - 4)" height="@h" class="column-bar" rx="2" />
+                            @LoginDayLabel(30 + i * bw + bw / 2, d)
+                        }
+                    </svg>
+                }
+            </div>
+        </div>
+    }
+}
+else if (_tab == "users")
+{
+    <div class="card">
+        <div class="card-header"><h3>Users</h3></div>
+        <div class="form-inline">
+            <div class="form-group">
+                <label for="userSearch">Search</label>
+                <input id="userSearch" @bind="_userSearch" @bind:event="oninput" @onkeyup="SearchUsersKeyUpAsync" placeholder="Name or email..." />
+            </div>
+            <div class="form-group">
+                <label for="userType">Type</label>
+                <select id="userType" @bind="_userType" @bind:after="SearchUsersAsync">
+                    <option value="">All</option>
+                    <option>Student</option>
+                    <option>Graduate</option>
+                    <option>Doctor</option>
+                    <option>Admin</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="userStatus">Status</label>
+                <select id="userStatus" @bind="_userStatus" @bind:after="SearchUsersAsync">
+                    <option value="all">All</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="deleted">Deleted</option>
+                </select>
+            </div>
+        </div>
+        @if (_users is null)
+        {
+            <div class="loading">Loading users...</div>
+        }
+        else if (!_users.Items.Any())
+        {
+            <div class="empty-state">No users match the current filters.</div>
+        }
+        else
+        {
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last login</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        @foreach (var u in _users.Items)
+                        {
+                            <tr>
+                                <td>@u.FullName</td>
+                                <td>@u.Email</td>
+                                <td>
+                                    <select value="@u.Role" @onchange="(e) => AskRoleChangeAsync(u, e.Value?.ToString())" disabled="@u.IsDeleted" aria-label="Role for @u.FullName">
+                                        @foreach (var r in new[] { "Student", "Graduate", "Doctor", "Admin" })
+                                        {
+                                            <option value="@r">@r</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>
+                                    @if (u.IsDeleted)
+                                    {
+                                        <span class="status-badge needs-attention">Deleted</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="status-badge @(u.IsActive ? "excellent" : "good")">@(u.IsActive ? "Active" : "Inactive")</span>
+                                    }
+                                </td>
+                                <td>@(u.LastLoginAtUtc?.ToString("g") ?? "-")</td>
+                                <td class="row-actions">
+                                    @if (!u.IsDeleted)
+                                    {
+                                        <button class="btn btn-sm @(u.IsActive ? "btn-secondary" : "btn-primary")" @onclick="() => AskStatusChangeAsync(u)">
+                                            @(u.IsActive ? "Deactivate" : "Activate")
+                                        </button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => AskDeleteAsync(u)">Delete</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination">
+                <button class="btn btn-sm btn-secondary" disabled="@(_userPage <= 1)" @onclick="() => ChangeUserPageAsync(-1)">Prev</button>
+                <span>Page @_userPage of @TotalUserPages (@_users.Total total)</span>
+                <button class="btn btn-sm btn-secondary" disabled="@(_userPage >= TotalUserPages)" @onclick="() => ChangeUserPageAsync(1)">Next</button>
+            </div>
+        }
+    </div>
+}
+else if (_tab == "risk")
+{
+    <div class="card">
+        <div class="card-header"><h3>Students at risk</h3></div>
+        @if (_risk is null)
+        {
+            <div class="loading">Scoring students...</div>
+        }
+        else if (!_risk.Any())
+        {
+            <div class="empty-state">No at-risk students right now.</div>
+        }
+        else
+        {
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Score</th><th>Predicted GPA</th></tr></thead>
+                    <tbody>
+                        @foreach (var s in _risk)
+                        {
+                            <tr>
+                                <td>@s.FullName</td>
+                                <td>@s.Email</td>
+                                <td>@s.Department</td>
+                                <td>@s.Score.ToString("0")</td>
+                                <td>@s.PredictedGpa.ToString("0.00")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}
+else if (_tab == "departments")
+{
+    <div class="card">
+        <div class="card-header"><h3>Departments</h3></div>
+        @if (_departments is null)
+        {
+            <div class="loading">Loading departments...</div>
+        }
+        else if (!_departments.Any())
+        {
+            <div class="empty-state">No department data yet.</div>
+        }
+        else
+        {
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th>Department</th><th>Students</th><th>Avg GPA</th><th>Avg attendance</th></tr></thead>
+                    <tbody>
+                        @foreach (var d in _departments)
+                        {
+                            <tr>
+                                <td>@d.Department</td>
+                                <td>@d.Students</td>
+                                <td>@d.AverageGpa.ToString("0.00")</td>
+                                <td>@d.AverageAttendance.ToString("0")%</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}
+else if (_tab == "audit")
+{
+    <div class="card">
+        <div class="card-header"><h3>Audit log</h3></div>
+        @if (_audit is null)
+        {
+            <div class="loading">Loading audit log...</div>
+        }
+        else if (!_audit.Items.Any())
+        {
+            <div class="empty-state">No audit entries yet.</div>
+        }
+        else
+        {
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th>Time</th><th>User</th><th>Method</th><th>Path</th><th>Status</th><th>ms</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in _audit.Items)
+                        {
+                            <tr>
+                                <td>@a.Timestamp.ToString("g")</td>
+                                <td>@a.UserId</td>
+                                <td>@a.Method</td>
+                                <td>@a.Path</td>
+                                <td>@a.StatusCode</td>
+                                <td>@a.DurationMs</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination">
+                <button class="btn btn-sm btn-secondary" disabled="@(_auditPage <= 1)" @onclick="() => ChangeAuditPageAsync(-1)">Prev</button>
+                <span>Page @_auditPage of @TotalAuditPages (@_audit.Total total)</span>
+                <button class="btn btn-sm btn-secondary" disabled="@(_auditPage >= TotalAuditPages)" @onclick="() => ChangeAuditPageAsync(1)">Next</button>
+            </div>
+        }
+    </div>
+}
+else if (_tab == "system")
+{
+    @if (_health is null)
+    {
+        <div class="loading">Checking system health...</div>
+    }
+    else
+    {
+        <div class="summary-cards admin-kpis">
+            <div class="card"><div class="card-info"><span class="card-label">Status</span><span class="card-value">@_health.Status</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">Database</span><span class="card-value">@_health.Database</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">Uptime</span><span class="card-value">@FormatUptime(_health.UptimeSeconds)</span></div></div>
+            <div class="card"><div class="card-info"><span class="card-label">Version</span><span class="card-value">@_health.Version</span></div></div>
+        </div>
+    }
+}
+
+@if (_confirmMessage is not null)
+{
+    <div class="modal-overlay" @onclick="CancelConfirm">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="admin-confirm-title" @onclick:stopPropagation="true" @onkeydown="OnConfirmKeyDown">
+            <div class="modal-header"><h3 id="admin-confirm-title">@_confirmTitle</h3></div>
+            <div class="modal-body"><p>@_confirmMessage</p></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" @onclick="CancelConfirm" autofocus>Cancel</button>
+                <button class="btn btn-danger" @onclick="RunConfirmAsync">Confirm</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly Dictionary<string, string> Tabs = new()
+    {
+        ["overview"] = "Overview",
+        ["users"] = "Users",
+        ["risk"] = "Student Risk",
+        ["departments"] = "Departments",
+        ["audit"] = "Audit Log",
+        ["system"] = "System"
+    };
+
+    private string _tab = "overview";
+    private string? _toast;
+    private bool _toastIsError;
+
+    private AdminOverviewDto? _overview;
+    private PagedResultDto<AdminUserDto>? _users;
+    private string _userSearch = "";
+    private string _userType = "";
+    private string _userStatus = "all";
+    private int _userPage = 1;
+    private const int UserPageSize = 20;
+    private int TotalUserPages => _users is null ? 1 : Math.Max(1, (_users.Total + UserPageSize - 1) / UserPageSize);
+
+    private List<AtRiskStudentDto>? _risk;
+    private List<DepartmentStatsDto>? _departments;
+    private PagedResultDto<AuditLogDto>? _audit;
+    private int _auditPage = 1;
+    private const int AuditPageSize = 50;
+    private int TotalAuditPages => _audit is null ? 1 : Math.Max(1, (_audit.Total + AuditPageSize - 1) / AuditPageSize);
+
+    private SystemHealthDto? _health;
+
+    private string? _confirmTitle;
+    private string? _confirmMessage;
+    private Func<Task>? _confirmAction;
+    // Deferred first-run guard: prerender / pre-restore passes must not
+    // redirect or 401-logout a signed-in user (see OnAfterRenderAsync).
+    private bool _started;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // F5: auth restores in OnAfterRenderAsync (JS interop). Never
+        // redirect to /login while it is still resolving: GetUserAsync()
+        // is null until the persisted token is read.
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        // The router does not enforce roles client-side, so check here.
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        if (!string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            Nav.NavigateTo("/dashboard?denied=1", replace: true);
+            return;
+        }
+        await LoadTabAsync();
+    }
+
+    private async Task SelectTabAsync(string tab)
+    {
+        _tab = tab;
+        await LoadTabAsync();
+    }
+
+    private Task LoadTabAsync() => _tab switch
+    {
+        "users" => LoadUsersAsync(),
+        "risk" => LoadRiskAsync(),
+        "departments" => LoadDepartmentsAsync(),
+        "audit" => LoadAuditAsync(),
+        "system" => LoadHealthAsync(),
+        _ => LoadOverviewAsync()
+    };
+
+    private void Toast(string message, bool isError = false)
+    {
+        _toast = message;
+        _toastIsError = isError;
+    }
+
+    private async Task<bool> GuardedLoadAsync(Func<Task> load)
+    {
+        try
+        {
+            await load();
+            return true;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // Genuine expiry only: loads are deferred until auth resolves,
+            // so a 401 here is never the pre-restore case on F5.
+            if (!AuthService.IsInitialized)
+            {
+                Toast("Could not load data. Check your connection and try again.", true);
+                return false;
+            }
+            await AuthService.LogoutAsync();
+            Nav.NavigateTo("/login?expired=1");
+            return false;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            Toast("Access denied for this action.", true);
+            return false;
+        }
+        catch
+        {
+            Toast("Could not load data. Check your connection and try again.", true);
+            return false;
+        }
+    }
+
+    private Task LoadOverviewAsync() => GuardedLoadAsync(async () =>
+        _overview = await Http.GetFromJsonAsync<AdminOverviewDto>("/api/admin/overview"));
+
+    private Task LoadRiskAsync() => GuardedLoadAsync(async () =>
+        _risk = await Http.GetFromJsonAsync<List<AtRiskStudentDto>>("/api/admin/analytics/at-risk-students") ?? new());
+
+    private Task LoadDepartmentsAsync() => GuardedLoadAsync(async () =>
+        _departments = await Http.GetFromJsonAsync<List<DepartmentStatsDto>>("/api/admin/analytics/departments") ?? new());
+
+    private Task LoadHealthAsync() => GuardedLoadAsync(async () =>
+        _health = await Http.GetFromJsonAsync<SystemHealthDto>("/api/admin/system-health"));
+
+    private async Task LoadUsersAsync()
+    {
+        var query = $"/api/admin/users/search?page={_userPage}&pageSize={UserPageSize}" +
+            $"&search={Uri.EscapeDataString(_userSearch)}&type={Uri.EscapeDataString(_userType)}&status={Uri.EscapeDataString(_userStatus)}";
+        await GuardedLoadAsync(async () =>
+            _users = await Http.GetFromJsonAsync<PagedResultDto<AdminUserDto>>(query));
+    }
+
+    private async Task LoadAuditAsync()
+    {
+        await GuardedLoadAsync(async () =>
+            _audit = await Http.GetFromJsonAsync<PagedResultDto<AuditLogDto>>(
+                $"/api/admin/audit-log?page={_auditPage}&pageSize={AuditPageSize}"));
+    }
+
+    private async Task SearchUsersKeyUpAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            _userPage = 1;
+            await LoadUsersAsync();
+        }
+    }
+
+    private async Task SearchUsersAsync()
+    {
+        _userPage = 1;
+        await LoadUsersAsync();
+    }
+
+    private async Task ChangeUserPageAsync(int delta)
+    {
+        _userPage = Math.Max(1, _userPage + delta);
+        await LoadUsersAsync();
+    }
+
+    private async Task ChangeAuditPageAsync(int delta)
+    {
+        _auditPage = Math.Max(1, _auditPage + delta);
+        await LoadAuditAsync();
+    }
+
+    private void Ask(string title, string message, Func<Task> action)
+    {
+        _confirmTitle = title;
+        _confirmMessage = message;
+        _confirmAction = action;
+    }
+
+    private void CancelConfirm()
+    {
+        _confirmTitle = null;
+        _confirmMessage = null;
+        _confirmAction = null;
+    }
+
+    private void OnConfirmKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CancelConfirm();
+    }
+
+    private async Task RunConfirmAsync()
+    {
+        var action = _confirmAction;
+        CancelConfirm();
+        if (action is not null) await action();
+    }
+
+    private void AskStatusChangeAsync(AdminUserDto u) => Ask(
+        u.IsActive ? "Deactivate user" : "Activate user",
+        u.IsActive
+            ? $"Deactivate {u.FullName} ({u.Email})? They will no longer be able to sign in."
+            : $"Activate {u.FullName} ({u.Email})?",
+        async () =>
+        {
+            var response = await Http.PatchAsJsonAsync($"/api/admin/users/{u.Id}/status", new { isActive = !u.IsActive });
+            if (response.IsSuccessStatusCode)
+            {
+                Toast($"{u.FullName} {(u.IsActive ? "deactivated" : "activated")}.");
+                await LoadUsersAsync();
+            }
+            else
+            {
+                Toast($"Could not update {u.FullName}: {await response.Content.ReadAsStringAsync()}", true);
+            }
+        });
+
+    private void AskRoleChangeAsync(AdminUserDto u, string? role)
+    {
+        if (string.IsNullOrWhiteSpace(role) || role == u.Role) return;
+        var newRole = role;
+        Ask("Change role",
+            $"Change {u.FullName} from {u.Role} to {newRole}?",
+            async () =>
+            {
+                var response = await Http.PatchAsJsonAsync($"/api/admin/users/{u.Id}/role", new { role = newRole });
+                if (response.IsSuccessStatusCode)
+                {
+                    Toast($"{u.FullName} is now {newRole}.");
+                    await LoadUsersAsync();
+                }
+                else
+                {
+                    Toast($"Could not change role: {await response.Content.ReadAsStringAsync()}", true);
+                }
+            });
+    }
+
+    private void AskDeleteAsync(AdminUserDto u) => Ask(
+        "Delete user",
+        $"Soft-delete {u.FullName} ({u.Email})? They will no longer be able to sign in, but history is kept.",
+        async () =>
+        {
+            var response = await Http.DeleteAsync($"/api/admin/users/{u.Id}");
+            if (response.IsSuccessStatusCode)
+            {
+                Toast($"{u.FullName} deleted.");
+                await LoadUsersAsync();
+            }
+            else
+            {
+                Toast($"Could not delete {u.FullName}: {await response.Content.ReadAsStringAsync()}", true);
+            }
+        });
+
+    private static Microsoft.AspNetCore.Components.MarkupString LoginDayLabel(double x, UniSphere.Api.Dtos.DailyCountDto d) =>
+        // MarkupString because Razor reserves the <text> tag.
+        new($"<text x=\"{x:0.#}\" y=\"155\" text-anchor=\"middle\" class=\"trend-label\">{d.Date:MM/dd}</text>");
+
+    private static string FormatUptime(double seconds)
+    {
+        var span = TimeSpan.FromSeconds(seconds);
+        return span.TotalHours >= 1 ? $"{(int)span.TotalHours}h {span.Minutes}m" : $"{span.Minutes}m {span.Seconds}s";
+    }
+}

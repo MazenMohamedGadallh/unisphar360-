@@ -1,0 +1,590 @@
+@page "/dashboard"
+@*
+Page-level [Authorize] removed on purpose: the server enforces it
+during prerendering against the HTTP Authorization header, but browsers
+never send the localStorage JWT on a page navigation — so every F5 was
+challenged (302 to /login) before the circuit could restore the session
+from ProtectedLocalStorage. Authorization for this page is enforced:
+ - all data: server-side [Authorize] on /api (see Controllers/*)
+ - the UI shell: MainLayout's auth gate bounces anonymous users to
+   /login (replace: true) once the auth state resolves.
+*@
+@using System.Net
+@using UniSphere.Api.Dtos
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+
+<PageTitle>UniSphere 360+ - Dashboard</PageTitle>
+
+<div class="dashboard">
+    <!-- Welcome Banner -->
+    <div class="welcome-banner">
+        <div class="welcome-content">
+            <h1>@_greeting, @_firstName!</h1>
+            <p>Your academic journey matters. Let's make it better together.</p>
+        </div>
+        <div class="welcome-decoration">&#127891;</div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_summaryError))
+    {
+        <div class="alert alert-error">@_summaryError</div>
+    }
+
+    @if (Denied == "1")
+    {
+        <div class="alert alert-error">Access denied: you don't have permission to view that page.</div>
+    }
+
+    <!-- Academic Summary Cards -->
+    <div class="summary-cards">
+        <div class="card gpa-card">
+            <div class="card-icon">&#127942;</div>
+            <div class="card-info">
+                <span class="card-label">Current GPA</span>
+                <span class="card-value">@(_summary?.CurrentGpa.ToString("0.00") ?? "--")</span>
+                @if (_summary is not null)
+                {
+                    <span class="card-delta @(_summary.GpaDeltaVsLastSemester >= 0 ? "positive" : "negative")">
+                        @(_summary.GpaDeltaVsLastSemester >= 0 ? "+" : "")@_summary.GpaDeltaVsLastSemester.ToString("0.00") from last semester
+                    </span>
+                }
+            </div>
+        </div>
+        <div class="card courses-card">
+            <div class="card-icon">&#128218;</div>
+            <div class="card-info">
+                <span class="card-label">Completed Courses</span>
+                <span class="card-value">@(_summary?.CompletedCourses ?? 0)/@(_summary?.TotalCourses ?? 0)</span>
+                <span class="card-delta">@(_summary?.CompletionPercent ?? 0)% complete</span>
+            </div>
+        </div>
+        <div class="card attendance-card">
+            <div class="card-icon">&#128197;</div>
+            <div class="card-info">
+                <span class="card-label">Attendance Rate</span>
+                <span class="card-value">@(_summary?.AttendanceRate ?? 0)%</span>
+                @if (_summary is not null)
+                {
+                    <span class="card-delta @(_summary.AttendanceDelta >= 0 ? "positive" : "negative")">
+                        @(_summary.AttendanceDelta >= 0 ? "+" : "")@_summary.AttendanceDelta% from last semester
+                    </span>
+                }
+            </div>
+        </div>
+        <div class="card improve-card">
+            <div class="card-icon">&#128161;</div>
+            <div class="card-info">
+                <span class="card-label">Subjects to Improve</span>
+                <span class="card-value">@(_summary?.SubjectsToImprove ?? 0)</span>
+                <span class="card-delta">Need attention</span>
+            </div>
+        </div>
+        <div class="card recommended-card">
+            <div class="card-icon">&#127891;</div>
+            <div class="card-info">
+                <span class="card-label">Recommended Courses</span>
+                <span class="card-value">@(_summary?.RecommendedCoursesCount ?? 0)</span>
+                <span class="card-delta">For you</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Academic Performance Table -->
+    <div class="card performance-card">
+        <div class="card-header">
+            <h3>Academic Performance</h3>
+            <NavLink href="/academic-advisor" class="view-all">View All &rarr;</NavLink>
+        </div>
+        @if (!string.IsNullOrEmpty(_performanceError))
+        {
+            <div class="alert alert-error">@_performanceError <button class="btn btn-small" @onclick="LoadPerformanceAsync">Retry</button></div>
+        }
+        else if (_performance is null)
+        {
+            <div class="loading">Loading performance data...</div>
+        }
+        else if (!_performance.Any())
+        {
+            <div class="empty-state">No academic records found. Enroll in courses to see your performance.</div>
+        }
+        else
+        {
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Course</th>
+                            <th>Grade</th>
+                            <th>Attendance</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _performance)
+                        {
+                            <tr>
+                                <td>@row.CourseName</td>
+                                <td>@row.GradeLetter (@row.GradePoints.ToString("0.0"))</td>
+                                <td>@row.AttendancePercent%</td>
+                                <td><span class="status-badge @row.Status.ToLower().Replace(" ", "-")">@row.Status</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    <!-- Two-column section -->
+    <div class="two-column">
+        <!-- Study Planner -->
+        <div class="card planner-card">
+            <div class="card-header">
+                <h3>Study Planner</h3>
+                <NavLink href="/study-planner" class="view-all">Edit &rarr;</NavLink>
+            </div>
+            @if (!string.IsNullOrEmpty(_plannerError))
+            {
+                <div class="alert alert-error">@_plannerError <button class="btn btn-small" @onclick="LoadPlannerAsync">Retry</button></div>
+            }
+            else if (_planner is null)
+            {
+                <div class="loading">Loading study plan...</div>
+            }
+            else
+            {
+                <div class="planner-week">@_planner.WeekLabel</div>
+                <div class="planner-items">
+                    @foreach (var item in _planner.Days)
+                    {
+                        <div class="planner-item @(item.IsCompleted ? "done" : "") @(item.IsFreeDay ? "free" : "")">
+                            <div class="planner-date">
+                                <span class="day-label">@item.DayLabel</span>
+                                <span class="day-number">@item.Date.Day</span>
+                            </div>
+                            <div class="planner-details">
+                                <span class="planner-title">@item.Subject</span>
+                                <span class="planner-hours">@item.Hours hrs</span>
+                            </div>
+                            <div class="planner-status">
+                                @if (!item.IsFreeDay)
+                                {
+                                    <button class="check-btn" title="Toggle done" @onclick="() => ToggleDayAsync(item)">
+                                        @if (item.IsCompleted)
+                                        {
+                                            <span class="check-icon">&#10003;</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="check-empty">&#9711;</span>
+                                        }
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- Recommended Courses -->
+        <div class="card recommendations-card">
+            <div class="card-header">
+                <h3>Recommended Courses</h3>
+                <NavLink href="/courses" class="view-all">View All &rarr;</NavLink>
+            </div>
+            @if (!string.IsNullOrEmpty(_recommendedError))
+            {
+                <div class="alert alert-error">@_recommendedError <button class="btn btn-small" @onclick="LoadRecommendedAsync">Retry</button></div>
+            }
+            else if (_recommended is null)
+            {
+                <div class="loading">Loading recommendations...</div>
+            }
+            else if (!_recommended.Any())
+            {
+                <div class="empty-state">No recommendations available at this time.</div>
+            }
+            else
+            {
+                <div class="recommendation-list">
+                    @foreach (var course in _recommended.Take(4))
+                    {
+                        <div class="recommendation-item">
+                            <div class="rec-info">
+                                <span class="rec-code">@course.Name</span>
+                                <span class="rec-title">@course.Tag</span>
+                                <span class="rec-track">@course.Track | @course.Credits credits</span>
+                            </div>
+                            <NavLink href="@($"/courses/{course.Id}")" class="rec-btn">View</NavLink>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- My University -->
+    <div class="card university-card">
+        <div class="card-header">
+            <h3>My University</h3>
+            <NavLink href="/university" class="view-all">View all &rarr;</NavLink>
+        </div>
+        @if (!string.IsNullOrEmpty(_universityError))
+        {
+            <div class="alert alert-error">@_universityError <button class="btn btn-small" @onclick="LoadUniversityAsync">Retry</button></div>
+        }
+        else if (_university is null)
+        {
+            <div class="loading">Loading university...</div>
+        }
+        else if (string.IsNullOrEmpty(_university.UniversityName))
+        {
+            <div class="empty-state">No university assigned to your account yet.</div>
+        }
+        else
+        {
+            <div class="university-sub">@_university.Department · Year @(_university.AcademicYear?.ToString() ?? "-")</div>
+            @if (_uniCourses is null)
+            {
+                <div class="loading">Loading courses...</div>
+            }
+            else if (!_uniCourses.Any())
+            {
+                <div class="empty-state">No courses found for your department and year.</div>
+            }
+            else
+            {
+                <div class="uni-course-list">
+                    @foreach (var course in _uniCourses.Take(6))
+                    {
+                        <div class="uni-course-item">
+                            <span class="uni-course-name">@course.Title</span>
+                            <span class="badge">@course.MaterialsCount</span>
+                        </div>
+                    }
+                </div>
+            }
+            <h4 class="mini-heading">Latest summaries &amp; materials</h4>
+            @if (_uniMaterials is null)
+            {
+                <div class="loading">Loading materials...</div>
+            }
+            else if (!_uniMaterials.Any())
+            {
+                <div class="empty-state">No materials yet.</div>
+            }
+            else
+            {
+                <div class="activity-list">
+                    @foreach (var m in _uniMaterials.Take(5))
+                    {
+                        <div class="activity-item">
+                            <div class="activity-content">
+                                <span class="activity-message">@m.Title</span>
+                                <span class="activity-time">@m.CourseName · @m.Type · @m.CreatedAt.ToString("MMM d")</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card quick-actions-card">
+        <div class="card-header">
+            <h3>Quick Actions</h3>
+        </div>
+        <div class="quick-actions-grid">
+            <NavLink href="/academic-advisor" class="quick-action tile-grades">
+                <span class="action-icon">&#9998;</span>
+                <span>Check My Grades</span>
+            </NavLink>
+            <NavLink href="/study-planner" class="quick-action tile-planner">
+                <span class="action-icon">&#128197;</span>
+                <span>Plan My Study</span>
+            </NavLink>
+            <NavLink href="/courses" class="quick-action tile-courses">
+                <span class="action-icon">&#127891;</span>
+                <span>Course Recommendations</span>
+            </NavLink>
+            <NavLink href="/academic-advisor" class="quick-action tile-insights">
+                <span class="action-icon">&#128161;</span>
+                <span>Academic Insights</span>
+            </NavLink>
+        </div>
+    </div>
+
+    <!-- Two-column section -->
+    <div class="two-column">
+        <!-- Recent Activity -->
+        <div class="card activity-card">
+            <div class="card-header">
+                <h3>Recent Activity</h3>
+            </div>
+            @if (!string.IsNullOrEmpty(_activityError))
+            {
+                <div class="alert alert-error">@_activityError <button class="btn btn-small" @onclick="LoadActivityAsync">Retry</button></div>
+            }
+            else if (_activity is null)
+            {
+                <div class="loading">Loading activity...</div>
+            }
+            else if (!_activity.Any())
+            {
+                <div class="empty-state">No recent activity.</div>
+            }
+            else
+            {
+                <div class="activity-list">
+                    @foreach (var item in _activity)
+                    {
+                        <div class="activity-item">
+                            <div class="activity-content">
+                                <span class="activity-message">@item.Text</span>
+                                <span class="activity-time">@TimeAgo(item.CreatedAt)</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- AI Insights -->
+        <div class="card insights-card">
+            <div class="card-header">
+                <h3>AI Insights</h3>
+            </div>
+            @if (!string.IsNullOrEmpty(_insightsError))
+            {
+                <div class="alert alert-error">@_insightsError <button class="btn btn-small" @onclick="LoadInsightsAsync">Retry</button></div>
+            }
+            else if (_insights is null)
+            {
+                <div class="loading">Loading insights...</div>
+            }
+            else if (!_insights.Any())
+            {
+                <div class="empty-state">No insights available. Keep learning!</div>
+            }
+            else
+            {
+                <div class="insights-list">
+                    @foreach (var insight in _insights)
+                    {
+                        <div class="insight-item @insight.Type.ToLowerInvariant()">
+                            <div class="insight-icon">@GetInsightIcon(insight.Type)</div>
+                            <div class="insight-content">
+                                <span class="insight-title">@insight.Title</span>
+                                <span class="insight-message">@insight.Message</span>
+                                @if (!string.IsNullOrEmpty(insight.ActionLabel))
+                                {
+                                    <NavLink href="@insight.ActionRoute" class="insight-action">@insight.ActionLabel &rarr;</NavLink>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "denied")]
+    public string? Denied { get; set; }
+
+    private string _greeting = "Good Morning";
+    private string _firstName = "Student";
+
+    private DashboardSummaryDto? _summary;
+    private string? _summaryError;
+    private List<DashboardPerformanceRowDto>? _performance;
+    private string? _performanceError;
+    private DashboardStudyPlanDto? _planner;
+    private string? _plannerError;
+    private List<DashboardRecommendedCourseDto>? _recommended;
+    private string? _recommendedError;
+    private List<DashboardActivityDto>? _activity;
+    private string? _activityError;
+    private List<DashboardInsightDto>? _insights;
+    private string? _insightsError;
+    private MyUniversityDto? _university;
+    private string? _universityError;
+    private List<UniversityCourseDto>? _uniCourses;
+    private List<MaterialDto>? _uniMaterials;
+    // Guards the deferred first load (see OnAfterRenderAsync): prerender /
+    // pre-restore passes must not fire API calls or 401-logout a user.
+    private bool _started;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // F5: this runs before the persisted token is restored (restore
+        // happens in OnAfterRenderAsync, where JS interop is available).
+        // Never fire API calls or redirect while auth is resolving: without
+        // a bearer header every call 401s, and the 401 handler below would
+        // log a signed-in user out. Defer to the interactive pass instead.
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        // Each card loads (and fails) independently: one bad call can never
+        // freeze the whole dashboard on "Loading..." again.
+        await LoadAllAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Prerender (or interactive init before JS): OnInitializedAsync
+        // returned early above. Complete the load once auth resolves.
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await LoadAllAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private Task LoadAllAsync() => Task.WhenAll(
+        LoadSummaryAsync(),
+        LoadPerformanceAsync(),
+        LoadPlannerAsync(),
+        LoadRecommendedAsync(),
+        LoadActivityAsync(),
+        LoadInsightsAsync(),
+        LoadUniversityAsync());
+
+    private async Task TryLoadAsync(Func<Task> load, Action<string?> setError, string what)
+    {
+        try
+        {
+            await load();
+            setError(null);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // Token expired or revoked mid-session: clean logout and tell
+            // the user why, instead of spinning or looping silently.
+            // Guarded by IsInitialized: callers only load after auth
+            // resolves, so a 401 here is genuine expiry — never the
+            // pre-restore "no bearer header yet" case on F5.
+            if (!AuthService.IsInitialized)
+            {
+                setError($"Could not load {what}. Check your connection and try again.");
+                return;
+            }
+            await AuthService.LogoutAsync();
+            Nav.NavigateTo("/login?expired=1");
+        }
+        catch
+        {
+            setError($"Could not load {what}. Check your connection and try again.");
+        }
+    }
+
+    private Task LoadSummaryAsync() => TryLoadAsync(async () =>
+    {
+        _summary = await Http.GetFromJsonAsync<DashboardSummaryDto>("/api/dashboard/summary");
+        if (_summary is not null)
+        {
+            _greeting = _summary.Greeting;
+            _firstName = _summary.FirstName;
+        }
+    }, e => _summaryError = e, "summary");
+
+    private Task LoadPerformanceAsync() => TryLoadAsync(async () =>
+    {
+        _performance = await Http.GetFromJsonAsync<List<DashboardPerformanceRowDto>>("/api/dashboard/performance?semester=current") ?? new();
+    }, e => _performanceError = e, "performance");
+
+    private Task LoadPlannerAsync() => TryLoadAsync(async () =>
+    {
+        _planner = await Http.GetFromJsonAsync<DashboardStudyPlanDto>("/api/dashboard/study-plan");
+    }, e => _plannerError = e, "study plan");
+
+    private Task LoadRecommendedAsync() => TryLoadAsync(async () =>
+    {
+        _recommended = await Http.GetFromJsonAsync<List<DashboardRecommendedCourseDto>>("/api/dashboard/recommended-courses") ?? new();
+    }, e => _recommendedError = e, "recommendations");
+
+    private Task LoadActivityAsync() => TryLoadAsync(async () =>
+    {
+        _activity = await Http.GetFromJsonAsync<List<DashboardActivityDto>>("/api/dashboard/recent-activity?take=4") ?? new();
+    }, e => _activityError = e, "activity");
+
+    private Task LoadInsightsAsync() => TryLoadAsync(async () =>
+    {
+        _insights = await Http.GetFromJsonAsync<List<DashboardInsightDto>>("/api/dashboard/insights") ?? new();
+    }, e => _insightsError = e, "insights");
+
+    private Task LoadUniversityAsync() => TryLoadAsync(async () =>
+    {
+        try
+        {
+            _university = await Http.GetFromJsonAsync<MyUniversityDto>("/api/university/me");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            // Legit state, not an error: account has no university assigned.
+            _university = new MyUniversityDto("", "", null, 0, 0);
+            return;
+        }
+        _uniCourses = await Http.GetFromJsonAsync<List<UniversityCourseDto>>("/api/university/me/courses") ?? new();
+        var page = await Http.GetFromJsonAsync<PagedResultDto<MaterialDto>>("/api/university/me/materials?page=1&pageSize=5");
+        _uniMaterials = page?.Items.ToList() ?? new();
+    }, e => _universityError = e, "university");
+
+    private async Task ToggleDayAsync(DashboardStudyDayDto day)
+    {
+        if (day.Id == 0 || _planner is null) return;
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/dashboard/study-plan/{day.Id}/toggle");
+            using var response = await Http.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            var updated = await response.Content.ReadFromJsonAsync<DashboardStudyDayDto>();
+            if (updated is null) return;
+            var days = _planner.Days.ToList();
+            var index = days.FindIndex(d => d.Id == day.Id);
+            if (index >= 0)
+            {
+                days[index] = updated;
+                _planner = _planner with { Days = days };
+            }
+        }
+        catch
+        {
+            _plannerError = "Could not update the study plan. Please try again.";
+        }
+    }
+
+    private static string TimeAgo(DateTime createdAtUtc)
+    {
+        var span = DateTime.UtcNow - createdAtUtc.ToUniversalTime();
+        if (span.TotalMinutes < 1) return "Just now";
+        if (span.TotalHours < 1) return $"{(int)span.TotalMinutes} minutes ago";
+        if (span.TotalHours < 24)
+        {
+            var h = (int)span.TotalHours;
+            return h == 1 ? "1 hour ago" : $"{h} hours ago";
+        }
+        var days = (int)span.TotalDays;
+        return days == 1 ? "Yesterday" : $"{days} days ago";
+    }
+
+    private static string GetInsightIcon(string type) => type.ToLowerInvariant() switch
+    {
+        "warning" => "\u26A0\uFE0F",
+        "progress" => "\U0001F4C8",
+        "recommendation" => "\U0001F4A1",
+        _ => "\U0001F4A1"
+    };
+}

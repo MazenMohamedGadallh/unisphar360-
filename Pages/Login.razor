@@ -1,0 +1,114 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@layout EmptyLayout
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+@inject NavigationManager Nav
+
+<PageTitle>Login - UniSphere 360+</PageTitle>
+
+<div class="login-container">
+    <div class="login-card">
+        <div class="login-header">
+            <h1>Welcome Back</h1>
+            <p>Sign in to your UniSphere 360+ account</p>
+        </div>
+
+        @if (Expired == "1")
+        {
+            <div class="alert alert-error">Session expired. Please sign in again.</div>
+        }
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-error">@_error</div>
+        }
+
+        <form @onsubmit="HandleLogin">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" @bind="_email" placeholder="Enter your email" required />
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" @bind="_password" placeholder="Enter your password" required />
+            </div>
+            <button type="submit" class="btn btn-primary" disabled="@_loading">
+                @(_loading ? "Signing in..." : "Sign In")
+            </button>
+        </form>
+
+        <div class="auth-switch">
+            <span>Don't have an account? <NavLink href="/register">Register</NavLink></span>
+        </div>
+
+        <div class="login-footer">
+            <p>Demo accounts:</p>
+            <ul>
+                <li><strong>Student:</strong> mazenmohamed@unisphere.edu / Password123!</li>
+                <li><strong>Admin:</strong> admin@unisphere.edu / Admin123!</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _email = "";
+    private string _password = "";
+    private string? _error;
+    private bool _loading;
+
+    [SupplyParameterFromQuery(Name = "expired")]
+    public string? Expired { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Already signed in (typed URL / Back / link): don't show the form.
+        if (await AuthService.GetUserAsync() is not null)
+            Nav.NavigateTo("/dashboard", replace: true);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Full reload (F5): the scoped auth service starts empty, so the
+        // persisted token can only be read once JS interop is available
+        // (OnAfterRenderAsync — never during prerender). Restore it here:
+        // a signed-in user should land on the dashboard, not the form.
+        if (firstRender && await AuthService.RestoreSessionAsync())
+            Nav.NavigateTo("/dashboard", replace: true);
+    }
+
+    private async Task HandleLogin(EventArgs e)
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var token = await AuthService.LoginAsync(_email, _password);
+            if (token is not null)
+            {
+                // Client-side navigation keeps the same circuit, so the
+                // in-memory JWT stored by BlazorAuthService survives.
+                // forceLoad: true would reload the page, drop the token,
+                // and bounce straight back to /login.
+                var user = await AuthService.GetUserAsync();
+                if (user is not null && string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase))
+                    Nav.NavigateTo("/analytics");
+                else
+                    Nav.NavigateTo("/dashboard");
+            }
+            else
+            {
+                _error = "Invalid email or password.";
+            }
+        }
+        catch
+        {
+            _error = "Login failed. Please try again.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

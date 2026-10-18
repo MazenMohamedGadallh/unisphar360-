@@ -1,0 +1,733 @@
+@page "/doctor/courses/{CourseId:int}"
+@using System.Net
+@using System.Net.Http.Headers
+@using UniSphere.Api.Dtos
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+
+<PageTitle>@(_course?.Code ?? "Course") - UniSphere 360+</PageTitle>
+
+@if (_denied)
+{
+    <div class="alert alert-error">Access denied: you are not assigned to this course.</div>
+}
+else if (_notFound)
+{
+    <div class="alert alert-error">Course not found.</div>
+}
+else if (_course is null)
+{
+    <div class="loading">Loading course...</div>
+}
+else
+{
+    <div class="page-header">
+        <h1>@_course.Code — @_course.Title</h1>
+        <p>@_course.Description</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error</div>
+    }
+    @if (!string.IsNullOrEmpty(_success))
+    {
+        <div class="alert alert-success">@_success</div>
+    }
+
+    <div class="admin-tabs">
+        <button class="admin-tab @(_tab == "students" ? "selected" : "")" @onclick='() => SelectTabAsync("students")'>Students</button>
+        <button class="admin-tab @(_tab == "analytics" ? "selected" : "")" @onclick='() => SelectTabAsync("analytics")'>Analytics</button>
+        <button class="admin-tab @(_tab == "materials" ? "selected" : "")" @onclick='() => SelectTabAsync("materials")'>Materials &amp; Assignments</button>
+        <button class="admin-tab @(_tab == "announcements" ? "selected" : "")" @onclick='() => SelectTabAsync("announcements")'>Announcements</button>
+    </div>
+
+    @if (_tab == "students")
+    {
+        <div class="card">
+            <div class="card-header">
+                <h3>Enrolled Students (@(_students?.Count ?? 0))</h3>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <input placeholder="Search name or email..." @bind="_studentSearch" @bind:event="oninput" />
+                </div>
+            </div>
+            @if (_students is null)
+            {
+                <div class="loading">Loading students...</div>
+            }
+            else if (_students.Count == 0)
+            {
+                <div class="empty-state">No students are enrolled in this course yet.</div>
+            }
+            else
+            {
+                var filtered = _students
+                    .Where(s => string.IsNullOrWhiteSpace(_studentSearch)
+                        || s.FullName.Contains(_studentSearch, StringComparison.OrdinalIgnoreCase)
+                        || s.Email.Contains(_studentSearch, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th><th>Email</th><th>Department</th><th>Year</th>
+                                <th>Grade</th><th>Points</th><th>Attendance</th><th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in filtered)
+                            {
+                                <tr>
+                                    <td>@s.FullName</td>
+                                    <td>@s.Email</td>
+                                    <td>@s.Department</td>
+                                    <td>@(s.AcademicYear?.ToString() ?? "—")</td>
+                                    <td>
+                                        <span class="status-badge @GradeClass(s.GradeLetter)">@(string.IsNullOrWhiteSpace(s.GradeLetter) ? "Ungraded" : s.GradeLetter)</span>
+                                    </td>
+                                    <td>@s.GradePoints.ToString("0.00")</td>
+                                    <td>@s.AttendancePercent%</td>
+                                    <td><button class="btn btn-sm btn-secondary" @onclick="() => EditStudentGrade(s)">Grade</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+    else if (_tab == "analytics")
+    {
+        @if (_analytics is null)
+        {
+            <div class="loading">Loading analytics...</div>
+        }
+        else
+        {
+            <div class="summary-cards">
+                <div class="card">
+                    <div class="card-info">
+                        <span class="card-label">Enrolled</span>
+                        <span class="card-value">@_analytics.EnrollmentCount</span>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-info">
+                        <span class="card-label">Graded</span>
+                        <span class="card-value">@_analytics.GradedCount</span>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-info">
+                        <span class="card-label">Average Grade</span>
+                        <span class="card-value">@(_analytics.AverageGradePoints?.ToString("0.00") ?? "—")</span>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-info">
+                        <span class="card-label">Average Attendance</span>
+                        <span class="card-value">@(_analytics.AverageAttendance.HasValue ? $"{_analytics.AverageAttendance:0.#}%" : "—")</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="two-column">
+                <div class="card">
+                    <div class="card-header"><h3>Grade Distribution</h3></div>
+                    <div class="chart-container">
+                        <div class="bar-chart">
+                            @foreach (var b in _analytics.GradeDistribution)
+                            {
+                                <div class="bar-item">
+                                    <span class="bar-label">@b.Label</span>
+                                    <span class="bar-wrapper"><span class="bar" style="width: @BarWidth(b.Count, _analytics.EnrollmentCount)%"></span></span>
+                                    <span class="bar-value">@b.Count</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><h3>Attendance Distribution</h3></div>
+                    <div class="chart-container">
+                        <div class="bar-chart">
+                            @foreach (var b in _analytics.AttendanceDistribution)
+                            {
+                                <div class="bar-item">
+                                    <span class="bar-label">@b.Label</span>
+                                    <span class="bar-wrapper"><span class="bar" style="width: @BarWidth(b.Count, _analytics.EnrollmentCount)%"></span></span>
+                                    <span class="bar-value">@b.Count</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h3>Students Needing Support</h3></div>
+                @if (_analytics.Alerts.Count == 0)
+                {
+                    <div class="empty-state">No students require additional support in this course.</div>
+                }
+                else
+                {
+                    <div class="table-wrapper">
+                        <table class="data-table">
+                            <thead><tr><th>Student</th><th>Reason</th><th>Severity</th></tr></thead>
+                            <tbody>
+                                @foreach (var a in _analytics.Alerts)
+                                {
+                                    <tr>
+                                        <td>@a.StudentName</td>
+                                        <td>@a.Reason</td>
+                                        <td><span class="status-badge @(a.Severity == "High" ? "needs-attention" : "good")">@a.Severity</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        }
+    }
+    else if (_tab == "materials")
+    {
+        <div class="card">
+            <div class="card-header">
+                <h3>Materials &amp; Assignments</h3>
+                <button class="btn btn-primary btn-sm" @onclick="ToggleMaterialForm">@(_showMaterialForm ? "Cancel" : "+ Add Material")</button>
+            </div>
+
+            @if (_showMaterialForm)
+            {
+                <div class="card-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Title</label>
+                            <input @bind="_materialForm.Title" />
+                        </div>
+                        <div class="form-group">
+                            <label>Type</label>
+                            <select @bind="_materialForm.Type">
+                                @foreach (var t in MaterialTypes)
+                                {
+                                    <option value="@t">@t</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <input @bind="_materialForm.Description" />
+                    </div>
+                    <div class="form-group">
+                        <label>Content (for summaries / lectures)</label>
+                        <textarea rows="4" @bind="_materialForm.Content"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Deadline (assignments / exams)</label>
+                            <input type="datetime-local" value="@_materialForm.Deadline" @onchange="OnDeadlineChanged" />
+                        </div>
+                        <div class="form-group">
+                            <label>Attach file (optional)</label>
+                            <InputFile OnChange="OnFileSelectedAsync" />
+                            @if (!string.IsNullOrEmpty(_materialForm.FileUrl))
+                            {
+                                <span class="rec-track">Attached: @_materialForm.FileUrl</span>
+                            }
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" @onclick="SaveMaterialAsync" disabled="@_saving">
+                        @(_saving ? "Saving..." : "Save Material")
+                    </button>
+                </div>
+            }
+
+            @if (_materials is null)
+            {
+                <div class="loading">Loading materials...</div>
+            }
+            else if (_materials.Count == 0)
+            {
+                <div class="empty-state">No materials yet. Add a lecture summary, assignment or exam.</div>
+            }
+            else
+            {
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead><tr><th>Title</th><th>Type</th><th>Deadline</th><th>File</th><th>Created</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var m in _materials)
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@m.Title</strong>
+                                        @if (!string.IsNullOrWhiteSpace(m.Description))
+                                        {
+                                            <div class="rec-track">@m.Description</div>
+                                        }
+                                    </td>
+                                    <td><span class="status-badge good">@m.Type</span></td>
+                                    <td>@(m.DeadlineUtc?.ToLocalTime().ToString("MMM d, yyyy HH:mm") ?? "—")</td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(m.FileUrl))
+                                        {
+                                            <a href="@m.FileUrl" target="_blank" rel="noopener">Open</a>
+                                        }
+                                        else
+                                        {
+                                            <span>—</span>
+                                        }
+                                    </td>
+                                    <td>@m.CreatedAtUtc.ToString("MMM d, yyyy")</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteMaterialAsync(m.Id)">Delete</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+    else if (_tab == "announcements")
+    {
+        <div class="card">
+            <div class="card-header">
+                <h3>Course Announcements</h3>
+                <button class="btn btn-primary btn-sm" @onclick="ToggleAnnouncementForm">@(_showAnnouncementForm ? "Cancel" : "+ New Announcement")</button>
+            </div>
+
+            @if (_showAnnouncementForm)
+            {
+                <div class="card-body">
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input @bind="_announcementForm.Title" />
+                    </div>
+                    <div class="form-group">
+                        <label>Body</label>
+                        <textarea rows="4" @bind="_announcementForm.Body"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Category</label>
+                        <input @bind="_announcementForm.Category" placeholder="general" />
+                    </div>
+                    <button class="btn btn-primary" @onclick="SaveAnnouncementAsync" disabled="@_saving">
+                        @(_saving ? "Saving..." : "Publish Announcement")
+                    </button>
+                </div>
+            }
+
+            @if (_announcements is null)
+            {
+                <div class="loading">Loading announcements...</div>
+            }
+            else if (_announcements.Count == 0)
+            {
+                <div class="empty-state">No announcements yet.</div>
+            }
+            else
+            {
+                <div class="recommendation-list">
+                    @foreach (var a in _announcements)
+                    {
+                        <div class="recommendation-item">
+                            <div class="rec-info">
+                                <span class="rec-title">@a.Title</span>
+                                <span class="rec-track">@a.Body</span>
+                                <span class="rec-track">@(a.Category ?? "general") · @a.CreatedAtUtc.ToString("MMM d, yyyy")</span>
+                            </div>
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteAnnouncementAsync(a.Id)">Delete</button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @if (_gradeStudent is not null)
+    {
+        <div class="modal-overlay" @onclick="CloseGradeModal">
+            <div class="modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>Grade @_gradeStudent.FullName</h3>
+                    <button class="modal-close" @onclick="CloseGradeModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Letter grade</label>
+                        <select @bind="_gradeLetter">
+                            @foreach (var g in GradeLetters)
+                            {
+                                <option value="@g">@g</option>
+                            }
+                        </select>
+                    </div>
+                    <p class="rec-track">Grade points are derived from the letter grade by the server.</p>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" @onclick="CloseGradeModal">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SubmitGradeAsync" disabled="@_saving">
+                        @(_saving ? "Saving..." : "Save Grade")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int CourseId { get; set; }
+
+    private static readonly string[] MaterialTypes =
+        { "Summary", "Lecture", "Assignment", "Exam" };
+    private static readonly string[] GradeLetters =
+        { "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "F" };
+
+    private DoctorCourseDetailDto? _course;
+    private List<DoctorStudentDto>? _students;
+    private DoctorCourseAnalyticsDto? _analytics;
+    private List<DoctorMaterialDto>? _materials;
+    private List<DoctorAnnouncementDto>? _announcements;
+
+    private string _tab = "students";
+    private string _studentSearch = "";
+    private string? _error;
+    private string? _success;
+    private bool _saving;
+    private bool _denied;
+    private bool _notFound;
+    private bool _started;
+
+    private bool _showMaterialForm;
+    private MaterialForm _materialForm = new();
+    private bool _showAnnouncementForm;
+    private AnnouncementForm _announcementForm = new();
+
+    private DoctorStudentDto? _gradeStudent;
+    private string _gradeLetter = "A";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized) return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        if (user.Role != "Doctor")
+        {
+            _denied = true;
+            return;
+        }
+        await LoadCourseAsync();
+    }
+
+    private async Task LoadCourseAsync()
+    {
+        _error = null;
+        try
+        {
+            _course = await Http.GetFromJsonAsync<DoctorCourseDetailDto>($"/api/doctor/courses/{CourseId}");
+            if (_course is null) { _notFound = true; return; }
+            await LoadTabAsync(_tab);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _denied = true;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _notFound = true;
+        }
+        catch
+        {
+            _error = "Could not load the course. Please try again.";
+        }
+    }
+
+    private async Task SelectTabAsync(string tab)
+    {
+        _tab = tab;
+        _error = null;
+        _success = null;
+        await LoadTabAsync(tab);
+    }
+
+    private async Task LoadTabAsync(string tab)
+    {
+        try
+        {
+            switch (tab)
+            {
+                case "students":
+                    _students = await Http.GetFromJsonAsync<List<DoctorStudentDto>>($"/api/doctor/courses/{CourseId}/students") ?? new();
+                    break;
+                case "analytics":
+                    _analytics = await Http.GetFromJsonAsync<DoctorCourseAnalyticsDto>($"/api/doctor/courses/{CourseId}/analytics");
+                    break;
+                case "materials":
+                    _materials = await Http.GetFromJsonAsync<List<DoctorMaterialDto>>($"/api/doctor/courses/{CourseId}/materials") ?? new();
+                    break;
+                case "announcements":
+                    _announcements = await Http.GetFromJsonAsync<List<DoctorAnnouncementDto>>($"/api/doctor/courses/{CourseId}/announcements") ?? new();
+                    break;
+            }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _denied = true;
+        }
+        catch
+        {
+            _error = "Could not load this section. Please try again.";
+        }
+    }
+
+    private static double BarWidth(int count, int total) =>
+        total <= 0 ? 0 : Math.Round(count * 100.0 / total, 1);
+
+    private static string GradeClass(string grade) => grade switch
+    {
+        "A" or "A-" => "excellent",
+        "B+" or "B" or "B-" => "good",
+        "F" => "needs-attention",
+        "" => "",
+        _ => "good"
+    };
+
+    private void OnDeadlineChanged(ChangeEventArgs e)
+    {
+        _materialForm.Deadline = e.Value?.ToString();
+    }
+
+    private void ToggleMaterialForm()
+    {
+        _showMaterialForm = !_showMaterialForm;
+        _materialForm = new();
+        _error = null;
+        _success = null;
+    }
+
+    private void ToggleAnnouncementForm()
+    {
+        _showAnnouncementForm = !_showAnnouncementForm;
+        _announcementForm = new();
+        _error = null;
+        _success = null;
+    }
+
+    private async Task OnFileSelectedAsync(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        var file = e.File;
+        if (file is null) return;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            var part = new StreamContent(stream);
+            part.Headers.ContentType = new MediaTypeHeaderValue(
+                string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(part, "file", file.Name);
+
+            var resp = await Http.PostAsync($"/api/doctor/courses/{CourseId}/materials/upload", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<MaterialUploadResultDto>();
+                if (result is not null) _materialForm.FileUrl = result.FileUrl;
+            }
+            else
+            {
+                _error = "Upload failed: " + (await resp.Content.ReadAsStringAsync());
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = "Upload failed: " + ex.Message;
+        }
+    }
+
+    private async Task SaveMaterialAsync()
+    {
+        _error = null;
+        _success = null;
+        if (string.IsNullOrWhiteSpace(_materialForm.Title) || string.IsNullOrWhiteSpace(_materialForm.Type))
+        {
+            _error = "Title and type are required.";
+            return;
+        }
+        _saving = true;
+        try
+        {
+            DateTime? deadline = null;
+            if (!string.IsNullOrWhiteSpace(_materialForm.Deadline)
+                && DateTime.TryParse(_materialForm.Deadline, out var parsed))
+                deadline = parsed.ToUniversalTime();
+
+            var req = new CreateDoctorMaterialRequest(
+                _materialForm.Title.Trim(), _materialForm.Type, _materialForm.Description,
+                _materialForm.Content, _materialForm.FileUrl, deadline);
+
+            var resp = await Http.PostAsJsonAsync($"/api/doctor/courses/{CourseId}/materials", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _success = "Material saved.";
+                _showMaterialForm = false;
+                _materialForm = new();
+                await LoadTabAsync("materials");
+            }
+            else
+            {
+                _error = "Could not save material: " + (await resp.Content.ReadAsStringAsync());
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteMaterialAsync(int id)
+    {
+        _error = null; _success = null;
+        var resp = await Http.DeleteAsync($"/api/doctor/materials/{id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            _success = "Material deleted.";
+            await LoadTabAsync("materials");
+        }
+        else
+        {
+            _error = "Could not delete material.";
+        }
+    }
+
+    private async Task SaveAnnouncementAsync()
+    {
+        _error = null; _success = null;
+        if (string.IsNullOrWhiteSpace(_announcementForm.Title) || string.IsNullOrWhiteSpace(_announcementForm.Body))
+        {
+            _error = "Title and body are required.";
+            return;
+        }
+        _saving = true;
+        try
+        {
+            var req = new CreateCourseAnnouncementRequest(
+                _announcementForm.Title.Trim(), _announcementForm.Body.Trim(), _announcementForm.Category);
+            var resp = await Http.PostAsJsonAsync($"/api/doctor/courses/{CourseId}/announcements", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _success = "Announcement published.";
+                _showAnnouncementForm = false;
+                _announcementForm = new();
+                await LoadTabAsync("announcements");
+            }
+            else
+            {
+                _error = "Could not publish announcement: " + (await resp.Content.ReadAsStringAsync());
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAnnouncementAsync(int id)
+    {
+        _error = null; _success = null;
+        var resp = await Http.DeleteAsync($"/api/doctor/announcements/{id}");
+        if (resp.IsSuccessStatusCode)
+        {
+            _success = "Announcement deleted.";
+            await LoadTabAsync("announcements");
+        }
+        else
+        {
+            _error = "Could not delete announcement.";
+        }
+    }
+
+    private void EditStudentGrade(DoctorStudentDto s)
+    {
+        _gradeStudent = s;
+        _gradeLetter = string.IsNullOrWhiteSpace(s.GradeLetter) ? "A" : s.GradeLetter;
+    }
+
+    private void CloseGradeModal() => _gradeStudent = null;
+
+    private async Task SubmitGradeAsync()
+    {
+        if (_gradeStudent is null) return;
+        _saving = true;
+        _error = null; _success = null;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync(
+                $"/api/enrollments/{_gradeStudent.EnrollmentId}/grade",
+                new { GradeLetter = _gradeLetter });
+            if (resp.IsSuccessStatusCode)
+            {
+                _success = $"Grade updated for {_gradeStudent.FullName}.";
+                _gradeStudent = null;
+                await LoadTabAsync("students");
+            }
+            else
+            {
+                _error = "Could not update grade: " + (await resp.Content.ReadAsStringAsync());
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private sealed class MaterialForm
+    {
+        public string Title { get; set; } = "";
+        public string Type { get; set; } = "Lecture";
+        public string? Description { get; set; }
+        public string? Content { get; set; }
+        public string? FileUrl { get; set; }
+        public string? Deadline { get; set; }
+    }
+
+    private sealed class AnnouncementForm
+    {
+        public string Title { get; set; } = "";
+        public string Body { get; set; } = "";
+        public string? Category { get; set; }
+    }
+}

@@ -1,0 +1,44 @@
+@page "/"
+@attribute [AllowAnonymous]
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+
+<PageTitle>UniSphere 360+</PageTitle>
+
+@code {
+    // AllowAnonymous on purpose: anonymous GET / must render (HTTP 200) so
+    // this redirect runs. The JWT OnChallenge handler in Program.cs only
+    // fires for endpoints that require authorization, so there is no loop:
+    // /login is anonymous (stays), /dashboard requires auth (anonymous
+    // full-page loads are sent to /login by OnChallenge, as intended).
+    protected override async Task OnInitializedAsync()
+    {
+        // If auth already resolved (SPA navigation), decide now.
+        // If still loading (prerender / first render before the persisted
+        // token is read), wait for OnAfterRenderAsync: navigating to /login
+        // now would bounce a signed-in user on every F5 at "/".
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (UniSphere.Api.Services.BlazorAuthService.IsLoadingState(state.User))
+            return;
+        if (state.User.Identity?.IsAuthenticated == true)
+            Nav.NavigateTo("/dashboard", replace: true);
+        else
+            Nav.NavigateTo("/login", replace: true);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        // JS interop is available here: re-read the persisted token, then
+        // decide once with the final state (replace: true, no loop).
+        await AuthService.RestoreSessionAsync();
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (UniSphere.Api.Services.BlazorAuthService.IsLoadingState(state.User))
+            return;
+        if (state.User.Identity?.IsAuthenticated == true)
+            Nav.NavigateTo("/dashboard", replace: true);
+        else
+            Nav.NavigateTo("/login", replace: true);
+    }
+}

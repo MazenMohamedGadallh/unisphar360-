@@ -1,0 +1,151 @@
+@page "/academic-advisor"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<PageTitle>Academic Advisor - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Academic Advisor</h1>
+    <p>Your academic performance, insights, and progress in one place.</p>
+</div>
+
+<!-- Summary Cards -->
+<div class="summary-cards">
+    <div class="card gpa-card">
+        <div class="card-info">
+            <span class="card-label">Current GPA</span>
+            <span class="card-value">@(_stats?.Gpa.ToString("0.00") ?? "--")</span>
+        </div>
+    </div>
+    <div class="card courses-card">
+        <div class="card-info">
+            <span class="card-label">Completed Courses</span>
+            <span class="card-value">@(_stats?.CompletedCourses ?? 0)/@(_stats?.TotalCourses ?? 0)</span>
+        </div>
+    </div>
+    <div class="card attendance-card">
+        <div class="card-info">
+            <span class="card-label">Attendance Rate</span>
+            <span class="card-value">@(_stats?.AttendanceRate ?? 0)%</span>
+        </div>
+    </div>
+    <div class="card improve-card">
+        <div class="card-info">
+            <span class="card-label">Subjects to Improve</span>
+            <span class="card-value">@(_stats?.SubjectsToImprove ?? 0)</span>
+        </div>
+    </div>
+</div>
+
+<!-- Academic Performance Table -->
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-header">
+        <h3>Academic Performance</h3>
+    </div>
+    @if (_performance is null)
+    {
+        <div class="loading">Loading performance data...</div>
+    }
+    else if (!_performance.Any())
+    {
+        <div class="empty-state">No academic records found.</div>
+    }
+    else
+    {
+        <div class="table-wrapper">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Course</th>
+                        <th>Grade</th>
+                        <th>Attendance</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _performance)
+                    {
+                        <tr>
+                            <td>@row.Course</td>
+                            <td>@row.GradeDisplay</td>
+                            <td>@row.Attendance%</td>
+                            <td><span class="status-badge @row.Status.ToLower().Replace(" ", "-")">@row.Status</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<!-- AI Insights -->
+<div class="card">
+    <div class="card-header">
+        <h3>Academic Insights</h3>
+    </div>
+    @if (_insights is null)
+    {
+        <div class="loading">Loading insights...</div>
+    }
+    else if (!_insights.Any())
+    {
+        <div class="empty-state">No insights available. Keep learning!</div>
+    }
+    else
+    {
+        <div class="insights-list">
+            @foreach (var insight in _insights)
+            {
+                <div class="insight-item @insight.Kind">
+                    <div class="insight-icon">@GetInsightIcon(insight.Kind)</div>
+                    <div class="insight-content">
+                        <span class="insight-title">@insight.Title</span>
+                        <span class="insight-message">@insight.Message</span>
+                        @if (!string.IsNullOrEmpty(insight.ActionLabel))
+                        {
+                            <NavLink href="@insight.ActionRoute" class="insight-action">@insight.ActionLabel} &rarr;</NavLink>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private AcademicStats? _stats;
+    private List<GradeRowDto>? _performance;
+    private List<InsightDto>? _insights;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _stats = await Http.GetFromJsonAsync<AcademicStats>("/api/academic/stats");
+            _performance = await Http.GetFromJsonAsync<List<GradeRowDto>>("/api/academic/performance");
+            _insights = await Http.GetFromJsonAsync<List<InsightDto>>("/api/academic/insights");
+        }
+        catch
+        {
+            // Handle error
+        }
+    }
+
+    private static string GetInsightIcon(string kind) => kind switch
+    {
+        "focus" => "\U0001F3AF",
+        "progress" => "\U0001F4C8",
+        "recommendation" => "\U0001F4A1",
+        _ => "\U0001F4A1"
+    };
+}
+
+public record AcademicStats(double Gpa, double GpaDelta, double MaxGpa, int CompletedCourses, int TotalCourses, int CompletedPercent, int AttendanceRate, int AttendanceDelta, int SubjectsToImprove, int RecommendedCourses);
+public record GradeRowDto(int CourseId, string Course, string GradeLetter, double GradePoints, string GradeDisplay, int Attendance, string Status);
+public record InsightDto(string Kind, string Title, string Message, string? ActionLabel, string? ActionRoute);

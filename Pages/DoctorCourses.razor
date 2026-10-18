@@ -1,0 +1,138 @@
+@page "/doctor/courses"
+@using System.Net
+@using UniSphere.Api.Dtos
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+
+<PageTitle>My Courses - UniSphere 360+</PageTitle>
+
+@if (_denied)
+{
+    <div class="alert alert-error">Access denied: this area is for doctors only.</div>
+}
+else
+{
+    <div class="page-header">
+        <h1>My Courses</h1>
+        <p>Courses you are assigned to teach. Course access is verified by the server on every request.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error <button class="btn btn-sm btn-secondary" @onclick="LoadAsync">Retry</button></div>
+    }
+
+    <div class="card">
+        <div class="card-header"><h3>Assigned Courses</h3></div>
+        @if (_loading)
+        {
+            <div class="loading">Loading courses...</div>
+        }
+        else if (_courses is null || _courses.Count == 0)
+        {
+            <div class="empty-state">You are not assigned to any course yet. Contact an administrator.</div>
+        }
+        else
+        {
+            <div class="course-grid">
+                @foreach (var c in _courses)
+                {
+                    <div class="card course-card">
+                        <div class="card-body">
+                            <div class="rec-code">@c.Code</div>
+                            <h3 style="margin: 8px 0;">@c.Title</h3>
+                            <p class="rec-track">@c.Track · Semester @c.Semester · @c.Credits credits</p>
+                            <div class="summary-cards" style="grid-template-columns: repeat(3, 1fr); margin: 12px 0;">
+                                <div>
+                                    <span class="card-label">Students</span>
+                                    <div class="card-value" style="font-size: 18px;">@c.StudentCount</div>
+                                </div>
+                                <div>
+                                    <span class="card-label">Avg Grade</span>
+                                    <div class="card-value" style="font-size: 18px;">@(c.AverageGradePoints?.ToString("0.00") ?? "—")</div>
+                                </div>
+                                <div>
+                                    <span class="card-label">Attendance</span>
+                                    <div class="card-value" style="font-size: 18px;">@(c.AverageAttendance.HasValue ? $"{c.AverageAttendance:0.#}%" : "—")</div>
+                                </div>
+                            </div>
+                            <NavLink href="@($"/doctor/courses/{c.CourseId}")" class="btn btn-primary btn-sm">Open course</NavLink>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<DoctorCourseSummaryDto>? _courses;
+    private string? _error;
+    private bool _loading = true;
+    private bool _denied;
+    private bool _started;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized) return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        if (user.Role != "Doctor")
+        {
+            _denied = true;
+            _loading = false;
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _courses = await Http.GetFromJsonAsync<List<DoctorCourseSummaryDto>>("/api/doctor/courses") ?? new();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _denied = true;
+        }
+        catch
+        {
+            _error = "Could not load your courses. Please try again.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}
