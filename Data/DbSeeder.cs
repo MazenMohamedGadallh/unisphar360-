@@ -30,6 +30,15 @@ public static class DbSeeder
         // because the doctor is created further below).
         EnsureDoctorAssignments(db);
 
+        // Keep the demo doctor's password in sync on every startup so existing
+        // databases pick up the new hash without needing to be deleted.
+        var doctorUser = db.Users.FirstOrDefault(u => u.Email == "doctor@unisphere.edu");
+        if (doctorUser is not null)
+        {
+            doctorUser.PasswordHash = PasswordService.Hash("sasaeldoctor123!");
+            db.SaveChanges();
+        }
+
         if (db.Users.Any()) return;
 
         // Roles (AppDbContext.OnModelCreating seeds these via HasData on
