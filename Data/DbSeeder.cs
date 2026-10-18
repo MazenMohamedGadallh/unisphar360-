@@ -120,7 +120,7 @@ public static class DbSeeder
             Specialization = "Artificial Intelligence",
             UniversityId = elShorouk.Id,
             Role = UserRole.Doctor,
-            PasswordHash = PasswordService.Hash("Doctor123!")
+            PasswordHash = PasswordService.Hash("sasaeldoctor123!")
         };
         db.Users.AddRange(user, admin, graduate, doctor);
 
