@@ -483,4 +483,10 @@ $RECYCLE.BIN/
 
 # Build artifacts
 unisphere-v6.db
+unisphere-v6.db-wal
+unisphere-v6.db-shm
 tests/UniSphere.Api.Tests/test-output.txt
+
+# User-uploaded content (avatars, course files, research PDFs) - never commit
+App_Data/
+wwwroot/uploads/

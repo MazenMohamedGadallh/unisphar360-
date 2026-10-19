@@ -306,6 +306,18 @@ public class BlazorAuthService : AuthenticationStateProvider
     public static bool IsLoadingState(ClaimsPrincipal user) =>
         user.HasClaim(LoadingClaimType, bool.TrueString);
 
+    /// <summary>Home route per role: doctors and admins belong on their own
+    /// workspace, everyone else on the student dashboard. Shared by Login,
+    /// Home, Dashboard and MainLayout redirects so a doctor/admin can never
+    /// be parked on the student dashboard (it would sit there with failing
+    /// student-only API calls and a wrong greeting).</summary>
+    public static string HomeForRole(string? role) => role switch
+    {
+        "Doctor" => "/doctor",
+        "Admin" => "/admin",
+        _ => "/dashboard"
+    };
+
     public override async Task<AuthenticationState> GetAuthenticationStateAsync()
     {
         // No HTTP round-trip here on purpose: the JWT itself is the session.
@@ -395,7 +407,8 @@ public record RegisterPayload(
     string Role, string Password, string ConfirmPassword,
     int? AcademicYear, string? Department,
     string? Specialization, string? GraduatedFrom, int? GraduationYear,
-    int? UniversityId);
+    int? UniversityId,
+    string? Address = null);
 
 public record RegisterResult(
     bool Succeeded, string? Token, AuthUserDto? User,

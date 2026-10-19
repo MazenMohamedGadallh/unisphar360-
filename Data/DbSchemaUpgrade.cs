@@ -37,6 +37,39 @@ public static class DbSchemaUpgrade
         AddColumnIfMissing(db, "CourseMaterials", "DeadlineUtc", "TEXT NULL");
         AddColumnIfMissing(db, "Announcements", "CourseId", "INTEGER NULL");
         db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_Announcements_CourseId" ON "Announcements" ("CourseId");""");
+
+        // Doctor profile (Phase 1): User.Address is a locked profile field
+        // set at registration or by an admin; CourseAssignments.DisplayTitle
+        // is the per-instructor course title the assigned doctor may edit.
+        AddColumnIfMissing(db, "Users", "Address", "TEXT NULL");
+        AddColumnIfMissing(db, "CourseAssignments", "DisplayTitle", "TEXT NULL");
+
+        // Research Hub (Phase 2): papers uploaded by doctors. Stored outside
+        // wwwroot (App_Data/research) and served only by the authorized
+        // controller, so the existing uploads tables do not apply.
+        db.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "DoctorResearches" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_DoctorResearches" PRIMARY KEY AUTOINCREMENT,
+                "DoctorUserId" INTEGER NOT NULL,
+                "UniversityId" INTEGER NOT NULL,
+                "Title" TEXT NOT NULL,
+                "Abstract" TEXT NOT NULL,
+                "Authors" TEXT NOT NULL,
+                "Keywords" TEXT NOT NULL,
+                "Year" INTEGER NOT NULL,
+                "Field" TEXT NOT NULL,
+                "PdfPath" TEXT NULL,
+                "DoiOrUrl" TEXT NULL,
+                "CreatedAtUtc" TEXT NOT NULL,
+                "UpdatedAtUtc" TEXT NOT NULL,
+                "IsPublished" INTEGER NOT NULL
+            );
+            """);
+        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_DoctorResearches_DoctorUserId" ON "DoctorResearches" ("DoctorUserId");""");
+        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_DoctorResearches_UniversityId" ON "DoctorResearches" ("UniversityId");""");
+        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_DoctorResearches_Year" ON "DoctorResearches" ("Year");""");
+        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_DoctorResearches_Title" ON "DoctorResearches" ("Title");""");
+        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_DoctorResearches_IsPublished" ON "DoctorResearches" ("IsPublished");""");
     }
 
     private static void AddColumnIfMissing(AppDbContext db, string table, string column, string columnType)

@@ -621,6 +621,57 @@ mark { background: var(--primary-soft); color: var(--primary); border-radius: 2p
 .material-content { white-space: pre-wrap; font-size: 14px; line-height: 1.6; margin: 12px 0; }
 .recommendation-item.selected { border-color: var(--primary); }
 
+/* Doctor profile — locked vs editable fields (light/dark + RTL friendly).
+   Layout uses logical properties so a dir="rtl" root flips automatically. */
+.locked-hint {
+    display: flex; align-items: center; gap: 8px;
+    margin: 0 20px 12px; padding: 8px 12px;
+    font-size: 13px; color: var(--text-secondary);
+    background: var(--warning-light); border: 1px solid var(--warning-light);
+    border-inline-start: 3px solid var(--warning);
+    border-radius: var(--radius-sm);
+}
+.lock-icon { font-size: 13px; opacity: 0.9; }
+.locked-fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 0 20px 20px; }
+.locked-field {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+.locked-label {
+    font-size: 12px; font-weight: 600; color: var(--text-secondary);
+    letter-spacing: 0.02em; text-transform: uppercase;
+    display: flex; align-items: center; gap: 6px;
+}
+.locked-value { font-size: 15px; font-weight: 500; color: var(--text); overflow-wrap: anywhere; }
+.locked-field input { width: 100%; }
+
+/* Editable badge on profile sections */
+.card-header .status-badge { flex-shrink: 0; }
+
+/* Clickable enrolled count */
+.enrolled-count-link { color: var(--primary); cursor: pointer; text-decoration: none; font-weight: 600; }
+.enrolled-count-link:hover { text-decoration: underline; }
+.enrolled-count-link.card-value { text-align: start; }
+
+/* Avatar preview on the doctor profile */
+.avatar-preview-wrap { display: flex; justify-content: center; margin-bottom: 16px; }
+.avatar-preview {
+    width: 96px; height: 96px; border-radius: 50%;
+    object-fit: cover; border: 2px solid var(--border); box-shadow: var(--shadow);
+}
+.avatar-preview-big { width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--primary-light); color: var(--primary); font-size: 40px; font-weight: 700; }
+
+/* Inline display-title editing */
+.display-title-input { width: 100%; min-width: 220px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); }
+.display-title-input:focus { border-color: var(--primary); outline: none; }
+
+@media (max-width: 640px) {
+    .locked-fields { grid-template-columns: 1fr; }
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
     .summary-cards { grid-template-columns: repeat(3, 1fr); }
@@ -651,3 +702,37 @@ mark { background: var(--primary-soft); color: var(--primary); border-radius: 2p
     .analytics-hero { gap: 16px; }
     .hero-stats { gap: 16px; }
 }
+
+/* ---- Research Hub (cycle 4) ---- */
+.research-tabs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.research-tab { padding: 9px 18px; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); border-radius: var(--radius-sm); cursor: pointer; font-weight: 600; font-size: 0.92rem; }
+.research-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.research-tab:not(.active):hover { border-color: var(--primary); color: var(--primary); color: var(--primary); }
+.research-new { margin-inline-start: auto; }
+.research-list { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.research-card { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; background: var(--card); display: flex; flex-direction: column; gap: 8px; }
+.research-title-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.research-title-row h3 { margin: 0; font-size: 1.02rem; flex: 1 1 auto; min-width: 200px; }
+.research-year { background: var(--secondary-light); color: var(--secondary); border-radius: 999px; padding: 2px 10px; font-size: 0.8rem; font-weight: 700; }
+.research-badge { border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 700; }
+.research-badge.published { background: var(--success-light); color: var(--success); }
+.research-badge.draft { background: var(--warning-light); color: var(--warning); }
+.research-meta { margin: 0; color: var(--text-secondary); font-size: 0.88rem; }
+.research-abstract { margin: 0; font-size: 0.92rem; color: var(--text); white-space: pre-line; }
+.research-doi { margin: 0; font-size: 0.85rem; color: var(--secondary); overflow-wrap: anywhere; }
+.research-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.research-details { border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 0.92rem; }
+.research-details p { margin: 0; }
+.research-count { margin: 10px 0 0; color: var(--text-muted); font-size: 0.88rem; }
+.research-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.research-filters input[type='text'], .research-filters input:not([type]) { flex: 2 1 200px; }
+.research-filters select { flex: 1 1 130px; }
+.research-filters .btn { flex: 0 0 auto; }
+.research-file { margin: 8px 0 0; font-size: 0.88rem; color: var(--success); font-weight: 600; }
+.research-actions .btn-sm { min-width: 64px; }
+.rh-pagination { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; margin-top: 10px; color: var(--text-secondary); font-size: 0.9rem; }
+.rh-pagination .btn { flex: 0 0 auto; }
+.upload-modal-body { display: flex; flex-direction: column; gap: 10px; }
+.upload-modal .modal { max-width: 640px; }
+.required-mark { color: var(--danger); margin-inline-start: 4px; }
+.research-filters input:focus-visible, .research-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }

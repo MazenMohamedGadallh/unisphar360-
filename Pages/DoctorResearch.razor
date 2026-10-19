@@ -1,0 +1,851 @@
+@page "/doctor/research"
+@using System.Net
+@using System.Net.Http.Headers
+@using System.Text
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using UniSphere.Api.Dtos
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+
+<PageTitle>Research Hub - UniSphere 360+</PageTitle>
+
+@if (_denied)
+{
+    <div class="alert alert-error">Access denied: this area is for doctors only.</div>
+}
+else
+{
+    <div class="page-header">
+        <h1>Research Hub</h1>
+        <p>Upload your papers (PDF up to 20 MB) and browse published research from every university.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error</div>
+    }
+    @if (!string.IsNullOrEmpty(_success))
+    {
+        <div class="alert alert-success">@_success</div>
+    }
+
+    <div class="research-tabs" role="tablist">
+        <button class="research-tab @(_tab == "mine" ? "active" : "")" role="tab"
+                aria-selected="@(_tab == "mine")" @onclick="@(() => SwitchTab("mine"))">My Research</button>
+        <button class="research-tab @(_tab == "browse" ? "active" : "")" role="tab"
+                aria-selected="@(_tab == "browse")" @onclick="@(() => SwitchTab("browse"))">Browse Research</button>
+        @if (_tab == "mine")
+        {
+            <button class="btn btn-primary btn-sm research-new" @onclick="OpenCreateModal">+ New paper</button>
+        }
+    </div>
+
+    @if (_tab == "mine")
+    {
+        // ---- My research (owner CRUD) ----
+        <div class="card">
+            <div class="card-header"><h3>My papers</h3></div>
+            @if (_mineLoading)
+            {
+                <div class="loading">Loading your papers...</div>
+            }
+            else if (_mine is null || _mine.Count == 0)
+            {
+                <div class="empty-state">
+                    <p>You haven't uploaded any research yet.</p>
+                    <button class="btn btn-primary btn-sm" @onclick="OpenCreateModal">Upload your first paper</button>
+                </div>
+            }
+            else
+            {
+                <div class="research-list">
+                    @foreach (var r in _mine)
+                    {
+                        <div class="research-card">
+                            <div class="research-main">
+                                <div class="research-title-row">
+                                    <h3>@r.Title</h3>
+                                    <span class="research-year">@r.Year</span>
+                                    <span class="research-badge @(r.IsPublished ? "published" : "draft")">@(r.IsPublished ? "Published" : "Draft")</span>
+                                </div>
+                                <p class="research-meta">@r.Authors &middot; @r.Field</p>
+                                <p class="research-abstract">@r.Abstract</p>
+                                @if (!string.IsNullOrEmpty(r.DoiOrUrl))
+                                {
+                                    <p class="research-doi">DOI/Link: @r.DoiOrUrl</p>
+                                }
+                            </div>
+                            <div class="research-actions">
+                                @if (r.HasPdf)
+                                {
+                                    <button class="btn btn-sm btn-secondary"
+                                            disabled="@(_downloadingId == r.Id)"
+                                            @onclick="@(() => DownloadPdfAsync(r.Id, r.Title))">
+                                        @(_downloadingId == r.Id ? "..." : "PDF")
+                                    </button>
+                                }
+                                <button class="btn btn-sm btn-primary" @onclick="@(() => StartEdit(r))">Edit</button>
+                                <button class="btn btn-sm @(!r.IsPublished ? "btn-primary" : "btn-secondary")"
+                                        disabled="@(!r.HasPdf && !r.IsPublished)"
+                                        title="@(!r.HasPdf ? "Attach a PDF first (Edit)." : "")"
+                                        @onclick="@(() => TogglePublishAsync(r))">
+                                    @(r.IsPublished ? "Unpublish" : "Publish")
+                                </button>
+                                <button class="btn btn-sm btn-danger" @onclick="@(() => AskDelete(r))">Delete</button>
+                            </div>
+                        </div>
+                    }
+                    <p class="research-count">@_mineTotal paper@(_mineTotal == 1 ? "" : "s") &middot; drafts stay private until you publish</p>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        // ---- Cross-university browse (published only) ----
+        <div class="card">
+            <div class="card-header"><h3>Browse published research</h3></div>
+            <div class="research-filters">
+                <input placeholder="Search title, abstract, keywords, authors..."
+                       @bind="_browseQuery" maxlength="200"
+                       @onkeydown="BrowseSearchKey" />
+                <select @bind="_browseUniversityId" aria-label="University filter">
+                    <option value="0">All universities</option>
+                    @foreach (var u in _filterUniversities)
+                    {
+                        <option value="@u.Id">@u.Name</option>
+                    }
+                </select>
+                <select @bind="_browseField" aria-label="Field filter">
+                    <option value="">All fields</option>
+                    @foreach (var f in _filterFields)
+                    {
+                        <option value="@f">@f</option>
+                    }
+                </select>
+                <select @bind="_browseYear" aria-label="Year filter">
+                    <option value="0">All years</option>
+                    @foreach (var y in _filterYears)
+                    {
+                        <option value="@y">@y</option>
+                    }
+                </select>
+                <button class="btn btn-secondary" @onclick="ClearFiltersAsync">Clear</button>
+                <button class="btn btn-primary" @onclick="ApplyBrowseFiltersAsync">Apply</button>
+            </div>
+
+            @if (_browseLoading)
+            {
+                <div class="loading">Loading research...</div>
+            }
+            else if (_browse is not null && _browse.Count == 0 && _browseTotal == 0)
+            {
+                <div class="empty-state">No published research matches your filters yet.</div>
+            }
+            else
+            {
+                <div class="research-list">
+                    @foreach (var r in _browse ?? new())
+                    {
+                        <div class="research-card">
+                            <div class="research-main">
+                                <div class="research-title-row">
+                                    <h3>@r.Title</h3>
+                                    <span class="research-year">@r.Year</span>
+                                </div>
+                                <p class="research-meta">@r.AuthorName &middot; @r.AuthorUniversity &middot; @r.AuthorDepartment &middot; @r.Field</p>
+                                <p class="research-abstract">@Preview(r.Abstract)</p>
+                            </div>
+                            <div class="research-actions">
+                                @if (r.HasPdf)
+                                {
+                                    <button class="btn btn-sm btn-secondary"
+                                            disabled="@(_downloadingId == r.Id)"
+                                            @onclick="@(() => DownloadPdfAsync(r.Id, r.Title))">
+                                        @(_downloadingId == r.Id ? "..." : "PDF")
+                                    </button>
+                                }
+                                <button class="btn btn-sm btn-primary" @onclick="@(() => ToggleDetails(r.Id))">
+                                    @(r.Id == _openDetailsId ? "Hide details" : "Details")
+                                </button>
+                            </div>
+                            @if (r.Id == _openDetailsId)
+                            {
+                                <div class="research-details">
+                                    <p><strong>Authors:</strong> @r.Authors</p>
+                                    <p><strong>Keywords:</strong> @r.Keywords</p>
+                                    <p><strong>Abstract:</strong> @r.Abstract</p>
+                                    @if (!string.IsNullOrEmpty(r.DoiOrUrl))
+                                    {
+                                        <p><strong>DOI/Link:</strong> @r.DoiOrUrl</p>
+                                    }
+                                    <p class="research-meta">The author's contact details stay private. Reach out via your university.</p>
+                                </div>
+                            }
+                        </div>
+                    }
+                    <div class="rh-pagination">
+                        <button class="btn btn-sm btn-secondary" disabled="@(_browsePage <= 1)"
+                                @onclick="@(() => ChangePage(_browsePage - 1))">&larr; Previous</button>
+                        <span>Page @_browsePage of @TotalPages &middot; @_browseTotal paper@(_browseTotal == 1 ? "" : "s")</span>
+                        <button class="btn btn-sm btn-secondary" disabled="@(_browsePage >= TotalPages)"
+                                @onclick="@(() => ChangePage(_browsePage + 1))">Next &rarr;</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    // ---- Upload / edit modal (multipart: metadata + optional PDF) ----
+    @if (_formOpen)
+    {
+        <div class="modal-overlay" @onclick="CloseForm">
+            <div class="modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>@(_editId is null ? "Upload a paper" : "Edit paper")</h3>
+                    <button class="modal-close" @onclick="CloseForm">&times;</button>
+                </div>
+                <div class="modal-body upload-modal-body">
+                    <div class="form-group">
+                        <label>Title <span class="required-mark">*</span></label>
+                        <input @bind="_form.Title" maxlength="300" required />
+                        <small class="field-hint">3-300 characters, plain text</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Abstract <span class="required-mark">*</span></label>
+                        <textarea @bind="_form.Abstract" maxlength="5000" rows="5" required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Authors <span class="required-mark">*</span></label>
+                        <input @bind="_form.Authors" maxlength="300" />
+                    </div>
+                    <div class="form-inline">
+                        <div class="form-group" style="flex: 1 1 200px;">
+                            <label>Keywords <span class="required-mark">*</span></label>
+                            <input @bind="_form.Keywords" maxlength="300" />
+                        </div>
+                        <div class="form-group" style="flex: 1 1 200px;">
+                            <label>Field / department <span class="required-mark">*</span></label>
+                            <input @bind="_form.Field" maxlength="200" />
+                        </div>
+                    </div>
+                    <div class="form-inline">
+                        <div class="form-group" style="flex: 1 1 120px;">
+                            <label>Year <span class="required-mark">*</span></label>
+                            <input type="number" min="1950" max="2100" @bind="_form.Year" />
+                        </div>
+                        <div class="form-group" style="flex: 1 1 200px;">
+                            <label>DOI or link (optional)</label>
+                            <input @bind="_form.DoiOrUrl" maxlength="500" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>PDF @(_editId is null ? "" : "(leave empty to keep the current file)")</label>
+                        <InputFile OnChange="OnPdfSelected" accept=".pdf,application/pdf" />
+                        @if (_pdfFile is not null)
+                        {
+                            <p class="research-file">@_pdfFile.Name (@FormatBytes(_pdfFile.Size))</p>
+                        }
+                        <small class="field-hint">Real PDF only: the server checks the file bytes, max 20 MB.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" @bind="_form.IsPublished" /> Publish immediately (visible to all universities in Browse)
+                        </label>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_formError))
+                    {
+                        <div class="alert alert-error">@_formError</div>
+                    }
+                    <div class="form-inline">
+                        <button class="btn btn-primary" disabled="@(_uploading)" @onclick="SubmitFormAsync">
+                            @(_uploading ? "Uploading..." : (_editId is null ? "Upload" : "Save changes"))
+                        </button>
+                        <button class="btn btn-secondary" @onclick="CloseForm">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    // ---- Delete confirmation ----
+    @if (_confirmDeleteId is not null)
+    {
+        <div class="modal-overlay" @onclick="CancelDelete">
+            <div class="modal" @onclick:stopPropagation="true">
+                <div class="modal-header"><h3>Delete this paper?</h3></div>
+                <div class="modal-body"><p>"@_confirmDeleteTitle" and its stored PDF will be permanently removed.</p></div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button class="btn btn-danger" disabled="@_deleting" @onclick="ConfirmDeleteAsync">
+                        @(_deleting ? "Deleting..." : "Delete")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private string _tab = "mine";
+
+    private List<ResearchHubItemDto>? _mine;
+    private bool _mineLoading;
+    private int _mineTotal;
+
+    private List<ResearchHubItemDto>? _browse;
+    private bool _browseLoading;
+    private int _browseTotal;
+    private int _browsePage = 1;
+    private int? _openDetailsId;
+    private string _browseQuery = "";
+    private int _browseUniversityId;
+    private string _browseField = "";
+    private int _browseYear;
+    private bool _filtersLoaded;
+    private List<UniversityDto> _filterUniversities = new();
+    private List<string> _filterFields = new();
+    private List<int> _filterYears = new();
+
+    private bool _formOpen;
+    private int? _editId;
+    private ResearchForm _form = new();
+    private IBrowserFile? _pdfFile;
+    private string? _formError;
+    internal bool _uploading;
+
+    private int? _confirmDeleteId;
+    private string _confirmDeleteTitle = "";
+    internal bool _deleting;
+    private int? _downloadingId;
+
+    private bool _denied;
+    private bool _started;
+    private string? _error;
+    private string? _success;
+
+    private const long MaxPdfSize = 20 * 1024 * 1024;
+
+    private int TotalPages => Math.Max(1, (_browseTotal + 19) / 20);
+
+    // Mutable mirror of the upload metadata for @bind (records are init-only).
+    private sealed class ResearchForm
+    {
+        public string Title = "";
+        public string Abstract = "";
+        public string Authors = "";
+        public string Keywords = "";
+        public int Year = DateTime.UtcNow.Year;
+        public string Field = "";
+        public string? DoiOrUrl;
+        public bool IsPublished;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized) return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        if (user.Role != "Doctor")
+        {
+            _denied = true;
+            _mineLoading = false;
+            return;
+        }
+        await LoadMineAsync();
+    }
+
+    private void SwitchTab(string tab)
+    {
+        if (tab == _tab) return;
+        _tab = tab;
+        _error = null;
+        _success = null;
+        if (tab == "browse")
+        {
+            // Re-fetch every time: the user may have published/unpublished a
+            // paper since the last visit, so a cached list would lie.
+            if (!_filtersLoaded) _ = LoadFiltersAsync();
+            else if (!_browseLoading) _ = LoadBrowseAsync();
+        }
+        else if (_mine is null && !_mineLoading)
+            _ = LoadMineAsync();
+    }
+
+    // ---- My research ----
+
+    private async Task LoadMineAsync()
+    {
+        _mineLoading = true;
+        _error = null;
+        try
+        {
+            var list = await Http.GetFromJsonAsync<List<ResearchHubItemDto>>("/api/research-hub/mine") ?? new();
+            // Server returns newest-first already; keep the raw order.
+            _mine = list;
+            _mineTotal = list.Count;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            Nav.NavigateTo("/login", replace: true);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _denied = true;
+        }
+        catch
+        {
+            _error = "Could not load your papers. Please try again.";
+        }
+        finally
+        {
+            _mineLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ---- Browse tab ----
+
+    private async Task LoadFiltersAsync()
+    {
+        _filtersLoaded = true;
+        try
+        {
+            var dto = await Http.GetFromJsonAsync<ResearchHubFiltersDto>("/api/research-hub/filters");
+            if (dto is not null)
+            {
+                _filterUniversities = dto.Universities.ToList();
+                _filterFields = dto.Fields.ToList();
+                _filterYears = dto.Years.ToList();
+            }
+        }
+        catch
+        {
+            // Filters are optional refinements; the list itself still loads.
+        }
+        await LoadBrowseAsync();
+    }
+
+    private async Task ApplyBrowseFiltersAsync()
+    {
+        _browsePage = 1;
+        await LoadBrowseAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _browseQuery = "";
+        _browseUniversityId = 0;
+        _browseField = "";
+        _browseYear = 0;
+        _browsePage = 1;
+        await LoadBrowseAsync();
+    }
+
+    private async Task ChangePage(int page) => await LoadBrowsePageAsync(Math.Max(1, page));
+
+    private async Task LoadBrowsePageAsync(int page)
+    {
+        _browsePage = page;
+        await LoadBrowseAsync();
+    }
+
+    private async Task BrowseSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await ApplyBrowseFiltersAsync();
+    }
+
+    private void ToggleDetails(int id) =>
+        _openDetailsId = _openDetailsId == id ? null : id;
+
+    private static string Preview(string abstractText) =>
+        string.IsNullOrEmpty(abstractText) || abstractText.Length <= 260
+            ? abstractText
+            : abstractText[..260] + "...";
+
+    private async Task LoadBrowseAsync()
+    {
+        _browseLoading = true;
+        _error = null;
+        try
+        {
+            var url = $"/api/research-hub?page={_browsePage}";
+            if (!string.IsNullOrWhiteSpace(_browseQuery))
+                url += $"&q={Uri.EscapeDataString(_browseQuery.Trim())}";
+            if (_browseUniversityId > 0)
+                url += $"&universityId={_browseUniversityId}";
+            if (!string.IsNullOrWhiteSpace(_browseField))
+                url += $"&field={Uri.EscapeDataString(_browseField)}";
+            if (_browseYear > 0)
+                url += $"&year={_browseYear}";
+            var dto = await Http.GetFromJsonAsync<ResearchHubPageDto>(url);
+            _browse = dto?.Items.ToList() ?? new();
+            _browseTotal = dto?.Total ?? 0;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            Nav.NavigateTo("/login", replace: true);
+        }
+        catch
+        {
+            _error = "Could not load published research. Please try again.";
+        }
+        finally
+        {
+            _browseLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ---- Upload / edit form ----
+
+    private void OpenCreateModal()
+    {
+        _editId = null;
+        _form = new ResearchForm();
+        _pdfFile = null;
+        _formError = null;
+        _formOpen = true;
+    }
+
+    private void StartEdit(ResearchHubItemDto r)
+    {
+        _editId = r.Id;
+        _form = new ResearchForm
+        {
+            Title = r.Title,
+            Abstract = r.Abstract,
+            Authors = r.Authors,
+            Keywords = r.Keywords,
+            Year = r.Year,
+            Field = r.Field,
+            DoiOrUrl = r.DoiOrUrl,
+            IsPublished = r.IsPublished
+        };
+        _pdfFile = null;
+        _formError = null;
+        _formOpen = true;
+    }
+
+    private void CloseForm()
+    {
+        _formOpen = false;
+        _editId = null;
+        _pdfFile = null;
+        _formError = null;
+    }
+
+    private void OnPdfSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file is null)
+            {
+                _pdfFile = null;
+                return;
+            }
+            if (file.Size > MaxPdfSize)
+                _formError = "The PDF exceeds the 20 MB limit.";
+            else if (!string.Equals(System.IO.Path.GetExtension(file.Name), ".pdf", StringComparison.OrdinalIgnoreCase))
+                _formError = "Please choose a .pdf file.";
+            else
+                _pdfFile = file;
+        }
+        catch
+        {
+            _pdfFile = null;
+            _formError = "The file could not be read.";
+        }
+        StateHasChanged();
+    }
+
+    private async Task SubmitFormAsync()
+    {
+        _formError = null;
+
+        var title = _form.Title.Trim();
+        if (title.Length < 3 || title.Length > 300)
+        {
+            _formError = "Title must be 3-300 characters.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_form.Abstract) || _form.Abstract.Trim().Length > 5000)
+        {
+            _formError = "The abstract is required (max 5000 characters).";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_form.Authors) || _form.Authors.Trim().Length > 300)
+        {
+            _formError = "Authors are required (max 300 characters).";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_form.Keywords) || _form.Keywords.Trim().Length > 300)
+        {
+            _formError = "Keywords are required (max 300 characters).";
+            return;
+        }
+        if (_form.Year < 1950 || _form.Year > 2100)
+        {
+            _formError = "Year must be between 1950 and 2100.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_form.Field) || _form.Field.Trim().Length > 200)
+        {
+            _formError = "Field is required (max 200 characters).";
+            return;
+        }
+        if (ContainsAngleBrackets(_form.Title + _form.Abstract + _form.Authors + _form.Keywords + _form.Field + (_form.DoiOrUrl ?? "")))
+        {
+            _formError = "Plain text only: '<' and '>' characters are not allowed.";
+            return;
+        }
+        if (_editId is null && _pdfFile is null)
+        {
+            _formError = "Please attach the PDF file.";
+            return;
+        }
+
+        _uploading = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            void AddText(string key, string value) => content.Add(new StringContent(value, Encoding.UTF8), key);
+            AddText("title", title);
+            AddText("abstract", _form.Abstract.Trim());
+            AddText("authors", _form.Authors.Trim());
+            AddText("keywords", _form.Keywords.Trim());
+            AddText("year", _form.Year.ToString());
+            AddText("field", _form.Field.Trim());
+            AddText("doiOrUrl", _form.DoiOrUrl?.Trim() ?? "");
+            AddText("isPublished", _form.IsPublished ? "true" : "false");
+
+            if (_pdfFile is not null)
+            {
+                await using var ms = new MemoryStream();
+                await using var stream = _pdfFile.OpenReadStream(MaxPdfSize);
+                await stream.CopyToAsync(ms);
+                ms.Position = 0;
+                var bytes = new ByteArrayContent(ms.ToArray());
+                bytes.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+                content.Add(bytes, "pdfFile", System.IO.Path.GetFileName(_pdfFile.Name));
+            }
+
+            var resp = _editId is null
+                ? await Http.PostAsync("/api/research-hub", content)
+                : await Http.PutAsync($"/api/research-hub/{_editId}", content);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                _success = _editId is null ? "Paper uploaded." : "Paper updated.";
+                CloseForm();
+                await LoadMineAsync();
+            }
+            else if (resp.StatusCode == HttpStatusCode.BadRequest)
+            {
+                _formError = await DescribeErrorAsync(resp) ?? "The paper was rejected: check the metadata and that the file is a real PDF (max 20 MB).";
+            }
+            else if (resp.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                _formError = "Too many uploads in a short time. Please wait a few minutes and try again.";
+            }
+            else if (resp.StatusCode == HttpStatusCode.NotFound && _editId is not null)
+            {
+                _formError = "This paper no longer exists (it may have been deleted).";
+                CloseForm();
+                await LoadMineAsync();
+            }
+            else
+            {
+                _formError = $"Upload failed ({(int)resp.StatusCode}). Please try again.";
+            }
+        }
+        catch
+        {
+            _formError = "Upload failed. Check your connection and try again.";
+        }
+        finally
+        {
+            _uploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static bool ContainsAngleBrackets(string text) =>
+        text.Contains('<') || text.Contains('>');
+
+    // ---- Publish toggle / delete / download ----
+
+    private async Task TogglePublishAsync(ResearchHubItemDto r)
+    {
+        _error = null; _success = null;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"/api/research-hub/{r.Id}/publish",
+                new { isPublished = !r.IsPublished });
+            if (resp.IsSuccessStatusCode)
+            {
+                _success = !r.IsPublished
+                    ? "Published: doctors of every university can now discover and download it."
+                    : "Unpublished: the paper is a draft again (only you can see and download it).";
+            }
+            else if (resp.StatusCode == HttpStatusCode.BadRequest)
+            {
+                _error = await DescribeErrorAsync(resp) ?? "A PDF file must be attached before publishing.";
+            }
+            else
+            {
+                _error = "Could not change the publish state. Please try again.";
+            }
+        }
+        catch
+        {
+            _error = "Could not change the publish state. Please try again.";
+        }
+        await LoadMineAsync();
+    }
+
+    private void AskDelete(ResearchHubItemDto r)
+    {
+        _confirmDeleteId = r.Id;
+        _confirmDeleteTitle = r.Title;
+    }
+
+    private void CancelDelete() => _confirmDeleteId = null;
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_confirmDeleteId is null) return;
+        var id = _confirmDeleteId.Value;
+        _deleting = true;
+        try
+        {
+            var resp = await Http.DeleteAsync($"/api/research-hub/{id}");
+            if (resp.IsSuccessStatusCode)
+                _success = "Paper deleted.";
+            else if (resp.StatusCode == HttpStatusCode.NotFound)
+                _success = "That paper was already removed.";
+            else
+                _error = "Could not delete the paper. Please try again.";
+        }
+        catch
+        {
+            _error = "Could not delete the paper. Please try again.";
+        }
+        finally
+        {
+            _deleting = false;
+            _confirmDeleteId = null;
+            await LoadMineAsync();
+        }
+    }
+
+    private async Task DownloadPdfAsync(int id, string title)
+    {
+        _downloadingId = id;
+        _error = null;
+        try
+        {
+            var bytes = await Http.GetByteArrayAsync($"/api/research-hub/{id}/pdf");
+            var safe = new string(title.Where(char.IsLetterOrDigit).ToArray());
+            if (safe.Length > 40) safe = safe[..40];
+            var name = string.IsNullOrWhiteSpace(safe) ? $"research-{id}.pdf" : $"research-{safe}.pdf";
+            await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/research.js");
+            await module.InvokeVoidAsync("downloadFile", name, Convert.ToBase64String(bytes), "application/pdf");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _error = "The PDF for this paper is not available.";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            Nav.NavigateTo("/login", replace: true);
+        }
+        catch
+        {
+            _error = "Could not download the PDF. Please try again.";
+        }
+        finally
+        {
+            _downloadingId = null;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>Reads the ValidationProblemDetails / plain-text body of an
+    /// error response and turns it into a short friendly message.</summary>
+    private async Task<string?> DescribeErrorAsync(HttpResponseMessage resp)
+    {
+        try
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(body)) return null;
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var parts = new List<string>();
+            if (root.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+            {
+                var t = title.GetString();
+                if (!string.IsNullOrWhiteSpace(t) && !t.Contains("validation", StringComparison.OrdinalIgnoreCase))
+                    parts.Add(t);
+            }
+            if (root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in errors.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.Array)
+                        foreach (var item in prop.Value.EnumerateArray())
+                            if (item.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString()))
+                                parts.Add(item.GetString()!);
+                }
+            }
+            var joined = string.Join(" ", parts.Distinct()).Trim();
+            if (joined.Length > 400) joined = joined[..400].Trim() + "...";
+            return string.IsNullOrWhiteSpace(joined)
+                ? (body.StartsWith('{') ? null : body.Trim())
+                : joined;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string FormatBytes(long size)
+    {
+        if (size < 1024) return $"{size} B";
+        if (size < 1024 * 1024) return $"{size / 1024.0:0.#} KB";
+        return $"{size / (1024.0 * 1024.0):0.#} MB";
+    }
+}

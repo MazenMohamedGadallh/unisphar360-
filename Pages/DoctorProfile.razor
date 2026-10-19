@@ -1,0 +1,452 @@
+@page "/doctor/profile"
+@*
+    [Authorize] removed on purpose (see Dashboard.razor): the server
+    challenges every F5 to /login because the browser never sends the
+    localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+    and MainLayout bounces anonymous users to /login after auth resolves.
+
+    Doctor profile: locked fields (name, email, address, phone, university,
+    department) are rendered read-only with a lock icon + hint — the server
+    enforces the same rule on PUT /api/doctor/profile and returns 400 for
+    any locked field. Editable here: avatar, password and the display
+    title of each assigned course (identity comes from the JWT claims only).
+*@
+@using System.Net
+@using System.Net.Http.Headers
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+
+<PageTitle>Doctor Profile - UniSphere 360+</PageTitle>
+
+@if (_denied)
+{
+    <div class="alert alert-error">Access denied: this area is for doctors only.</div>
+}
+else
+{
+    <div class="page-header">
+        <h1>My Profile</h1>
+        <p>Personal details are verified by the administration. You can edit your avatar, password and course display titles.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error <button class="btn btn-sm btn-secondary" @onclick="LoadAsync">Retry</button></div>
+    }
+    @if (!string.IsNullOrEmpty(_success))
+    {
+        <div class="alert alert-success">@_success</div>
+    }
+
+    @if (_profile is null)
+    {
+        <div class="card"><div class="loading">Loading profile...</div></div>
+    }
+    else
+    {
+        <div class="two-column">
+            <!-- Locked fields (read-only) -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>Personal Information</h3>
+                    <span class="status-badge good">&#128274; Locked</span>
+                </div>
+                <div class="locked-hint">&#9995; Contact an administrator to change this.</div>
+                <div class="locked-fields">
+                    <div class="locked-field">
+                        <span class="locked-label">First Name <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-value">@_profile.FirstName</span>
+                    </div>
+                    <div class="locked-field">
+                        <span class="locked-label">Middle Name <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-value">@(string.IsNullOrWhiteSpace(_profile.MiddleName) ? "—" : _profile.MiddleName)</span>
+                    </div>
+                    <div class="locked-field">
+                        <span class="locked-label">Last Name <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-value">@_profile.LastName</span>
+                    </div>
+                    <div class="locked-field">
+                        <span class="locked-label">Email <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-value">@_profile.Email</span>
+                    </div>
+                    <div class="locked-field">
+                        <span class="locked-label">Address <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-value">@(string.IsNullOrWhiteSpace(_profile.Address) ? "—" : _profile.Address)</span>
+                    </div>
+                    <div class="locked-field">
+                        <span class="locked-label">Phone Number <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-value">@_profile.PhoneNumber</span>
+                    </div>
+                    <div class="locked-field">
+                        <span class="locked-label">University Name <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-value">@(string.IsNullOrWhiteSpace(_profile.UniversityName) ? "—" : _profile.UniversityName)</span>
+                    </div>
+                    <div class="locked-field">
+                        <span class="locked-label">Department <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-value">@(string.IsNullOrWhiteSpace(_profile.Department) ? "—" : _profile.Department)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <!-- Avatar (editable) -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header">
+                        <h3>Avatar</h3>
+                        <span class="status-badge excellent">&#9998; Editable</span>
+                    </div>
+                    <div>
+                        <div class="avatar-preview-wrap">
+                            @if (AvatarUrl is { Length: > 0 })
+                            {
+                                <img class="avatar-preview" src="@AvatarUrl" alt="Avatar" />
+                            }
+                            else
+                            {
+                                <span class="avatar-initial avatar-preview-big">@(_profile.FirstName.Length > 0 ? _profile.FirstName[0].ToString().ToUpper() : "?")</span>
+                            }
+                        </div>
+                        <div class="form-group">
+                            <label for="avatarUrl">Avatar URL</label>
+                            <input id="avatarUrl" @bind="_avatarUrlInput" placeholder="/uploads/doctor/avatar/... or https://..." />
+                        </div>
+                        <div class="form-group">
+                            <label>Or upload an image (PNG / JPEG / WebP, max 5 MB)</label>
+                            <InputFile OnChange="OnAvatarSelectedAsync" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" />
+                        </div>
+                        <button class="btn btn-primary" @onclick="SaveAvatarAsync" disabled="@_saving">
+                            @(_saving ? "Saving..." : "Save Avatar")
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Password (editable, current password required) -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Change Password</h3>
+                        <span class="status-badge excellent">&#9998; Editable</span>
+                    </div>
+                    <div>
+                        <div class="form-group">
+                            <label for="curPassword">Current password</label>
+                            <input id="curPassword" type="password" @bind="_currentPassword" autocomplete="current-password" />
+                        </div>
+                        <div class="form-group">
+                            <label for="newPassword">New password</label>
+                            <input id="newPassword" type="password" @bind="_newPassword" autocomplete="new-password" />
+                        </div>
+                        <div class="form-group">
+                            <label for="confirmPassword">Confirm new password</label>
+                            <input id="confirmPassword" type="password" @bind="_confirmPassword" autocomplete="new-password" />
+                        </div>
+                        <p class="rec-track">At least 8 characters. Your current password is required by the server.</p>
+                        <button class="btn btn-primary" @onclick="ChangePasswordAsync" disabled="@_saving">
+                            @(_saving ? "Saving..." : "Update Password")
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Course display titles (editable by the doctor) -->
+        <div class="card">
+            <div class="card-header">
+                <h3>My Course Display Titles</h3>
+                <span class="status-badge excellent">&#9998; Editable</span>
+            </div>
+            <p class="locked-hint" style="padding: 0 20px;">
+                The name students see for your courses. The official course code and catalog title stay unchanged.
+            </p>
+            @if (_profile.Courses.Count == 0)
+            {
+                <div class="empty-state">You are not assigned to any course yet. Contact an administrator.</div>
+            }
+            else
+            {
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Code</th><th>Current display title</th><th>Catalog title</th><th>Term</th><th>Enrolled</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in _profile.Courses)
+                            {
+                                <tr>
+                                    <td><span class="rec-code">@c.Code</span></td>
+                                    <td>
+                                        @if (_editingCourseId == c.CourseId)
+                                        {
+                                            <input class="display-title-input" @bind="_editTitle" maxlength="120" />
+                                        }
+                                        else
+                                        {
+                                            <strong>@(string.IsNullOrWhiteSpace(c.DisplayTitle) ? c.CatalogTitle : c.DisplayTitle)</strong>
+                                            @if (!string.IsNullOrWhiteSpace(c.DisplayTitle))
+                                            {
+                                                <span class="rec-track">(custom)</span>
+                                            }
+                                        }
+                                    </td>
+                                    <td>@c.CatalogTitle</td>
+                                    <td>@c.Semester</td>
+                                    <td>
+                                        <NavLink class="enrolled-count-link" href="/doctor/courses">@c.EnrolledCount student@(c.EnrolledCount == 1 ? "" : "s")</NavLink>
+                                    </td>
+                                    <td>
+                                        @if (_editingCourseId == c.CourseId)
+                                        {
+                                            <button class="btn btn-sm btn-primary" @onclick="() => SaveTitleAsync(c)" disabled="@_saving">@(_saving ? "Saving..." : "Save")</button>
+                                            <button class="btn btn-sm btn-secondary" @onclick="CancelEditTitle">Cancel</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-sm btn-secondary" @onclick="() => StartEditTitle(c)">Rename</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private UniSphere.Api.Dtos.DoctorProfileDto? _profile;
+    private string? _error;
+    private string? _success;
+    private bool _saving;
+    private bool _denied;
+    private bool _started;
+
+    private string? AvatarUrl => _profile?.AvatarUrl;
+    private string _avatarUrlInput = "";
+    private string _currentPassword = "";
+    private string _newPassword = "";
+    private string _confirmPassword = "";
+
+    private int? _editingCourseId;
+    private string _editTitle = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized) return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        if (user.Role != "Doctor")
+        {
+            _denied = true;
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            _profile = await Http.GetFromJsonAsync<UniSphere.Api.Dtos.DoctorProfileDto>("/api/doctor/profile");
+            if (_profile is not null) _avatarUrlInput = _profile.AvatarUrl ?? "";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            Nav.NavigateTo("/login", replace: true);
+        }
+        catch
+        {
+            _error = "Could not load your profile. Please try again.";
+        }
+    }
+
+    private async Task OnAvatarSelectedAsync(InputFileChangeEventArgs e)
+    {
+        _error = null; _success = null;
+        var file = e.File;
+        if (file is null) return;
+        if (file.Size > 5 * 1024 * 1024)
+        {
+            _error = "Avatar exceeds the 5 MB limit.";
+            return;
+        }
+        _saving = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var part = new StreamContent(file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024));
+            part.Headers.ContentType = new MediaTypeHeaderValue(
+                string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType);
+            content.Add(part, "file", file.Name);
+
+            var resp = await Http.PostAsync("/api/doctor/profile/avatar", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                var result = await resp.Content.ReadFromJsonAsync<UniSphere.Api.Dtos.MaterialUploadResultDto>();
+                if (result is not null) _avatarUrlInput = result.FileUrl;
+                _success = "Avatar uploaded. Press Save Avatar to apply it.";
+            }
+            else
+            {
+                _error = "Upload failed: " + TruncateForDisplay(await resp.Content.ReadAsStringAsync());
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = "Upload failed: " + ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task SaveAvatarAsync()
+    {
+        _error = null; _success = null;
+        _saving = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync("/api/doctor/profile",
+                new { avatarUrl = string.IsNullOrWhiteSpace(_avatarUrlInput) ? (string?)null : _avatarUrlInput.Trim() });
+            if (resp.IsSuccessStatusCode)
+            {
+                _profile = await resp.Content.ReadFromJsonAsync<UniSphere.Api.Dtos.DoctorProfileDto>();
+                if (_profile is not null) _avatarUrlInput = _profile.AvatarUrl ?? "";
+                _success = "Profile saved.";
+            }
+            else
+            {
+                _error = "Could not save the profile: " + TruncateForDisplay(await resp.Content.ReadAsStringAsync());
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        _error = null; _success = null;
+        if (_newPassword.Length < 8)
+        {
+            _error = "New password must be at least 8 characters.";
+            return;
+        }
+        if (_newPassword != _confirmPassword)
+        {
+            _error = "Passwords do not match.";
+            return;
+        }
+        _saving = true;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("/api/auth/change-password",
+                new { currentPassword = _currentPassword, newPassword = _newPassword });
+            if (resp.IsSuccessStatusCode)
+            {
+                _success = "Password changed.";
+                _currentPassword = _newPassword = _confirmPassword = "";
+            }
+            else if (resp.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                Nav.NavigateTo("/login", replace: true);
+            }
+            else
+            {
+                _error = "Could not change the password: " + TruncateForDisplay(await resp.Content.ReadAsStringAsync());
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void StartEditTitle(UniSphere.Api.Dtos.DoctorProfileCourseDto c)
+    {
+        _editingCourseId = c.CourseId;
+        _editTitle = c.DisplayTitle ?? c.CatalogTitle;
+        _success = null; _error = null;
+    }
+
+    private void CancelEditTitle()
+    {
+        _editingCourseId = null;
+        _editTitle = "";
+    }
+
+    private async Task SaveTitleAsync(UniSphere.Api.Dtos.DoctorProfileCourseDto c)
+    {
+        _error = null; _success = null;
+        var title = _editTitle.Trim();
+        if (!string.IsNullOrWhiteSpace(title) && title.Length < 3)
+        {
+            _error = "Display title must be at least 3 characters.";
+            return;
+        }
+        _saving = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"/api/doctor/courses/{c.CourseId}/display-title",
+                new { displayTitle = string.IsNullOrWhiteSpace(title) ? (string?)null : title });
+            if (resp.IsSuccessStatusCode)
+            {
+                _success = string.IsNullOrWhiteSpace(title)
+                    ? "Display title cleared — students will see the catalog title."
+                    : "Course display title updated.";
+                _editingCourseId = null;
+                await LoadAsync();
+            }
+            else if (resp.StatusCode == HttpStatusCode.NotFound)
+            {
+                _error = "This course is not assigned to you.";
+            }
+            else
+            {
+                _error = "Could not rename the course: " + TruncateForDisplay(await resp.Content.ReadAsStringAsync());
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private static string TruncateForDisplay(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return "the request was rejected.";
+        text = text.Replace("{", "").Replace("}", "").Trim();
+        return text.Length <= 200 ? text : text[..200] + "…";
+    }
+}

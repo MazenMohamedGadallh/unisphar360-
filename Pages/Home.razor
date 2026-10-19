@@ -22,7 +22,10 @@
         if (UniSphere.Api.Services.BlazorAuthService.IsLoadingState(state.User))
             return;
         if (state.User.Identity?.IsAuthenticated == true)
-            Nav.NavigateTo("/dashboard", replace: true);
+        {
+            var user = await AuthService.GetUserAsync();
+            Nav.NavigateTo(UniSphere.Api.Services.BlazorAuthService.HomeForRole(user?.Role), replace: true);
+        }
         else
             Nav.NavigateTo("/login", replace: true);
     }
@@ -37,7 +40,10 @@
         if (UniSphere.Api.Services.BlazorAuthService.IsLoadingState(state.User))
             return;
         if (state.User.Identity?.IsAuthenticated == true)
-            Nav.NavigateTo("/dashboard", replace: true);
+        {
+            var user = await AuthService.GetUserAsync();
+            Nav.NavigateTo(UniSphere.Api.Services.BlazorAuthService.HomeForRole(user?.Role), replace: true);
+        }
         else
             Nav.NavigateTo("/login", replace: true);
     }

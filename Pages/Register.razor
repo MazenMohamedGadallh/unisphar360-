@@ -224,6 +224,15 @@
                     }
                 </div>
             </div>
+            <div class="form-group">
+                <label for="address">Address (optional)</label>
+                <InputText id="address" @bind-Value="_model.Address" placeholder="7 El Shorouk St., Cairo" />
+                <ValidationMessage For="@(() => _model.Address)" />
+                @if (ServerError("Address") is string addressErr)
+                {
+                    <div class="validation-message">@addressErr</div>
+                }
+            </div>
 
             <h3 class="form-section-title">Account</h3>
             <div class="form-row">
@@ -324,7 +333,8 @@
                 string.IsNullOrWhiteSpace(_model.Specialization) ? null : _model.Specialization.Trim(),
                 string.IsNullOrWhiteSpace(_model.GraduatedFrom) ? null : _model.GraduatedFrom.Trim(),
                 _model.GraduationYear,
-                _model.UniversityId));
+                _model.UniversityId,
+                string.IsNullOrWhiteSpace(_model.Address) ? null : _model.Address.Trim()));
 
             if (result.Succeeded)
             {
@@ -372,6 +382,9 @@
 
         [Required(ErrorMessage = "Gender is required.")]
         public string Gender { get; set; } = "";
+
+        [StringLength(200, ErrorMessage = "Address is too long.")]
+        public string? Address { get; set; }
 
         [Required(ErrorMessage = "Age is required.")]
         public int? Age { get; set; }

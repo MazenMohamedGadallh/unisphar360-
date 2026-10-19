@@ -155,6 +155,7 @@ else if (_tab == "users")
                                 <td class="row-actions">
                                     @if (!u.IsDeleted)
                                     {
+                                        <button class="btn btn-sm btn-secondary" @onclick="() => OpenEditUserAsync(u)">Edit</button>
                                         <button class="btn btn-sm @(u.IsActive ? "btn-secondary" : "btn-primary")" @onclick="() => AskStatusChangeAsync(u)">
                                             @(u.IsActive ? "Deactivate" : "Activate")
                                         </button>
@@ -298,6 +299,79 @@ else if (_tab == "system")
     }
 }
 
+@if (_editUser is not null)
+{
+    <div class="modal-overlay" @onclick="CloseEditUser">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-user-title" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 id="edit-user-title">Edit user — @_editUserName</h3>
+                <button class="modal-close" @onclick="CloseEditUser">&times;</button>
+            </div>
+            <div class="modal-body">
+                @if (!_universitiesLoaded)
+                {
+                    <div class="loading">Loading universities...</div>
+                }
+                else
+                {
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="euFirst">First name</label>
+                            <input id="euFirst" @bind="_editUser.FirstName" maxlength="100" />
+                        </div>
+                        <div class="form-group">
+                            <label for="euMiddle">Middle name</label>
+                            <input id="euMiddle" @bind="_editUser.MiddleName" maxlength="100" />
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="euLast">Last name</label>
+                            <input id="euLast" @bind="_editUser.LastName" maxlength="100" />
+                        </div>
+                        <div class="form-group">
+                            <label for="euEmail">Email</label>
+                            <input id="euEmail" type="email" @bind="_editUser.Email" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="euAddress">Address</label>
+                        <input id="euAddress" @bind="_editUser.Address" maxlength="200" />
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="euPhone">Phone number</label>
+                            <input id="euPhone" @bind="_editUser.PhoneNumber" maxlength="30" />
+                        </div>
+                        <div class="form-group">
+                            <label for="euDept">Department</label>
+                            <input id="euDept" @bind="_editUser.Department" maxlength="200" />
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="euUniversity">University</label>
+                            <select id="euUniversity" @bind="_editUser.UniversityIdText">
+                                <option value="">— None —</option>
+                                @foreach (var uni in _universities)
+                                {
+                                    <option value="@uni.Id" selected="@(_editUser.UniversityId == uni.Id)">@uni.Name @(uni.Id == _editUser.UniversityId ? "•" : "")</option>
+                                }
+                            </select>
+                            <small class="field-hint">Current university: @(_editUser.UniversityName ?? "none")</small>
+                        </div>
+                    </div>
+                    <p class="rec-track">These fields are locked for the user; only administrators can change them. Role and status use the other controls.</p>
+                }
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" @onclick="CloseEditUser">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveEditUserAsync" disabled="@_savingUser">@(_savingUser ? "Saving..." : "Save changes")</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (_confirmMessage is not null)
 {
     <div class="modal-overlay" @onclick="CancelConfirm">
@@ -326,6 +400,13 @@ else if (_tab == "system")
     private string _tab = "overview";
     private string? _toast;
     private bool _toastIsError;
+
+    // Edit-locked-fields dialog (GET/PUT /api/admin/users/{id})
+    private EditUserForm? _editUser;
+    private string _editUserName = "";
+    private List<UniversityDto> _universities = new();
+    private bool _universitiesLoaded;
+    private bool _savingUser;
 
     private AdminOverviewDto? _overview;
     private PagedResultDto<AdminUserDto>? _users;
@@ -497,6 +578,117 @@ else if (_tab == "system")
     {
         _userPage = Math.Max(1, _userPage + delta);
         await LoadUsersAsync();
+    }
+
+    private async Task OpenEditUserAsync(AdminUserDto u)
+    {
+        _editUserName = u.FullName;
+        try
+        {
+            var detail = await Http.GetFromJsonAsync<AdminUserDetailDto>($"/api/admin/users/{u.Id}");
+            if (detail is null)
+            {
+                Toast("User not found.", true);
+                return;
+            }
+            _editUser = new EditUserForm(detail);
+            if (!_universitiesLoaded)
+            {
+                _universities = await Http.GetFromJsonAsync<List<UniversityDto>>("/api/auth/universities") ?? new();
+                _universitiesLoaded = true;
+            }
+        }
+        catch
+        {
+            _editUser = null;
+            Toast("Could not load the user profile.", true);
+        }
+    }
+
+    private void CloseEditUser() => _editUser = null;
+
+    private async Task SaveEditUserAsync()
+    {
+        if (_editUser is null) return;
+        if (string.IsNullOrWhiteSpace(_editUser.FirstName) || string.IsNullOrWhiteSpace(_editUser.LastName))
+        {
+            Toast("First name and last name are required.", true);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_editUser.Email))
+        {
+            Toast("Email is required.", true);
+            return;
+        }
+        int? universityId = null;
+        if (!string.IsNullOrWhiteSpace(_editUser.UniversityIdText)
+            && int.TryParse(_editUser.UniversityIdText, out var parsedUniversityId))
+            universityId = parsedUniversityId;
+
+        _savingUser = true;
+        try
+        {
+            var payload = new AdminUpdateUserRequest(
+                _editUser.FirstName.Trim(),
+                string.IsNullOrWhiteSpace(_editUser.MiddleName) ? null : _editUser.MiddleName.Trim(),
+                _editUser.LastName.Trim(),
+                _editUser.Email.Trim(),
+                string.IsNullOrWhiteSpace(_editUser.Address) ? null : _editUser.Address.Trim(),
+                _editUser.PhoneNumber ?? "",
+                _editUser.Department ?? "",
+                universityId);
+            var response = await Http.PutAsJsonAsync($"/api/admin/users/{_editUser.Id}", payload);
+            if (response.IsSuccessStatusCode)
+            {
+                Toast("User profile updated. The user sees the change immediately.");
+                _editUser = null;
+                await LoadUsersAsync();
+            }
+            else if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                Toast("This email is already used by another account.", true);
+            }
+            else
+            {
+                Toast($"Could not update the user: {await response.Content.ReadAsStringAsync()}", true);
+            }
+        }
+        finally
+        {
+            _savingUser = false;
+        }
+    }
+
+    private sealed class EditUserForm
+    {
+        public int Id { get; init; }
+        public string FirstName { get; set; } = "";
+        public string? MiddleName { get; set; }
+        public string LastName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string? Address { get; set; }
+        public string PhoneNumber { get; set; } = "";
+        public string Department { get; set; } = "";
+        public string? UniversityName { get; init; }
+        public int? UniversityId { get; init; }
+        public string UniversityIdText { get; set; } = "";
+        public string Role { get; init; } = "";
+
+        public EditUserForm(AdminUserDetailDto d)
+        {
+            Id = d.Id;
+            FirstName = d.FirstName;
+            MiddleName = d.MiddleName;
+            LastName = d.LastName;
+            Email = d.Email;
+            Address = d.Address;
+            PhoneNumber = d.PhoneNumber;
+            Department = d.Department;
+            UniversityId = d.UniversityId;
+            UniversityName = d.UniversityName;
+            Role = d.Role;
+            UniversityIdText = d.UniversityId?.ToString() ?? "";
+        }
     }
 
     private async Task ChangeAuditPageAsync(int delta)

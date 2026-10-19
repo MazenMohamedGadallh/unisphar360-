@@ -28,6 +28,7 @@ public class AppDbContext : DbContext
     public DbSet<ChatUsage> ChatUsages => Set<ChatUsage>();
     public DbSet<CareerRecommendation> CareerRecommendations => Set<CareerRecommendation>();
     public DbSet<ResearchPaper> ResearchPapers => Set<ResearchPaper>();
+    public DbSet<DoctorResearch> DoctorResearches => Set<DoctorResearch>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -94,6 +95,26 @@ public class AppDbContext : DbContext
         // Research paper indexes
         modelBuilder.Entity<ResearchPaper>()
             .HasIndex(r => r.Title);
+
+        // Doctor research hub indexes (browse filters: university, year, title search)
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.DoctorUserId);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.UniversityId);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.Year);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.Title);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.IsPublished);
+
+        // Doctor research relationship: keep the paper when the user row is
+        // removed (Restrict) so publication history is never silently lost.
+        modelBuilder.Entity<DoctorResearch>()
+            .HasOne(r => r.DoctorUser)
+            .WithMany()
+            .HasForeignKey(r => r.DoctorUserId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Configure relationships
         modelBuilder.Entity<Enrollment>()

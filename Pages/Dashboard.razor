@@ -433,6 +433,8 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             return;
         // Each card loads (and fails) independently: one bad call can never
         // freeze the whole dashboard on "Loading..." again.
+        if (await TryResolveStaffLandingAsync())
+            return;
         await LoadAllAsync();
     }
 
@@ -447,10 +449,38 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
                 await AuthService.RestoreSessionAsync();
             if (AuthService.IsInitialized)
             {
-                await LoadAllAsync();
+                if (!await TryResolveStaffLandingAsync())
+                    await LoadAllAsync();
                 StateHasChanged();
             }
         }
+    }
+
+    /// <summary>Doctors and admins never belong on the student dashboard:
+    /// every call below is student-only, so they would sit here with a
+    /// wrong greeting and a wall of failed requests. Send them to their
+    /// own workspace (typed URL, sidebar Home link, stale redirect).
+    /// Returns true when the student loads must not run - because we
+    /// navigated away, or because the explicit ?denied=1 notice is being
+    /// shown ( staff keep their real name but skip the student calls,
+    /// so the notice is not buried under unrelated errors).</summary>
+    private async Task<bool> TryResolveStaffLandingAsync()
+    {
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+            return false;
+        if (user.Role is not ("Doctor" or "Admin"))
+            return false;
+        if (string.Equals(Denied, "1", StringComparison.Ordinal))
+        {
+            var first = user.FullName?
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault();
+            _firstName = string.IsNullOrEmpty(first) ? "Student" : first;
+            return true;
+        }
+        Nav.NavigateTo(user.Role == "Doctor" ? "/doctor" : "/admin", replace: true);
+        return true;
     }
 
     private Task LoadAllAsync() => Task.WhenAll(

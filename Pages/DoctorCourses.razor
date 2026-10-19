@@ -5,7 +5,7 @@
 @inject NavigationManager Nav
 @inject UniSphere.Api.Services.BlazorAuthService AuthService
 
-<PageTitle>My Courses - UniSphere 360+</PageTitle>
+<PageTitle>My Course - UniSphere 360+</PageTitle>
 
 @if (_denied)
 {
@@ -14,13 +14,17 @@
 else
 {
     <div class="page-header">
-        <h1>My Courses</h1>
-        <p>Courses you are assigned to teach. Course access is verified by the server on every request.</p>
+        <h1>My Course</h1>
+        <p>Courses you are assigned to teach. Access is verified by the server on every request.</p>
     </div>
 
     @if (!string.IsNullOrEmpty(_error))
     {
         <div class="alert alert-error">@_error <button class="btn btn-sm btn-secondary" @onclick="LoadAsync">Retry</button></div>
+    }
+    @if (!string.IsNullOrEmpty(_success))
+    {
+        <div class="alert alert-success">@_success</div>
     }
 
     <div class="card">
@@ -41,37 +45,118 @@ else
                     <div class="card course-card">
                         <div class="card-body">
                             <div class="rec-code">@c.Code</div>
-                            <h3 style="margin: 8px 0;">@c.Title</h3>
-                            <p class="rec-track">@c.Track · Semester @c.Semester · @c.Credits credits</p>
-                            <div class="summary-cards" style="grid-template-columns: repeat(3, 1fr); margin: 12px 0;">
-                                <div>
-                                    <span class="card-label">Students</span>
-                                    <div class="card-value" style="font-size: 18px;">@c.StudentCount</div>
+                            @if (_editingCourseId == c.CourseId)
+                            {
+                                <div class="form-group" style="margin: 8px 0;">
+                                    <label>Display title (3-120 characters, plain text)</label>
+                                    <input @bind="_editTitle" maxlength="120" disabled="@_saving" />
+                                    <small class="field-hint">Leave empty to fall back to the catalog title "@c.CatalogTitle".</small>
                                 </div>
-                                <div>
-                                    <span class="card-label">Avg Grade</span>
-                                    <div class="card-value" style="font-size: 18px;">@(c.AverageGradePoints?.ToString("0.00") ?? "—")</div>
+                                <div class="form-inline" style="margin-bottom: 8px;">
+                                    <button class="btn btn-sm btn-primary" @onclick="() => SaveTitleAsync(c)" disabled="@_saving">@(_saving ? "Saving..." : "Save title")</button>
+                                    <button class="btn btn-sm btn-secondary" @onclick="CancelEditTitle">Cancel</button>
                                 </div>
+                            }
+                            else
+                            {
+                                <h3 style="margin: 8px 0;">@(string.IsNullOrWhiteSpace(c.DisplayTitle) ? c.CatalogTitle : c.DisplayTitle)
+                                    @if (!string.IsNullOrWhiteSpace(c.DisplayTitle))
+                                    {
+                                        <small class="rec-track">(your display title)</small>
+                                    }
+                                </h3>
+                                <p class="rec-track">Official title: @c.CatalogTitle</p>
+                            }
+
+                            <div class="form-group" style="margin: 8px 0;">
+                                <label>Course code (read-only)</label>
+                                <input value="@c.Code" readonly />
+                            </div>
+                            <p class="rec-track">Term: @c.Semester</p>
+
+                            <div class="summary-cards" style="grid-template-columns: 1fr; margin: 12px 0;">
                                 <div>
-                                    <span class="card-label">Attendance</span>
-                                    <div class="card-value" style="font-size: 18px;">@(c.AverageAttendance.HasValue ? $"{c.AverageAttendance:0.#}%" : "—")</div>
+                                    <span class="card-label">Enrolled students</span>
+                                    <div class="card-value enrolled-count-link" style="font-size: 18px;"
+                                         @onclick="() => ShowStudentsAsync(c)"
+                                         title="Click to view the student list">
+                                        @c.EnrolledCount student@(c.EnrolledCount == 1 ? "" : "s")
+                                    </div>
                                 </div>
                             </div>
-                            <NavLink href="@($"/doctor/courses/{c.CourseId}")" class="btn btn-primary btn-sm">Open course</NavLink>
+
+                            <div class="form-inline">
+                                <button class="btn btn-sm btn-secondary" @onclick="() => StartEditTitle(c)">Rename for students</button>
+                                <NavLink href="@($"/doctor/courses/{c.CourseId}")" class="btn btn-primary btn-sm">Open course</NavLink>
+                            </div>
                         </div>
                     </div>
                 }
             </div>
         }
     </div>
+
+    @* Student list (read-only) opened by clicking the enrolled count *@
+    @if (_rosterCourse is not null)
+    {
+        <div class="modal-overlay" @onclick="CloseRoster">
+            <div class="modal" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>Students — @(_rosterCourse.Code)</h3>
+                    <button class="modal-close" @onclick="CloseRoster">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p class="rec-track">Enrolled students in your university. Read-only list.</p>
+                    @if (_rosterLoading)
+                    {
+                        <div class="loading">Loading students...</div>
+                    }
+                    else if (_roster is null || _roster.Count == 0)
+                    {
+                        <div class="empty-state">No students are enrolled in this course yet.</div>
+                    }
+                    else
+                    {
+                        <div class="table-wrapper">
+                            <table class="data-table">
+                                <thead><tr><th>Name</th><th>Year</th><th>Status</th></tr></thead>
+                                <tbody>
+                                    @foreach (var s in _roster)
+                                    {
+                                        <tr>
+                                            <td>@s.FullName</td>
+                                            <td>@(s.AcademicYear?.ToString() ?? "—")</td>
+                                            <td><span class="status-badge @(s.Status == "Excellent" ? "excellent" : (s.Status == "Needs Attention" ? "needs-attention" : "good"))">@s.Status</span></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" @onclick="CloseRoster">Close</button>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
-    private List<DoctorCourseSummaryDto>? _courses;
+    private List<DoctorProfileCourseDto>? _courses;
     private string? _error;
+    private string? _success;
     private bool _loading = true;
     private bool _denied;
     private bool _started;
+
+    private int? _editingCourseId;
+    private string _editTitle = "";
+    private bool _saving;
+
+    private DoctorProfileCourseDto? _rosterCourse;
+    private List<DoctorStudentDto>? _roster;
+    private bool _rosterLoading;
 
     protected override async Task OnInitializedAsync()
     {
@@ -120,7 +205,11 @@ else
         _error = null;
         try
         {
-            _courses = await Http.GetFromJsonAsync<List<DoctorCourseSummaryDto>>("/api/doctor/courses") ?? new();
+            _courses = await Http.GetFromJsonAsync<List<DoctorProfileCourseDto>>("/api/doctor/my-courses") ?? new();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            Nav.NavigateTo("/login", replace: true);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
         {
@@ -134,5 +223,84 @@ else
         {
             _loading = false;
         }
+    }
+
+    private void StartEditTitle(DoctorProfileCourseDto c)
+    {
+        _editingCourseId = c.CourseId;
+        _editTitle = c.DisplayTitle ?? c.CatalogTitle;
+        _error = null; _success = null;
+    }
+
+    private void CancelEditTitle()
+    {
+        _editingCourseId = null;
+        _editTitle = "";
+    }
+
+    private async Task SaveTitleAsync(DoctorProfileCourseDto c)
+    {
+        _error = null; _success = null;
+        var title = _editTitle.Trim();
+        if (!string.IsNullOrWhiteSpace(title) && title.Length < 3)
+        {
+            _error = "Display title must be at least 3 characters.";
+            return;
+        }
+        _saving = true;
+        try
+        {
+            var resp = await Http.PutAsJsonAsync($"/api/doctor/courses/{c.CourseId}/display-title",
+                new { displayTitle = string.IsNullOrWhiteSpace(title) ? (string?)null : title });
+            if (resp.IsSuccessStatusCode)
+            {
+                _success = string.IsNullOrWhiteSpace(title)
+                    ? "Display title cleared — students will see the catalog title."
+                    : $"Students now see \"{title}\".";
+                _editingCourseId = null;
+                await LoadAsync();
+            }
+            else if (resp.StatusCode == HttpStatusCode.NotFound)
+            {
+                _error = "This course is not assigned to you.";
+            }
+            else
+            {
+                _error = "Could not rename the course. Please try again.";
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ShowStudentsAsync(DoctorProfileCourseDto c)
+    {
+        _rosterCourse = c;
+        _rosterLoading = true;
+        _roster = null;
+        try
+        {
+            _roster = await Http.GetFromJsonAsync<List<DoctorStudentDto>>($"/api/doctor/courses/{c.CourseId}/students") ?? new();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _roster = new();
+        }
+        catch
+        {
+            _roster = new();
+        }
+        finally
+        {
+            _rosterLoading = false;
+        }
+    }
+
+    private void CloseRoster()
+    {
+        _rosterCourse = null;
+        _roster = null;
     }
 }

@@ -1,5 +1,36 @@
 namespace UniSphere.Api.Dtos;
 
+// ---- Doctor profile (/api/doctor/profile)
+
+/// <summary>The doctor's own profile. FirstName/MiddleName/LastName/Email/
+/// Address/PhoneNumber/UniversityName/Department are LOCKED (read-only,
+/// editable only by an admin); AvatarUrl and the per-course display titles
+/// are editable by the doctor. Identity always resolves from the JWT claims.</summary>
+public record DoctorProfileDto(
+    int Id,
+    string FirstName, string? MiddleName, string LastName,
+    string Email, string? Address, string PhoneNumber,
+    string? UniversityName, string Department,
+    string? AvatarUrl,
+    IReadOnlyList<DoctorProfileCourseDto> Courses);
+
+/// <summary>One course assigned to the doctor with its editable display title
+/// (catalog title/code stay read-only) and the server-computed number of
+/// enrolled students in the doctor's university.</summary>
+public record DoctorProfileCourseDto(
+    int CourseId, string Code, string CatalogTitle,
+    string? DisplayTitle, string Semester, int EnrolledCount);
+
+/// <summary>PUT /api/doctor/profile body. Deliberately contains ONLY the
+/// editable fields. Any locked field (name, email, phone, address,
+/// university, department, ...) in the JSON is rejected with 400 by the
+/// controller before binding; the User entity is never model-bound.</summary>
+public record UpdateDoctorProfileRequest(string? AvatarUrl);
+
+/// <summary>POST /api/doctor/profile/avatar result (same shape as material uploads).</summary>
+/// <summary>PUT /api/doctor/courses/{id}/display-title body.</summary>
+public record SetCourseDisplayTitleRequest(string? DisplayTitle);
+
 // ---- Doctor dashboard (/api/doctor/dashboard)
 
 public record DoctorDashboardDto(

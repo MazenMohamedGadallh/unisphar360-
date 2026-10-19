@@ -131,6 +131,19 @@ builder.Services.AddRateLimiter(opt =>
             QueueLimit = 0
         });
     });
+    // Research Hub PDF uploads: max 10 uploads/updates per user per 10 minutes
+    // (brute-force upload protection; metadata edits like publish toggles don't count).
+    opt.AddPolicy("research-upload", context =>
+    {
+        var key = "research-user-" + (context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anon");
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(10),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
 });
 
 // FluentValidation

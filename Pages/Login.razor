@@ -64,8 +64,9 @@
     protected override async Task OnInitializedAsync()
     {
         // Already signed in (typed URL / Back / link): don't show the form.
-        if (await AuthService.GetUserAsync() is not null)
-            Nav.NavigateTo("/dashboard", replace: true);
+        var user = await AuthService.GetUserAsync();
+        if (user is not null)
+            Nav.NavigateTo(HomeForRole(user.Role), replace: true);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -73,9 +74,12 @@
         // Full reload (F5): the scoped auth service starts empty, so the
         // persisted token can only be read once JS interop is available
         // (OnAfterRenderAsync — never during prerender). Restore it here:
-        // a signed-in user should land on the dashboard, not the form.
+        // a signed-in user should land on their role's home, not the form.
         if (firstRender && await AuthService.RestoreSessionAsync())
-            Nav.NavigateTo("/dashboard", replace: true);
+        {
+            var user = await AuthService.GetUserAsync();
+            Nav.NavigateTo(HomeForRole(user?.Role), replace: true);
+        }
     }
 
     private async Task HandleLogin(EventArgs e)
@@ -93,10 +97,7 @@
                 // forceLoad: true would reload the page, drop the token,
                 // and bounce straight back to /login.
                 var user = await AuthService.GetUserAsync();
-                if (user is not null && string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase))
-                    Nav.NavigateTo("/analytics");
-                else
-                    Nav.NavigateTo("/dashboard");
+                Nav.NavigateTo(HomeForRole(user?.Role));
             }
             else
             {
@@ -112,4 +113,7 @@
             _loading = false;
         }
     }
+
+    private static string HomeForRole(string? role) =>
+        UniSphere.Api.Services.BlazorAuthService.HomeForRole(role);
 }

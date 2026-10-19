@@ -21,17 +21,25 @@ public class EnrollmentsController : ControllerBase
         _access = access;
     }
 
-    /// <summary>Get the logged-in user's enrollments with course details.</summary>
+    /// <summary>Get the logged-in user's enrollments with course details.
+    /// When the course's instructor set a display title, students see that
+    /// title instead of the catalog course title.</summary>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<EnrollmentDto>>> GetMyEnrollments()
     {
         var userId = User.GetUserId();
         var enrollments = await _db.Enrollments.AsNoTracking()
             .Where(e => e.UserId == userId)
-            .Include(e => e.Course)
             .OrderBy(e => e.Course!.Code)
             .Select(e => new EnrollmentDto(
-                e.Id, e.CourseId, e.Course!.Code, e.Course.Title,
+                e.Id, e.CourseId, e.Course!.Code,
+                // Instructor's display title (latest non-null) wins over the
+                // catalog title; resolved server-side so clients cannot fake it.
+                _db.CourseAssignments
+                    .Where(a => a.CourseId == e.CourseId && a.DisplayTitle != null)
+                    .OrderByDescending(a => a.AssignedAtUtc)
+                    .Select(a => a.DisplayTitle)
+                    .FirstOrDefault() ?? e.Course.Title,
                 e.Semester, e.GradeLetter, e.GradePoints, e.AttendancePercent, e.Status))
             .ToListAsync();
 
@@ -47,6 +55,14 @@ public class EnrollmentsController : ControllerBase
         // Validate course exists
         var course = await _db.Courses.AsNoTracking().FirstOrDefaultAsync(c => c.Id == req.CourseId);
         if (course is null) return NotFound($"Course {req.CourseId} not found.");
+
+        // The display title the course's instructor set (may be null);
+        // resolved on the server so clients cannot fake it.
+        var assignmentDisplayTitle = await _db.CourseAssignments.AsNoTracking()
+            .Where(a => a.CourseId == course.Id && a.DisplayTitle != null)
+            .OrderByDescending(a => a.AssignedAtUtc)
+            .Select(a => a.DisplayTitle)
+            .FirstOrDefaultAsync();
 
         // Check not already enrolled
         var existing = await _db.Enrollments
@@ -68,17 +84,19 @@ public class EnrollmentsController : ControllerBase
         _db.Enrollments.Add(enrollment);
         await _db.SaveChangesAsync();
 
-        // Add activity
+        // Add activity (use the title students see: the instructor's
+        // display title when set, the catalog title otherwise)
+        var shownTitle = assignmentDisplayTitle ?? course.Title;
         _db.Activities.Add(new ActivityItem
         {
             UserId = userId,
             Kind = "enrollment",
-            Message = $"Enrolled in {course.Code} - {course.Title}"
+            Message = $"Enrolled in {course.Code} - {shownTitle}"
         });
         await _db.SaveChangesAsync();
 
         return Ok(new EnrollmentDto(
-            enrollment.Id, course.Id, course.Code, course.Title,
+            enrollment.Id, course.Id, course.Code, shownTitle,
             enrollment.Semester, enrollment.GradeLetter, enrollment.GradePoints,
             enrollment.AttendancePercent, enrollment.Status));
     }

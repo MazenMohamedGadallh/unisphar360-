@@ -22,6 +22,9 @@ public class User
     // Role-specific profile fields (only the ones matching Role are used)
     public string Department { get; set; } = "";  // student / doctor / graduate department
     public int? UniversityId { get; set; }        // home university (null = none assigned)
+    // Locked profile field: set at registration or by an admin only
+    // (administrators manage it via PUT /api/admin/users/{id}).
+    public string? Address { get; set; }
     public int? AcademicYear { get; set; }        // student: 1-5
     public string? Specialization { get; set; }   // doctor: field they teach
     public string? GraduatedFrom { get; set; }    // graduate: university/faculty

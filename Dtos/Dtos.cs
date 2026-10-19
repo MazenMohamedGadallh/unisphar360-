@@ -124,6 +124,23 @@ public record AdminUserDto(
     int Id, string FullName, string Email, string Role, int RoleId,
     bool IsActive, bool IsDeleted, DateTime CreatedAtUtc, DateTime? LastLoginAtUtc, string Major);
 
+/// <summary>Full profile of a user for the admin panel edit dialog
+/// (GET /api/admin/users/{id}). These fields are locked for the users
+/// themselves: the admin is the only one who can change them.</summary>
+public record AdminUserDetailDto(
+    int Id, string FirstName, string? MiddleName, string LastName,
+    string Email, string? Address, string PhoneNumber,
+    string Department, int? UniversityId, string? UniversityName,
+    string Role, bool IsActive, bool IsDeleted);
+
+/// <summary>PUT /api/admin/users/{id} body: only the locked fields the
+/// admin may set. Audit-logged by the controller; never model-binds
+/// role/activity/password fields (use the dedicated endpoints instead).</summary>
+public record AdminUpdateUserRequest(
+    string FirstName, string? MiddleName, string LastName,
+    string Email, string? Address, string PhoneNumber,
+    string Department, int? UniversityId);
+
 public record PagedResultDto<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
 public record PatchUserStatusRequest(bool IsActive);
@@ -192,7 +209,8 @@ public record RegisterRequest(
     int? AcademicYear, string? Department,
     string? Specialization,
     string? GraduatedFrom, int? GraduationYear,
-    int? UniversityId);
+    int? UniversityId,
+    string? Address = null);
 
 // RoleId is optional: if sent, it must match the account's role (1 Student, 2 Graduate, 3 Doctor, 4 Admin).
 public record LoginRequest(string Email, string Password, int? RoleId = null);
