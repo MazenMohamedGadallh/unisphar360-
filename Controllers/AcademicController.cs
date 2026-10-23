@@ -32,9 +32,10 @@ public class AcademicController : ControllerBase
         var stats = await _academic.GetStatsAsync(userId);
         if (stats is null) return NotFound("No academic record for this user.");
 
-        var first = user.FullName.Split(' ')[0];
-        var hour = DateTime.Now.Hour;
-        var greeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
+        var first = string.IsNullOrWhiteSpace(user.FirstName)
+            ? user.FullName.Split(' ')[0]
+            : user.FirstName;
+        var greeting = AcademicService.GreetingFor(DateTime.Now.Hour);
 
         var unread = await _db.Notifications.CountAsync(n => n.UserId == userId && !n.IsRead);
 

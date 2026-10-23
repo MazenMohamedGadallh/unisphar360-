@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using UniSphere.Api.Models;
 using UniSphere.Api.Services;
 
@@ -24,22 +25,47 @@ public static class DbSeeder
             db.SaveChanges();
         }
 
-        // Databases created before the doctor module existed have the demo
-        // doctor but no course assignments. Give him the same realistic set
-        // on every startup (idempotent; does nothing on a fresh database
-        // because the doctor is created further below).
-        EnsureDoctorAssignments(db);
-
-        // Keep the demo doctor's password in sync on every startup so existing
-        // databases pick up the new hash without needing to be deleted.
-        var doctorUser = db.Users.FirstOrDefault(u => u.Email == "doctor@unisphere.edu");
-        if (doctorUser is not null)
+        // The graduation ceremony event was added after many databases already
+        // had users (the seeder early-returns once users exist), so refresh it
+        // idempotently here instead of only inside the fresh-seed path.
+        // Only patch LEGACY databases (ones that already have events): the
+        // fresh-seed path below inserts the ceremony with the full event list,
+        // so running this too would double-count it.
+        if (db.Events.Any() && !db.Events.Any(e => e.Title == "Graduation Ceremony 2026"))
         {
-            doctorUser.PasswordHash = PasswordService.Hash("sasaeldoctor123!");
+            db.Events.Add(new EventItem
+            {
+                Title = "Graduation Ceremony 2026",
+                Location = "Grand Hall, Main Campus",
+                StartsAtUtc = DateTime.UtcNow.Date.AddDays(180).AddHours(9),
+                Description = "Annual graduation ceremony for approved graduates. Seats are limited."
+            });
             db.SaveChanges();
         }
 
-        if (db.Users.Any()) return;
+        // Legacy-database patch: earlier seeds created the demo graduate
+        // without a UniversityId, which left /api/university/me permanently
+        // 404 for that account. Link it to Cairo University when empty.
+        var legacyGraduate = db.Users.FirstOrDefault(u => u.Email == "graduate@unisphere.edu");
+        if (legacyGraduate is not null && legacyGraduate.UniversityId is null)
+        {
+            var cairo = db.Universities.FirstOrDefault(u => u.Name == "Cairo University");
+            if (cairo is not null)
+            {
+                legacyGraduate.UniversityId = cairo.Id;
+                db.SaveChanges();
+            }
+        }
+
+        if (db.Users.Any())
+        {
+            // Demo jobs are idempotent (Source == "Demo" guard), so also run
+            // them for databases created before the career platform existed.
+            SeedDemoJobs(db);
+            if (legacyGraduate is not null)
+                SeedGraduateCareerDemo(db, legacyGraduate.Id);
+            return;
+        }
 
         // Roles (AppDbContext.OnModelCreating seeds these via HasData on
         // EnsureCreated, so only insert when the table is still empty —
@@ -112,6 +138,7 @@ public static class DbSeeder
             Department = "Computer Science",
             GraduatedFrom = "Cairo University, Faculty of Engineering",
             GraduationYear = 2023,
+            UniversityId = universities["Cairo University"].Id,
             Role = UserRole.Graduate,
             PasswordHash = PasswordService.Hash("Graduate123!")
         };
@@ -129,7 +156,7 @@ public static class DbSeeder
             Specialization = "Artificial Intelligence",
             UniversityId = elShorouk.Id,
             Role = UserRole.Doctor,
-            PasswordHash = PasswordService.Hash("sasaeldoctor123!")
+            PasswordHash = PasswordService.Hash("Doctor123!")
         };
         db.Users.AddRange(user, admin, graduate, doctor);
 
@@ -147,7 +174,8 @@ public static class DbSeeder
         db.Events.AddRange(
             new EventItem { Title = "AI Workshop", Location = "Faculty of Engineering", StartsAtUtc = now.AddDays(3).AddHours(10), Description = "Hands-on workshop on machine learning basics." },
             new EventItem { Title = "Tech Club Meeting", Location = "Student Activities Center", StartsAtUtc = now.AddDays(5).AddHours(16), Description = "Weekly meeting of the Tech Club." },
-            new EventItem { Title = "Career Fair", Location = "Main Campus", StartsAtUtc = now.AddDays(10).AddHours(9), Description = "Meet employers and apply for internships." }
+            new EventItem { Title = "Career Fair", Location = "Main Campus", StartsAtUtc = now.AddDays(10).AddHours(9), Description = "Meet employers and apply for internships." },
+            new EventItem { Title = "Graduation Ceremony 2026", Location = "Grand Hall, Main Campus", StartsAtUtc = now.AddDays(180).AddHours(9), Description = "Annual graduation ceremony for approved graduates. Seats are limited." }
         );
 
         // Courses
@@ -292,46 +320,224 @@ public static class DbSeeder
         Material("CS120", "Final Exam: Discrete Math", "Exam", "Cumulative final covering logic, sets and graphs.", "Chapters 1-9.\nDuration: 120 minutes.", 0);
         Material("CS330", "Lab Sessions Moved to Hall B", "Announcement", "All database labs move to Hall B starting Monday.", "Please check the new seating plan on the department board.", 0);
 
-        db.SaveChanges();
+        SeedDemoJobs(db);
+        SeedGraduateCareerDemo(db, graduate.Id);
 
-        // Fresh seed: now that the demo doctor and courses exist, assign him
-        // a realistic teaching load (idempotent).
-        EnsureDoctorAssignments(db);
+        db.SaveChanges();
     }
 
-    /// <summary>Assigns the demo doctor to a realistic set of courses.
-    /// Idempotent: existing (doctor, course) pairs are left untouched, and
-    /// nothing happens when the doctor or the courses are absent.</summary>
-    private static void EnsureDoctorAssignments(AppDbContext db)
+    /// <summary>Demo job catalog (Source="Demo") — clearly-labeled seed content so
+    /// the search/matching/UI experience works before the first live sync.
+    /// Live rows (Source="Remotive") arrive via GET /api/grad/jobs/sync.
+    /// Demo rows never claim a fake posting URL: their "Open" link goes to a
+    /// real job-board search matching the title and location.</summary>
+    public static void SeedDemoJobs(AppDbContext db)
     {
-        var doctor = db.Users.FirstOrDefault(u => u.Email == "doctor@unisphere.edu" && u.Role == UserRole.Doctor);
-        if (doctor is null) return;
+        // Rewrite legacy demo links (old seeds pointed at example.com/*, which is
+        // not a real job board). Idempotent: only touches the placeholder URLs.
+        var stale = db.JobListings
+            .Where(j => j.Source == "Demo" && j.Url.Contains("://example.com/"))
+            .ToList();
+        foreach (var j in stale)
+            j.Url = DemoJobLink(j.Title, j.Location, j.Remote);
+        if (stale.Count > 0) db.SaveChanges();
 
-        // A curated subset of the seeded catalogue (leaves at least one
-        // enrolled course unassigned so cross-course isolation stays testable).
-        var codes = new[] { "CS350", "CS330", "CS240", "CS320" };
-        var courses = db.Courses.Where(c => codes.Contains(c.Code)).ToList();
-        if (courses.Count == 0) return;
-
-        var existing = db.CourseAssignments
-            .Where(a => a.DoctorUserId == doctor.Id)
-            .Select(a => a.CourseId)
-            .ToHashSet();
-
-        var added = false;
-        foreach (var course in courses)
+        // Applications created from the stale demo rows copied their URL — point
+        // those at the corrected listing link (placeholder pattern only, so any
+        // user-entered external URLs are never touched).
+        var fixedListingIds = stale.Select(j => j.Id).ToHashSet();
+        var staleApps = db.JobApplications
+            .Where(a => a.SourceUrl != null && a.SourceUrl.Contains("://example.com/jobs/"))
+            .ToList();
+        foreach (var app in staleApps)
         {
-            if (existing.Contains(course.Id)) continue;
-            db.CourseAssignments.Add(new CourseAssignment
+            var linked = db.JobListings.FirstOrDefault(l => l.Id == app.JobListingId);
+            if (linked is not null && !linked.Url.Contains("://example.com/"))
+                app.SourceUrl = linked.Url;
+            else
+                app.SourceUrl = null; // orphaned demo link: drop it instead of pointing somewhere fake
+        }
+        if (staleApps.Count > 0) db.SaveChanges();
+
+        if (db.JobListings.Any(j => j.Source == "Demo")) return;
+
+        var utc = DateTime.UtcNow;
+        (string Title, string Company, string Location, bool Remote, string Category, string? Salary, string Desc, int DaysAgo)[] jobs =
+        [
+            ("Backend Developer (.NET)", "Cobalt Systems", "Cairo, Egypt", false, "Technical", "EGP 28000 - 34000",
+             "We are hiring a Backend Developer with strong C# and ASP.NET skills for a services platform used by thousands of users. You will design REST APIs with .NET (C#), write SQL queries against PostgreSQL, and collaborate in Agile ceremonies. Git, unit testing and Docker are part of our daily workflow. Excellent communication and problem-solving skills required.",
+             1),
+            ("Full-Stack Developer (React + Node)", "Nile Cloud", "Remote", true, "Technical", "USD 1200 - 1600",
+             "Join our remote web team as a Full-Stack Developer. You will build dashboards in React and Node.js, maintain JavaScript and TypeScript codebases, integrate REST endpoints and SQL data stores, and ship with GitHub Actions CI/CD. HTML/CSS attention to detail and Git hygiene are expected.",
+             2),
+            ("Machine Learning Engineer", "Horizon Analytics", "Remote", true, "Data", "USD 1500 - 2200",
+             "As Machine Learning Engineer you will productionize models built with Python, TensorFlow and PyTorch. Strong SQL and data munging skills, Docker deployments and Git-based workflows are required. You will champion MLOps best practices and machine learning pipelines for the analytics platform.",
+             3),
+            ("Data Analyst (Power BI)", "Delta Retail Group", "Cairo, Egypt", false, "Data", "EGP 18000 - 24000",
+             "Support business decisions as Data Analyst: build Power BI dashboards, write SQL, and analyze sales with Excel and Python. Clear communication and teamwork with product owners, strong time management, statistics basics and an eye for data quality.",
+             4),
+            ("DevOps Engineer", "Skyline Telecom", "Dubai, UAE", false, "Technical", null,
+             "Own our Kubernetes clusters: Docker, CI/CD pipelines (GitHub Actions/Jenkins), Azure and AWS infrastructure, Linux administration, monitoring and incident response. Git and infrastructure-as-code habits required; AWS experience preferred.",
+             5),
+            ("Frontend Developer (Angular)", "Sahara Digital", "Remote", true, "Technical", "USD 900 - 1300",
+             "Craft user-facing experiences with Angular, TypeScript, HTML/CSS and JavaScript. You will collaborate with designers, work in Agile sprints, write clean Git history and deliver responsive components used by millions.",
+             6),
+            ("Mobile Developer (Flutter)", "Zayn Apps", "Cairo, Egypt", true, "Technical", "EGP 22000 - 30000",
+             "Ship cross-platform apps with Flutter. Strong Dart, native Android/iOS basics, REST integrations, Git and unit testing for mobile builds. Problem-solving mindset and teamwork in a small product squad.",
+             7),
+            ("QA Engineer", "Pyramid Software", "Cairo, Egypt", false, "Technical", "EGP 15000 - 20000",
+             "Lead quality for our web platform: design test plans, automate with Selenium and write unit tests and xUnit/integration suites. Agile/Scrum ceremonies, testing-first mindset, sharp communication for reporting regressions.",
+             8),
+            ("Data Scientist", "Fawry Analytics", "Cairo, Egypt", false, "Data", "EGP 25000 - 32000",
+             "Own models end to end as Data Scientist: Python, pandas for data analysis, statistics, SQL, machine learning frameworks (scikit-learn, TensorFlow), plus dashboarding in Power BI. Present insights with strong communication.",
+             9),
+            ("Junior Java Backend Engineer", "Meridian Bank", "Cairo, Egypt", false, "Fintech", "EGP 20000 - 26000",
+             "Build securefinancial services with Java and Spring Boot. SQL (MySQL) schema design, Git-based reviews, unit testing and Agile rituals. Interest in fintech security and Apache Kafka a plus.",
+             10),
+            ("NLP Engineer (LLMs)", "Cortex Labs", "Remote", true, "Data", "USD 2000 - 2800",
+             "Work on Arabic/English NLP: Python, transformer fine-tuning, TensorFlow/PyTorch, deep learning and machine learning pipelines, SQL query tooling for dataset curation, Docker deployments. NLP research background preferred.",
+             11),
+            ("Technical Support Engineer", "Nimbus Helpdesk", "Remote", true, "Support", "USD 600 - 900",
+             "Help enterprise customers debug integrations. Linux basics, SQL queries for troubleshooting, clear written communication, time management and empathy. SQL,Git and REST knowledge helpful; growth into engineering roles possible.",
+             12),
+        ];
+
+        foreach (var j in jobs)
+        {
+            var skills = string.Join(",", Services.CareerCatalog.DetectSkills($"{j.Title} {j.Desc}"));
+            db.JobListings.Add(new JobListing
             {
-                DoctorUserId = doctor.Id,
-                CourseId = course.Id,
-                AssignedByUserId = doctor.Id,
-                AssignedAtUtc = DateTime.UtcNow
+                Source = "Demo",
+                SourceId = $"demo-{j.Title}-{j.Company}",
+                Title = j.Title,
+                CompanyName = j.Company,
+                Location = j.Location,
+                Remote = j.Remote,
+                Category = j.Category,
+                Salary = j.Salary,
+                Url = DemoJobLink(j.Title, j.Location, j.Remote),
+                Description = j.Desc,
+                KeySkillsCsv = skills,
+                PublishedAtUtc = utc.AddDays(-j.DaysAgo),
+                FetchedAtUtc = utc
             });
-            added = true;
+        }
+        // Self-committing: the legacy-database path (early-return branch) has
+        // no outer SaveChanges, so persist the demo rows here.
+        db.SaveChanges();
+    }
+
+    /// <summary>Legitimate, relevant destination for a demo listing: a live
+    /// LinkedIn job search for the title in the listing's location (remote
+    /// listings get LinkedIn's remote-work filter). Real job board, no fake
+    /// postings, always relevant to the concrete role.</summary>
+    public static string DemoJobLink(string title, string location, bool remote) =>
+        remote
+            ? "https://www.linkedin.com/jobs/search/?keywords=" + Uri.EscapeDataString(title) + "&location=Remote&f_WT=2"
+            : "https://www.linkedin.com/jobs/search/?keywords=" + Uri.EscapeDataString(title) + "&location=" + Uri.EscapeDataString(location);
+
+    /// <summary>Seeds realistic starter career data owned by the demo graduate
+    /// account so the module is explorable immediately (login demo-account data).</summary>
+    public static void SeedGraduateCareerDemo(AppDbContext db, int graduateUserId)
+    {
+        // Recompute the guard from skills: some early databases already hold an
+        // EMPTY GraduateProfile row (auto-created when the pages were opened
+        // before the seeding fix). Seed whenever skills are missing, even then.
+        var existingProfile = db.GraduateProfiles.FirstOrDefault(p => p.UserId == graduateUserId);
+        if (existingProfile is not null && db.GraduateSkills.Any(s => s.UserId == graduateUserId)) return;
+        var utc = DateTime.UtcNow;
+        var demoProfile = new GraduateProfile
+        {
+            UserId = graduateUserId,
+            Headline = "Backend Engineer | .NET, APIs & Data",
+            CareerSummary = "Computer Engineering graduate (Cairo University, 2023). Two years building backend services and internal tooling; passionate about clean APIs and data pipelines.",
+            LinkedInUrl = "https://www.linkedin.com/in/omar-hassan-demo",
+            GitHubUrl = "https://github.com/omar-hassan-demo",
+            PreferredJobTitles = "Backend Developer, .NET Developer, Software Engineer",
+            PreferredIndustries = "Tech, Fintech",
+            PreferredLocations = "Cairo, Egypt",
+            WorkModes = "Hybrid,Remote",
+            EmploymentType = "Full-time",
+            ExperienceLevel = "Entry-level",
+            Languages = "Arabic (Native), English (Fluent)",
+            CareerGoal = "Land a backend engineering role on a product team within 6 months."
+        };
+        if (existingProfile is null)
+        {
+            db.GraduateProfiles.Add(demoProfile);
+        }
+        else
+        {
+            // Upgrade the empty legacy row in place instead of duplicating
+            // (GraduateProfiles has a unique index on UserId).
+            existingProfile.Headline = demoProfile.Headline;
+            existingProfile.CareerSummary = demoProfile.CareerSummary;
+            existingProfile.LinkedInUrl = demoProfile.LinkedInUrl;
+            existingProfile.GitHubUrl = demoProfile.GitHubUrl;
+            existingProfile.PreferredJobTitles = demoProfile.PreferredJobTitles;
+            existingProfile.PreferredIndustries = demoProfile.PreferredIndustries;
+            existingProfile.PreferredLocations = demoProfile.PreferredLocations;
+            existingProfile.WorkModes = demoProfile.WorkModes;
+            existingProfile.EmploymentType = demoProfile.EmploymentType;
+            existingProfile.ExperienceLevel = demoProfile.ExperienceLevel;
+            existingProfile.Languages = demoProfile.Languages;
+            existingProfile.CareerGoal = demoProfile.CareerGoal;
         }
 
-        if (added) db.SaveChanges();
+        db.GraduateSkills.AddRange(
+            new GraduateSkill { UserId = graduateUserId, Name = "C#", Level = "Advanced", Source = "Profile" },
+            new GraduateSkill { UserId = graduateUserId, Name = "ASP.NET", Level = "Advanced", Source = "Profile" },
+            new GraduateSkill { UserId = graduateUserId, Name = "SQL", Level = "Advanced", Source = "Profile" },
+            new GraduateSkill { UserId = graduateUserId, Name = "Git", Level = "Intermediate", Source = "Profile" },
+            new GraduateSkill { UserId = graduateUserId, Name = "Docker", Level = "Beginner", Source = "Profile" },
+            new GraduateSkill { UserId = graduateUserId, Name = "Communication", Level = "Advanced", Source = "Profile" },
+            new GraduateSkill { UserId = graduateUserId, Name = "Teamwork", Level = "Advanced", Source = "Profile" }
+        );
+
+        db.ProfileEntries.AddRange(
+            new ProfileEntry { UserId = graduateUserId, Kind = "Experience", Title = "Backend Engineering Intern", Organization = "TechNova (Cairo)", Description = "Built REST endpoints in ASP.NET for the billing service; wrote integration tests and cut p95 latency by 30%.", Period = "Jul 2022 - Dec 2022" },
+            new ProfileEntry { UserId = graduateUserId, Kind = "Project", Title = "Graduation Project: Real-time Event Pipeline", Organization = "Cairo University", Description = "Designed a streaming pipeline with ASP.NET, Redis and PostgreSQL ingesting 2k events/sec; led a 4-person team.", Period = "2023" },
+            new ProfileEntry { UserId = graduateUserId, Kind = "Certification", Title = "AWS Cloud Practitioner", Organization = "Amazon Web Services", Description = "Cloud fundamentals certification, verified credential.", Period = "2024" }
+        );
+
+        db.RoadmapItems.AddRange(
+            new RoadmapItem { UserId = graduateUserId, Title = "Refresh advanced SQL (window functions)", Category = "Skill", Status = "InProgress", TargetDate = DateTime.UtcNow.Date.AddDays(14), SortOrder = 1 },
+            new RoadmapItem { UserId = graduateUserId, Title = "Publish two Azure/AWS side projects", Category = "Project", Status = "NotStarted", TargetDate = DateTime.UtcNow.Date.AddDays(45), SortOrder = 2 },
+            new RoadmapItem { UserId = graduateUserId, Title = "Submit application to Fawry backend role", Category = "Application", Status = "Completed", TargetDate = DateTime.UtcNow.Date.AddDays(-3), SortOrder = 3, CompletedAtUtc = DateTime.UtcNow.Date.AddDays(-3) }
+        );
+
+        if (!db.GraduateSettings.Any(s => s.UserId == graduateUserId))
+            db.GraduateSettings.Add(new GraduateSettings { UserId = graduateUserId, NotifyNewMatches = true, NotifyFollowUps = true, MatchAlertThresholdPercent = 75 });
+
+        // Tracker starter rows + one saved demo job. Query the table (not
+        // ChangeTracker.Local): on reboots the demo jobs may already be
+        // persisted but untracked, and the starter rows must still link up.
+        var savedSource = db.JobListings.FirstOrDefault(j => j.Title.Contains("Data Analyst"))
+            ?? db.JobListings.Local.FirstOrDefault(j => j.Title.Contains("Data Analyst"));
+        var appliedSource = db.JobListings.FirstOrDefault(j => j.Title.Contains("Backend Developer (.NET)"))
+            ?? db.JobListings.Local.FirstOrDefault(j => j.Title.Contains("Backend Developer (.NET)"));
+        if (savedSource is not null)
+        {
+            db.SavedJobs.Add(new SavedJob { UserId = graduateUserId, JobListingId = savedSource.Id, SavedAtUtc = utc.AddDays(-2) });
+            db.JobApplications.Add(new JobApplication
+            {
+                UserId = graduateUserId, JobListingId = savedSource.Id,
+                CompanyName = savedSource.CompanyName, JobTitle = savedSource.Title, SourceUrl = savedSource.Url,
+                Status = "Applied", Notes = "Applied via career portal; waiting on HR reply.",
+                FollowUpDate = DateTime.UtcNow.Date.AddDays(3), AppliedAtUtc = DateTime.UtcNow.Date.AddDays(-2)
+            });
+        }
+        if (appliedSource is not null)
+        {
+            db.JobApplications.Add(new JobApplication
+            {
+                UserId = graduateUserId, JobListingId = appliedSource.Id,
+                CompanyName = appliedSource.CompanyName, JobTitle = appliedSource.Title, SourceUrl = appliedSource.Url,
+                Status = "Interview", Notes = "Technical interview scheduled with the platform team.",
+                FollowUpDate = DateTime.UtcNow.Date.AddDays(5), AppliedAtUtc = DateTime.UtcNow.Date.AddDays(-9)
+            });
+        }
+        // Self-committing: called from the legacy early-return path too.
+        db.SaveChanges();
     }
 }

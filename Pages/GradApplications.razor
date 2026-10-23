@@ -1,0 +1,211 @@
+@page "/graduate/applications"
+@inherits UniSphere.Api.Components.GradPageBase
+
+<PageTitle>My Applications - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>My Applications</h1>
+    <p>Track every application, interview and follow-up in one place</p>
+</div>
+
+@if (_summary is not null)
+{
+    <div class="grad-stat-grid">
+        <div class="card stat-card"><div class="stat-value">@_summary.Total</div><div class="stat-label">Total applications</div></div>
+        @foreach (var sc in _summary.ByStatus)
+        {
+            <div class="card stat-card"><div class="stat-value">@sc.Count</div><div class="stat-label">@sc.Status</div></div>
+        }
+        <div class="card stat-card"><div class="stat-value">@_summary.UpcomingFollowUps</div><div class="stat-label">Follow-ups due</div></div>
+    </div>
+}
+
+<div class="card" style="margin-bottom:14px;">
+    <div class="card-header"><h3>Add an application</h3></div>
+    <p class="muted">Link a catalog job (optional) or enter it manually for companies you applied to outside UniSphere.</p>
+    <div class="form-inline">
+        <div class="form-group">
+            <label for="grAppCompany">Company<span style="color:#b3372f;">*</span></label>
+            <input id="grAppCompany" @bind-value="_company" @bind-value:event="oninput" placeholder="Acme Inc." />
+        </div>
+        <div class="form-group">
+            <label for="grAppTitle">Job title<span style="color:#b3372f;">*</span></label>
+            <input id="grAppTitle" @bind-value="_jobTitle" @bind-value:event="oninput" placeholder="Backend Developer" />
+        </div>
+        <div class="form-group">
+            <label for="grAppUrl">Source URL</label>
+            <input id="grAppUrl" @bind-value="_sourceUrl" @bind-value:event="oninput" placeholder="https://jobs.example.com/321" />
+        </div>
+    </div>
+    <div class="form-inline">
+        <div class="form-group">
+            <label for="grAppStatus">Status</label>
+            <select id="grAppStatus" @bind="_status">
+                <option>Applied</option>
+                <option>Interview</option>
+                <option>Offer</option>
+                <option>Rejected</option>
+                <option>Withdrawn</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="grAppFollow">Follow-up date</label>
+            <InputDate @bind-Value="_followUp" />
+        </div>
+        <div class="form-group">
+            <label for="grAppNotes">Notes</label>
+            <input id="grAppNotes" @bind-value="_notes" @bind-value:event="oninput" placeholder="Recruiter: Sara, phone screen Friday" />
+        </div>
+        <button class="btn btn-primary" @onclick="AddAsync" disabled="@(!CanAdd())">Add</button>
+    </div>
+    @if (_addWarning is not null)
+    {
+        <p><span class="grad-badge warn">@_addWarning</span></p>
+    }
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Loading applications...</div>
+}
+else if (_items.Count == 0)
+{
+    <div class="empty-state">No applications yet. Add one above or "Mark as applied" from Find Jobs.</div>
+}
+else
+{
+    <div class="clips">
+        <table>
+            <thead>
+                <tr>
+                    <th>Role</th>
+                    <th>Company</th>
+                    <th>Status</th>
+                    <th>Applied</th>
+                    <th>Follow-up</th>
+                    <th>Updated</th>
+                    <th style="min-width:120px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var app in SortedItems)
+                {
+                    <tr>
+                        <td>
+                            <strong>@app.JobTitle</strong>
+                            @if (!string.IsNullOrEmpty(app.SourceUrl) && app.SourceUrl.StartsWith("http"))
+                            {
+                                <div><a href="@app.SourceUrl" target="_blank" rel="noopener">Posting</a></div>
+                            }
+                            @if (!string.IsNullOrEmpty(app.Notes))
+                            {
+                                <div class="muted">@app.Notes</div>
+                            }
+                        </td>
+                        <td>@app.CompanyName</td>
+                        <td>
+                            <select value="@app.Status" @onchange='e => ChangeStatusAsync(app, e.Value?.ToString() ?? app.Status)'>
+                                <option>Applied</option>
+                                <option>Interview</option>
+                                <option>Offer</option>
+                                <option>Rejected</option>
+                                <option>Withdrawn</option>
+                            </select>
+                        </td>
+                        <td class="muted">@app.AppliedAtUtc.ToString("d MMM yyyy")</td>
+                        <td>@(app.FollowUpDate?.ToString("d MMM yyyy") ?? "-")</td>
+                        <td class="muted">@app.UpdatedAtUtc.ToString("d MMM yyyy")</td>
+                        <td><button class="btn btn-small btn-danger" @onclick="() => RemoveAsync(app.Id)">Delete</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<GradApplicationModel> _items = [];
+    private GradApplicationSummaryModel? _summary;
+
+    private string _company = "";
+    private string _jobTitle = "";
+    private string _sourceUrl = "";
+    private string _status = "Applied";
+    private DateTime? _followUp;
+    private string _notes = "";
+    private string? _addWarning;
+
+    private List<GradApplicationModel> SortedItems =>
+        _items
+            .OrderBy(i => i.Status is "Rejected" or "Withdrawn" ? 1 : 0)
+            .ThenByDescending(i => i.UpdatedAtUtc)
+            .ToList();
+
+    private bool CanAdd() => _company.Length > 0 && _jobTitle.Length > 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        var items = await GetJsonAsync<List<GradApplicationModel>>("/api/grad/applications");
+        if (items is not null) _items = items;
+        var summary = await GetJsonAsync<GradApplicationSummaryModel>("/api/grad/applications/summary");
+        if (summary is not null) _summary = summary;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task AddAsync()
+    {
+        _addWarning = null;
+        object payload = new
+        {
+            companyName = _company,
+            jobTitle = _jobTitle,
+            sourceUrl = _sourceUrl.Length > 0 ? _sourceUrl : null,
+            status = _status,
+            notes = _notes.Length > 0 ? _notes : null,
+            followUpDate = _followUp?.ToString("yyyy-MM-dd")
+        };
+        var error = await PostExpectNoBodyAsync("/api/grad/applications", payload);
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        _company = "";
+        _jobTitle = "";
+        _sourceUrl = "";
+        _status = "Applied";
+        _followUp = null;
+        _notes = "";
+        await LoadAsync();
+    }
+
+    private async Task ChangeStatusAsync(GradApplicationModel app, string status)
+    {
+        var payload = new
+        {
+            companyName = app.CompanyName,
+            jobTitle = app.JobTitle,
+            status = status
+        };
+        var error = await PutExpectNoBodyAsync($"/api/grad/applications/{app.Id}", payload);
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        await LoadAsync();
+    }
+
+    private async Task RemoveAsync(int id)
+    {
+        var error = await DeleteAsync($"/api/grad/applications/{id}");
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        await LoadAsync();
+    }
+}

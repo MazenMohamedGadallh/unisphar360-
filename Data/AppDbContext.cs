@@ -22,13 +22,25 @@ public class AppDbContext : DbContext
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<University> Universities => Set<University>();
     public DbSet<CourseMaterial> CourseMaterials => Set<CourseMaterial>();
-    public DbSet<CourseAssignment> CourseAssignments => Set<CourseAssignment>();
     public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<ChatUsage> ChatUsages => Set<ChatUsage>();
     public DbSet<CareerRecommendation> CareerRecommendations => Set<CareerRecommendation>();
     public DbSet<ResearchPaper> ResearchPapers => Set<ResearchPaper>();
-    public DbSet<DoctorResearch> DoctorResearches => Set<DoctorResearch>();
+    public DbSet<GraduationApplication> GraduationApplications => Set<GraduationApplication>();
+    public DbSet<GraduateProfile> GraduateProfiles => Set<GraduateProfile>();
+    public DbSet<ProfileEntry> ProfileEntries => Set<ProfileEntry>();
+    public DbSet<GraduateSkill> GraduateSkills => Set<GraduateSkill>();
+    public DbSet<CvDocument> CvDocuments => Set<CvDocument>();
+    public DbSet<CvAnalysis> CvAnalyses => Set<CvAnalysis>();
+    public DbSet<JobListing> JobListings => Set<JobListing>();
+    public DbSet<SavedJob> SavedJobs => Set<SavedJob>();
+    public DbSet<JobApplication> JobApplications => Set<JobApplication>();
+    public DbSet<RoadmapItem> RoadmapItems => Set<RoadmapItem>();
+    public DbSet<InterviewSession> InterviewSessions => Set<InterviewSession>();
+    public DbSet<InterviewQuestion> InterviewQuestions => Set<InterviewQuestion>();
+    public DbSet<GraduateSettings> GraduateSettings => Set<GraduateSettings>();
+    public DbSet<JobSyncState> JobSyncStates => Set<JobSyncState>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,13 +92,6 @@ public class AppDbContext : DbContext
         // Announcement indexes
         modelBuilder.Entity<Announcement>()
             .HasIndex(a => a.CreatedAtUtc);
-        modelBuilder.Entity<Announcement>()
-            .HasIndex(a => a.CourseId);
-        modelBuilder.Entity<Announcement>()
-            .HasOne(a => a.Course)
-            .WithMany()
-            .HasForeignKey(a => a.CourseId)
-            .OnDelete(DeleteBehavior.Cascade);
 
         // Career recommendation indexes
         modelBuilder.Entity<CareerRecommendation>()
@@ -96,25 +101,15 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ResearchPaper>()
             .HasIndex(r => r.Title);
 
-        // Doctor research hub indexes (browse filters: university, year, title search)
-        modelBuilder.Entity<DoctorResearch>()
-            .HasIndex(r => r.DoctorUserId);
-        modelBuilder.Entity<DoctorResearch>()
-            .HasIndex(r => r.UniversityId);
-        modelBuilder.Entity<DoctorResearch>()
-            .HasIndex(r => r.Year);
-        modelBuilder.Entity<DoctorResearch>()
-            .HasIndex(r => r.Title);
-        modelBuilder.Entity<DoctorResearch>()
-            .HasIndex(r => r.IsPublished);
-
-        // Doctor research relationship: keep the paper when the user row is
-        // removed (Restrict) so publication history is never silently lost.
-        modelBuilder.Entity<DoctorResearch>()
-            .HasOne(r => r.DoctorUser)
-            .WithMany()
-            .HasForeignKey(r => r.DoctorUserId)
-            .OnDelete(DeleteBehavior.Restrict);
+        // Graduation application indexes + "one active application per student" guard
+        modelBuilder.Entity<GraduationApplication>()
+            .HasIndex(g => g.UserId);
+        modelBuilder.Entity<GraduationApplication>()
+            .HasIndex(g => g.Status);
+        modelBuilder.Entity<GraduationApplication>()
+            .HasIndex(g => new { g.UserId, g.Status })
+            .IsUnique()
+            .HasFilter("\"Status\" = 'Pending' OR \"Status\" = 'InReview'");
 
         // Configure relationships
         modelBuilder.Entity<Enrollment>()
@@ -122,6 +117,55 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(e => e.CourseId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GraduationApplication>()
+            .HasOne(g => g.User)
+            .WithMany()
+            .HasForeignKey(g => g.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // ---- Graduate career platform relationships/indexes ----
+        modelBuilder.Entity<GraduateProfile>().HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<GraduateProfile>().HasIndex(p => p.UserId).IsUnique();
+
+        modelBuilder.Entity<ProfileEntry>().HasIndex(p => p.UserId);
+        modelBuilder.Entity<ProfileEntry>().HasIndex(p => new { p.UserId, p.Kind });
+
+        modelBuilder.Entity<GraduateSkill>().HasIndex(s => new { s.UserId, s.Name }).IsUnique();
+        modelBuilder.Entity<GraduateSkill>().HasIndex(s => s.UserId);
+
+        modelBuilder.Entity<CvDocument>().HasIndex(c => c.UserId);
+        modelBuilder.Entity<CvAnalysis>().HasIndex(a => a.CvDocumentId);
+        modelBuilder.Entity<CvAnalysis>().HasOne(a => a.CvDocument).WithMany().HasForeignKey(a => a.CvDocumentId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<JobListing>().HasIndex(j => new { j.Source, j.SourceId }).IsUnique();
+        modelBuilder.Entity<JobListing>().HasIndex(j => j.Category);
+        modelBuilder.Entity<JobListing>().HasIndex(j => j.PublishedAtUtc);
+        modelBuilder.Entity<JobListing>().HasIndex(j => j.Remote);
+
+        modelBuilder.Entity<SavedJob>().HasIndex(s => new { s.UserId, s.JobListingId }).IsUnique();
+        modelBuilder.Entity<SavedJob>().HasOne(s => s.JobListing).WithMany().HasForeignKey(s => s.JobListingId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<JobApplication>().HasIndex(a => a.UserId);
+        modelBuilder.Entity<JobApplication>().HasIndex(a => a.Status);
+        modelBuilder.Entity<JobApplication>().HasOne(a => a.JobListing).WithMany().HasForeignKey(a => a.JobListingId).OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<RoadmapItem>().HasIndex(r => new { r.UserId, r.SortOrder });
+
+        modelBuilder.Entity<InterviewSession>().HasIndex(s => s.UserId);
+        modelBuilder.Entity<InterviewQuestion>().HasIndex(q => q.SessionId);
+        modelBuilder.Entity<InterviewQuestion>().HasOne(q => q.Session).WithMany().HasForeignKey(q => q.SessionId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<GraduateSettings>().HasIndex(g => g.UserId).IsUnique();
+        modelBuilder.Entity<GraduateSettings>().HasOne(g => g.User).WithMany().HasForeignKey(g => g.UserId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CvDocument>().HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<ProfileEntry>().HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<GraduateSkill>().HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<SavedJob>().HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<JobApplication>().HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<RoadmapItem>().HasOne(r => r.User).WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<InterviewSession>().HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
 
         // Chat indexes
         modelBuilder.Entity<ChatConversation>()
@@ -147,19 +191,6 @@ public class AppDbContext : DbContext
             .HasOne(m => m.Course)
             .WithMany()
             .HasForeignKey(m => m.CourseId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        // Doctor <-> course assignments
-        modelBuilder.Entity<CourseAssignment>()
-            .HasIndex(a => a.DoctorUserId);
-        modelBuilder.Entity<CourseAssignment>()
-            .HasIndex(a => a.CourseId);
-        modelBuilder.Entity<CourseAssignment>()
-            .HasIndex(a => new { a.DoctorUserId, a.CourseId }).IsUnique();
-        modelBuilder.Entity<CourseAssignment>()
-            .HasOne(a => a.Course)
-            .WithMany()
-            .HasForeignKey(a => a.CourseId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Seed roles if empty

@@ -1,0 +1,129 @@
+@page "/graduate/alumni"
+@inherits UniSphere.Api.Components.GradPageBase
+
+<PageTitle>Alumni & University Services - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Alumni &amp; University Services</h1>
+    <p>Your university career center, online</p>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Loading university services...</div>
+}
+else if (_data is not null)
+{
+    <div class="grad-overview-hero">
+        <div class="hero-text">
+            <h2>@(_data.UniversityName ?? "UniSphere network")</h2>
+            <p>@(string.IsNullOrEmpty(_data.Degree) ? "Graduate" : _data.Degree)@(string.IsNullOrEmpty(_data.GraduationYear) ? "" : $" · Class of {_data.GraduationYear}")</p>
+        </div>
+        <p><button class="btn" @onclick="LoadAsync">Refresh</button></p>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+        <div class="card-header"><h3>Career center tip</h3></div>
+        <p>@_data.CareerCenterTip</p>
+        @if (_data.Contacts.Count > 0)
+        {
+            <ul class="grad-list">
+                @foreach (var c in _data.Contacts)
+                {
+                    <li>@c</li>
+                }
+            </ul>
+        }
+    </div>
+
+    <div class="grad-two-col">
+        <div class="card">
+            <div class="card-header"><h3>Career events</h3></div>
+            @if (_data.CareerEvents.Count == 0)
+            {
+                <div class="empty-state">No career events scheduled right now.</div>
+            }
+            else
+            {
+                <ul class="grad-list">
+                    @foreach (var e in _data.CareerEvents)
+                    {
+                        <li>
+                            <strong>@e.Title</strong>
+                            @if (IsCareerEvent(e.Description))
+                            {
+                                <span class="grad-badge">Career</span>
+                            }
+                            <div class="muted">@e.StartsAtUtc.ToString("d MMM yyyy HH:mm") · @e.Location</div>
+                            @if (!string.IsNullOrEmpty(e.Description))
+                            {
+                                <div class="muted">@e.Description</div>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>University announcements</h3></div>
+            @if (_data.Announcements.Count == 0)
+            {
+                <div class="empty-state">No announcements in the last 90 days.</div>
+            }
+            else
+            {
+                <ul class="grad-list">
+                    @foreach (var a in _data.Announcements)
+                    {
+                        <li>
+                            <strong>@a.Title</strong>
+                            @if (!string.IsNullOrEmpty(a.Category))
+                            {
+                                <span class="grad-badge">@a.Category</span>
+                            }
+                            <div class="muted">@a.CreatedAtUtc.ToString("d MMM yyyy")</div>
+                            <div>@(a.Body.Length > 300 ? a.Body[..300] + "..." : a.Body)</div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="empty-state">Press Retry to load again.</div>
+}
+
+@code {
+    private GradAlumniModel? _data;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        var data = await GetJsonAsync<GradAlumniModel>("/api/grad/alumni");
+        if (data is not null) _data = data;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private static bool IsCareerEvent(string? description)
+    {
+        if (string.IsNullOrEmpty(description)) return false;
+        string[] words = ["career", "internship", "hiring", "job"];
+        return words.Any(w => description.Contains(w, StringComparison.OrdinalIgnoreCase));
+    }
+}

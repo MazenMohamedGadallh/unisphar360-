@@ -54,6 +54,10 @@ public class AcademicService
         return "Good";
     }
 
+    // Semester value stored on every Enrollment ("Current"). Filter
+    // case-insensitively so hand-written values like "current" still match.
+    private const string CurrentSemester = "current";
+
     public async Task<int> GetUnreadCountAsync(int userId) =>
         await _db.Notifications.CountAsync(n => n.UserId == userId && !n.IsRead);
 
@@ -64,9 +68,8 @@ public class AcademicService
         var stats = await GetStatsAsync(userId);
         if (stats is null) return null;
 
-        var first = user.FullName.Split(' ')[0];
         return new DashboardSummaryDto(
-            user.FullName, first, GreetingFor(DateTime.Now.Hour),
+            user.FullName, user.FirstName, GreetingFor(DateTime.Now.Hour),
             stats.Gpa, stats.GpaDelta,
             stats.CompletedCourses, stats.TotalCourses, stats.CompletedPercent,
             stats.AttendanceRate, stats.AttendanceDelta,
@@ -76,7 +79,7 @@ public class AcademicService
 
     public async Task<IReadOnlyList<DashboardPerformanceRowDto>> GetDashboardPerformanceAsync(int userId, string? semester)
     {
-        var sem = string.IsNullOrWhiteSpace(semester) ? "current" : semester.Trim().ToLowerInvariant();
+        var sem = string.IsNullOrWhiteSpace(semester) ? CurrentSemester : semester.Trim().ToLowerInvariant();
         var rows = await _db.Enrollments.AsNoTracking()
             .Include(e => e.Course)
             .Where(e => e.UserId == userId && e.Semester.ToLower() == sem)
@@ -202,7 +205,7 @@ public class AcademicService
         var previous = records.Where(r => !r.IsCurrent).OrderByDescending(r => r.Id).FirstOrDefault();
 
         var enrollments = await _db.Enrollments.AsNoTracking()
-            .Where(e => e.UserId == userId && e.Semester == "Current").ToListAsync();
+            .Where(e => e.UserId == userId && e.Semester.ToLower() == CurrentSemester).ToListAsync();
         var toImprove = enrollments.Count(e => e.GradePoints <= 3.0);
         var recommended = await GetRecommendedAsync(userId, 4);
 
@@ -224,7 +227,7 @@ public class AcademicService
     {
         var rows = await _db.Enrollments.AsNoTracking()
             .Include(e => e.Course)
-            .Where(e => e.UserId == userId && e.Semester == "Current")
+            .Where(e => e.UserId == userId && e.Semester.ToLower() == CurrentSemester)
             .OrderBy(e => e.Id)
             .ToListAsync();
 
@@ -308,7 +311,7 @@ public class AcademicService
         var items = await _db.Activities.AsNoTracking()
             .Where(a => a.UserId == userId)
             .OrderByDescending(a => a.CreatedAtUtc)
-            .Take(take)
+            .Take(Math.Clamp(take, 1, 50))
             .ToListAsync();
 
         return items.Select(a => new ActivityDto(a.Id, a.Kind, a.Message, a.CreatedAtUtc, TimeAgo(a.CreatedAtUtc))).ToList();

@@ -1,0 +1,115 @@
+@page "/graduate/insights"
+@inherits UniSphere.Api.Components.GradPageBase
+
+<PageTitle>Career Insights - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Career Insights</h1>
+    <p>What the job market looks like in your catalog right now</p>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Analyzing the catalog...</div>
+}
+else if (_data is not null)
+{
+    <div class="grad-stat-grid">
+        <div class="card stat-card">
+            <div class="stat-value">@_data.JobsIndexed</div>
+            <div class="stat-label">Jobs indexed</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-value">@(_data.LastSyncUtc?.ToString("d MMM yyyy HH:mm") ?? "never")</div>
+            <div class="stat-label">Last sync</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-value">@_data.JobsByWorkType.FirstOrDefault(t => t.Name == "Remote", new GradNameCountModel()).Count</div>
+            <div class="stat-label">Remote listings</div>
+        </div>
+    </div>
+
+    <div class="grad-two-col">
+        <div class="card">
+            <div class="card-header"><h3>Top skills in demand</h3></div>
+            @if (_data.TopSkills.Count == 0)
+            {
+                <div class="empty-state">Not enough data yet. Sync jobs from Find Jobs.</div>
+            }
+            else
+            {
+                <ul class="grad-list">
+                    @foreach (var skill in _data.TopSkills.Take(10))
+                    {
+                        <li style="display:flex; justify-content:space-between;">
+                            <strong>@skill.Name</strong>
+                            <span class="grad-badge">@skill.Count jobs</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Listings by industry</h3></div>
+            @if (_data.JobsByIndustry.Count == 0)
+            {
+                <div class="empty-state">No industry data yet.</div>
+            }
+            else
+            {
+                <ul class="grad-list">
+                    @foreach (var industry in _data.JobsByIndustry)
+                    {
+                        <li style="display:flex; justify-content:space-between;">
+                            <strong>@(string.IsNullOrEmpty(industry.Name) ? "Other" : industry.Name)</strong>
+                            <span class="grad-badge">@industry.Count</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h3>Work types</h3></div>
+        <ul class="grad-list">
+            @foreach (var workType in _data.JobsByWorkType)
+            {
+                <li style="display:flex; justify-content:space-between;">
+                    <strong>@(string.IsNullOrEmpty(workType.Name) ? "Unspecified" : workType.Name)</strong>
+                    <span class="grad-badge">@workType.Count</span>
+                </li>
+            }
+        </ul>
+    </div>
+}
+else
+{
+    <div class="empty-state">Press Refresh.</div>
+}
+
+@code {
+    private GradInsightsModel? _data;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        var data = await GetJsonAsync<GradInsightsModel>("/api/grad/insights");
+        if (data is not null) _data = data;
+        _loading = false;
+        StateHasChanged();
+    }
+}

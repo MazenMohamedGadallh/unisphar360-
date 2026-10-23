@@ -1,0 +1,249 @@
+@page "/graduate/roadmap"
+@inherits UniSphere.Api.Components.GradPageBase
+
+<PageTitle>Career Roadmap - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Career Roadmap</h1>
+    <p>Your step-by-step plan. Add steps yourself or let AI suggest them.</p>
+</div>
+
+@if (_progress is not null)
+{
+    <div class="grad-overview-hero">
+        <div class="hero-text">
+            <h2>@_progress.Percent% complete</h2>
+            <p>@_progress.Completed done &middot; @_progress.InProgress in progress &middot; @_progress.NotStarted not started</p>
+        </div>
+        <div>
+            <div class="grad-score-meter" style="min-width:220px;"><div style="width:@_progress.Percent%;"></div></div>
+        </div>
+    </div>
+}
+
+<div class="form-inline" style="margin-bottom:14px;">
+    <div class="form-group">
+        <label for="grRoadTitle">New step title</label>
+        <input id="grRoadTitle" @bind-value="_title" @bind-value:event="oninput" placeholder="Earn an AWS certificate" />
+    </div>
+    <div class="form-group">
+        <label for="grRoadCategory">Category</label>
+        <input id="grRoadCategory" @bind-value="_category" @bind-value:event="oninput" placeholder="Skill" />
+    </div>
+    <div class="form-group">
+        <label for="grRoadTarget">Target date</label>
+            <InputDate @bind-Value="_targetDate" />
+    </div>
+    <button class="btn btn-primary" @onclick="AddAsync" disabled="@string.IsNullOrWhiteSpace(_title)">Add step</button>
+    <button class="btn" @onclick="SuggestAsync" disabled="@_suggesting">@(_suggesting ? "Thinking..." : "AI suggestions")</button>
+</div>
+
+@if (_suggestions.Count > 0)
+{
+    <div class="card" style="margin-bottom:14px;">
+        <div class="card-header"><h3>AI suggestions (@_suggestions.Count)</h3></div>
+        <p class="muted">Review then add the ones that make sense for you.</p>
+        <div>
+            @foreach (var s in _suggestions)
+            {
+                <label style="display:block; margin-bottom:6px;">
+                    <input type="checkbox" checked="@(IsPicked(s))" @onchange="e => Pick(s, e.Value is true)" />
+                    <strong>@s.Title</strong> <span class="grad-badge">@s.Category</span>
+                    @if (!string.IsNullOrEmpty(s.Notes)) { <div class="muted">@s.Notes</div> }
+                </label>
+            }
+        </div>
+        <button class="btn btn-primary btn-small" @onclick="ApplySuggestionsAsync">Add selected (@_picked.Count)</button>
+        <button class="btn btn-small" @onclick="DiscardSuggestions">Discard</button>
+    </div>
+}
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Loading roadmap...</div>
+}
+else if (_items.Count == 0)
+{
+    <div class="empty-state">No roadmap steps yet. Add a first step or press "AI suggestions".</div>
+}
+else
+{
+    <ul class="grad-list">
+        @foreach (var item in SortedItems)
+        {
+            <li style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center;">
+                <div>
+                    <strong>@item.Title</strong>
+                    <span class="grad-badge">@(item.Category ?? "General")</span>
+                    @if (item.Origin == "AiSuggestion") { <span class="grad-badge warn">AI</span> }
+                    @if (item.TargetDate is DateTime d) { <span class="muted"> &middot; target @d.ToString("d MMM yyyy")</span> }
+                    @if (!string.IsNullOrEmpty(item.Notes)) { <div class="muted">@item.Notes</div> }
+                </div>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <select value="@item.Status" @onchange='e => SetStatusAsync(item, e.Value?.ToString() ?? "NotStarted")' style="min-width:130px;">
+                        <option value="NotStarted">Not started</option>
+                        <option value="InProgress">In progress</option>
+                        <option value="Completed">Completed</option>
+                    </select>
+                    <button class="btn btn-small btn-danger" @onclick="() => RemoveAsync(item.Id)">Remove</button>
+                </div>
+            </li>
+        }
+    </ul>
+    <button class="btn btn-small" @onclick="RefreshProgressAsync">Refresh progress</button>
+}
+
+@code {
+    private List<GradRoadmapItemModel> _items = [];
+    private GradRoadmapProgressModel? _progress;
+    private List<GradRoadmapSuggestionModel> _suggestions = [];
+    private List<int> _picked = [];
+    private string _title = "";
+    private string _category = "";
+    private DateTime? _targetDate;
+    private bool _suggesting;
+
+    private List<GradRoadmapItemModel> SortedItems => _items.OrderBy(i => i.Status == "Completed" ? 1 : 0).ThenBy(i => i.SortOrder).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+        await LoadProgressAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        var items = await GetJsonAsync<List<GradRoadmapItemModel>>("/api/grad/roadmap");
+        if (items is not null) _items = items;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task LoadProgressAsync()
+    {
+        var progress = await GetJsonAsync<GradRoadmapProgressModel>("/api/grad/roadmap/progress");
+        if (progress is not null) _progress = progress;
+        StateHasChanged();
+    }
+
+    private async Task RefreshProgressAsync()
+    {
+        await LoadProgressAsync();
+    }
+
+    private async Task AddAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_title)) return;
+        _error = null;
+        var payload = new
+        {
+            title = _title,
+            category = string.IsNullOrWhiteSpace(_category) ? null : (object?)_category,
+            targetDate = _targetDate?.ToString("yyyy-MM-dd")
+        };
+        var error = await PostExpectNoBodyAsync("/api/grad/roadmap", payload);
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        _title = "";
+        _category = "";
+        _targetDate = null;
+        await LoadAsync();
+        await LoadProgressAsync();
+    }
+
+    private async Task UpdateStatusAsync(int id, string status)
+    {
+        var item = _items.FirstOrDefault(i => i.Id == id);
+        if (item is null) return;
+        var payload = new
+        {
+            title = item.Title,
+            category = item.Category,
+            status = status,
+            notes = item.Notes,
+            targetDate = item.TargetDate is null ? null : (object?)item.TargetDate
+        };
+        var error = await PutExpectNoBodyAsync($"/api/grad/roadmap/{id}", payload);
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        await LoadAsync();
+        await LoadProgressAsync();
+    }
+
+    private async Task RemoveAsync(int id)
+    {
+        var error = await DeleteAsync($"/api/grad/roadmap/{id}");
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        await LoadAsync();
+        await LoadProgressAsync();
+    }
+
+    private async Task SuggestAsync()
+    {
+        _suggesting = true;
+        _error = null;
+        StateHasChanged();
+        // The API returns an envelope { suggestions, source } — a bare list
+        // would fail to deserialize here, so read the envelope first.
+        var response = await GetJsonAsync<GradRoadmapSuggestionListModel>("/api/grad/roadmap/suggest");
+        _suggesting = false;
+        var suggestions = response?.Suggestions;
+        if (suggestions is { Count: > 0 })
+        {
+            _suggestions = suggestions;
+            _picked.Clear();
+            foreach (var s in suggestions)
+            {
+                if (IsPicked(s)) _picked.Add(_suggestions.IndexOf(s));
+            }
+        }
+        else if (_error is null)
+        {
+            _error = "No AI suggestions available right now.";
+        }
+        StateHasChanged();
+    }
+
+    private bool IsPicked(GradRoadmapSuggestionModel s) => _picked.Contains(_suggestions.IndexOf(s));
+
+    private void Pick(GradRoadmapSuggestionModel s, bool value)
+    {
+        var idx = _suggestions.IndexOf(s);
+        if (value && !_picked.Contains(idx)) _picked.Add(idx);
+        else if (!value) _picked.Remove(idx);
+        StateHasChanged();
+    }
+
+    private async Task ApplySuggestionsAsync()
+    {
+        if (_picked.Count == 0) return;
+        var payload = _picked
+            .Where(i => i >= 0 && i < _suggestions.Count)
+            .Select(i => new { title = _suggestions[i].Title, category = _suggestions[i].Category, notes = _suggestions[i].Notes })
+            .ToArray();
+        var error = await PostExpectNoBodyAsync("/api/grad/roadmap/apply-suggestions", payload);
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        DiscardSuggestions();
+        await LoadAsync();
+        await LoadProgressAsync();
+    }
+
+    private void DiscardSuggestions()
+    {
+        _suggestions = [];
+        _picked.Clear();
+        StateHasChanged();
+    }
+
+    private async Task SetStatusAsync(GradRoadmapItemModel item, string value)
+    {
+        item.Status = value;
+        await UpdateStatusAsync(item.Id, value);
+    }
+}

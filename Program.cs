@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using FluentValidation;
 using UniSphere.Api;
@@ -16,6 +18,35 @@ using UniSphere.Api.Middleware;
 using UniSphere.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Local AI key convenience: an optional, git-ignored secret.json next to the
+// app can carry the same keys that environment variables would (OPENAI_API_KEY,
+// ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, *_MODEL, OLLAMA_BASE_URL,
+// UNISPHERE_JWT_KEY). Only keys that are not already set are adopted, so
+// environment variables and dotnet user-secrets always win. Never commit this
+// file — it is ignored by .gitignore and documented in README "AI providers".
+var secretPath = Path.Combine(builder.Environment.ContentRootPath, "secret.json");
+if (File.Exists(secretPath))
+{
+    try
+    {
+        using var secretDoc = JsonDocument.Parse(File.ReadAllText(secretPath));
+        foreach (var property in secretDoc.RootElement.EnumerateObject())
+        {
+            if (property.Value.ValueKind != JsonValueKind.String) continue;
+            var isAdoptable = Regex.IsMatch(property.Name,
+                @"^[A-Za-z0-9]+_(API_KEY|MODEL|BASE_URL|JWT_KEY)$");
+            var hasValue = !string.IsNullOrWhiteSpace(property.Value.GetString());
+            if (isAdoptable && hasValue && string.IsNullOrEmpty(builder.Configuration[property.Name]))
+                builder.Configuration[property.Name] = property.Value.GetString();
+        }
+    }
+    catch (Exception ex)
+    {
+        // Malformed local file must never block startup.
+        Console.Error.WriteLine($"Ignoring local secret.json ({ex.Message}).");
+    }
+}
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -61,18 +92,24 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 
 // Services
 builder.Services.AddScoped<AcademicService>();
+builder.Services.AddScoped<GraduationService>();
+builder.Services.AddScoped<GraduateProfileService>();
+builder.Services.AddScoped<CvFileService>();
+builder.Services.AddScoped<GraduateAiService>();
+builder.Services.AddScoped<JobCatalogService>();
+builder.Services.AddScoped<JobMatchingService>();
+builder.Services.AddScoped<JobApplicationService>();
+builder.Services.AddScoped<RoadmapService>();
+builder.Services.AddScoped<InterviewService>();
+builder.Services.AddScoped<GraduateCareerService>();
+builder.Services.AddScoped<GraduateNotificationService>();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<ThemeService>();builder.Services.AddSingleton(new PerformanceModelWeights());
 builder.Services.AddScoped<IPerformanceModel, WeightedPerformanceModel>();
 builder.Services.AddScoped<PerformanceAnalysisService>();
 
-// Doctor module
-builder.Services.AddScoped<DoctorAccessService>();
-builder.Services.AddScoped<DoctorService>();
-builder.Services.Configure<DoctorAiOptions>(builder.Configuration.GetSection("DoctorAi"));
-builder.Services.AddScoped<IDoctorAiService, DoctorAiService>();
-
-// AI chat (keys come only from env vars / user-secrets, never appsettings)
+// AI chat (keys come only from env vars, dotnet user-secrets or the optional
+// git-ignored secret.json above — never from committed appsettings)
 builder.Services.Configure<ChatOptions>(builder.Configuration.GetSection("Chat"));
 var chat = builder.Configuration.GetSection("Chat").Get<ChatOptions>() ?? new ChatOptions();
 // Streaming owns its own cancellation via CancellationToken, so the
@@ -115,6 +152,13 @@ builder.Services.AddTransient<IChatProvider>(sp => sp.GetRequiredService<OpenRou
 builder.Services.AddScoped<ChatProviderRegistry>();
 builder.Services.AddScoped<ChatService>();
 
+// Live external job feed (no API key needed)
+builder.Services.AddHttpClient("Remotive", c =>
+{
+    c.BaseAddress = new Uri("https://remotive.com");
+    c.Timeout = TimeSpan.FromSeconds(60);
+});
+
 // Per-user chat rate limiting (429 when exceeded)
 builder.Services.AddRateLimiter(opt =>
 {
@@ -127,19 +171,6 @@ builder.Services.AddRateLimiter(opt =>
         {
             PermitLimit = limit,
             Window = TimeSpan.FromMinutes(1),
-            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-            QueueLimit = 0
-        });
-    });
-    // Research Hub PDF uploads: max 10 uploads/updates per user per 10 minutes
-    // (brute-force upload protection; metadata edits like publish toggles don't count).
-    opt.AddPolicy("research-upload", context =>
-    {
-        var key = "research-user-" + (context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anon");
-        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = 10,
-            Window = TimeSpan.FromMinutes(10),
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
             QueueLimit = 0
         });
@@ -174,7 +205,9 @@ builder.Services
             ClockSkew = TimeSpan.FromMinutes(1)
         };
         // Browsers navigating to protected Blazor pages send no JWT.
-        // Send those page navigations to /login instead of a raw 401.
+        // Send those page navigations to /login instead of a raw 401,
+        // preserving the original path so login/refresh returns the user
+        // to the exact page they were on (validated as a local URL).
         // API callers (under /api) keep the standard 401 + WWW-Authenticate.
         o.Events = new JwtBearerEvents
         {
@@ -187,7 +220,8 @@ builder.Services
                     && HttpMethods.IsGet(context.Request.Method))
                 {
                     context.HandleResponse();
-                    context.Response.Redirect("/login");
+                    var absolute = context.Request.PathBase + context.Request.Path + context.Request.QueryString;
+                    context.Response.Redirect($"/login?returnUrl={Uri.EscapeDataString(absolute)}");
                 }
                 return Task.CompletedTask;
             }
@@ -226,9 +260,11 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
-    // Additive, idempotent upgrades for databases created by older builds
-    // (EnsureCreated does not alter an existing schema). Never drops data.
-    UniSphere.Api.Data.DbSchemaUpgrade.Apply(db);
+    // EnsureCreated never alters an existing database: add objects that were
+    // introduced after a database file was first created (no-op when fresh).
+    // MUST run BEFORE seeding: SeedDemoJobs/patch inserts query new tables
+    // (JobListings, GraduateProfiles, ...) that only exist after Patch().
+    DbSchemaPatcher.Patch(db);
     DbSeeder.Seed(db);
 }
 

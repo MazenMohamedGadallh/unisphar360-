@@ -14,32 +14,19 @@ namespace UniSphere.Api.Controllers;
 public class EnrollmentsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly DoctorAccessService _access;
-    public EnrollmentsController(AppDbContext db, DoctorAccessService access)
-    {
-        _db = db;
-        _access = access;
-    }
+    public EnrollmentsController(AppDbContext db) => _db = db;
 
-    /// <summary>Get the logged-in user's enrollments with course details.
-    /// When the course's instructor set a display title, students see that
-    /// title instead of the catalog course title.</summary>
+    /// <summary>Get the logged-in user's enrollments with course details.</summary>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<EnrollmentDto>>> GetMyEnrollments()
     {
         var userId = User.GetUserId();
         var enrollments = await _db.Enrollments.AsNoTracking()
             .Where(e => e.UserId == userId)
+            .Include(e => e.Course)
             .OrderBy(e => e.Course!.Code)
             .Select(e => new EnrollmentDto(
-                e.Id, e.CourseId, e.Course!.Code,
-                // Instructor's display title (latest non-null) wins over the
-                // catalog title; resolved server-side so clients cannot fake it.
-                _db.CourseAssignments
-                    .Where(a => a.CourseId == e.CourseId && a.DisplayTitle != null)
-                    .OrderByDescending(a => a.AssignedAtUtc)
-                    .Select(a => a.DisplayTitle)
-                    .FirstOrDefault() ?? e.Course.Title,
+                e.Id, e.CourseId, e.Course!.Code, e.Course.Title,
                 e.Semester, e.GradeLetter, e.GradePoints, e.AttendancePercent, e.Status))
             .ToListAsync();
 
@@ -55,14 +42,6 @@ public class EnrollmentsController : ControllerBase
         // Validate course exists
         var course = await _db.Courses.AsNoTracking().FirstOrDefaultAsync(c => c.Id == req.CourseId);
         if (course is null) return NotFound($"Course {req.CourseId} not found.");
-
-        // The display title the course's instructor set (may be null);
-        // resolved on the server so clients cannot fake it.
-        var assignmentDisplayTitle = await _db.CourseAssignments.AsNoTracking()
-            .Where(a => a.CourseId == course.Id && a.DisplayTitle != null)
-            .OrderByDescending(a => a.AssignedAtUtc)
-            .Select(a => a.DisplayTitle)
-            .FirstOrDefaultAsync();
 
         // Check not already enrolled
         var existing = await _db.Enrollments
@@ -84,19 +63,17 @@ public class EnrollmentsController : ControllerBase
         _db.Enrollments.Add(enrollment);
         await _db.SaveChangesAsync();
 
-        // Add activity (use the title students see: the instructor's
-        // display title when set, the catalog title otherwise)
-        var shownTitle = assignmentDisplayTitle ?? course.Title;
+        // Add activity
         _db.Activities.Add(new ActivityItem
         {
             UserId = userId,
             Kind = "enrollment",
-            Message = $"Enrolled in {course.Code} - {shownTitle}"
+            Message = $"Enrolled in {course.Code} - {course.Title}"
         });
         await _db.SaveChangesAsync();
 
         return Ok(new EnrollmentDto(
-            enrollment.Id, course.Id, course.Code, shownTitle,
+            enrollment.Id, course.Id, course.Code, course.Title,
             enrollment.Semester, enrollment.GradeLetter, enrollment.GradePoints,
             enrollment.AttendancePercent, enrollment.Status));
     }
@@ -129,9 +106,7 @@ public class EnrollmentsController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Admin/Doctor: Update a student's grade, attendance, and status.
-    /// Admins may update any enrollment; a Doctor may update only enrollments
-    /// in a course they are assigned to teach.</summary>
+    /// <summary>Admin/Doctor: Update a student's grade, attendance, and status.</summary>
     [Authorize(Roles = "Admin,Doctor")]
     [HttpPut("{id:int}/grade")]
     public async Task<ActionResult<EnrollmentDto>> UpdateGrade(int id, [FromBody] UpdateGradeRequest req)
@@ -141,11 +116,6 @@ public class EnrollmentsController : ControllerBase
             .FirstOrDefaultAsync(e => e.Id == id);
 
         if (enrollment is null) return NotFound();
-
-        var access = await _access.AuthorizeCourseAsync(User.GetUserId(), enrollment.CourseId);
-        if (access.IsUnauthenticated) return Unauthorized();
-        if (!access.IsAllowed)
-            return Forbid(); // never disclose another doctor's course data
 
         // Validate attendance
         if (req.AttendancePercent is < 0 or > 100)
@@ -177,24 +147,12 @@ public class EnrollmentsController : ControllerBase
             enrollment.AttendancePercent, enrollment.Status));
     }
 
-    /// <summary>Admin/Doctor: Get enrollments. Admins see all (optionally
-    /// filtered by userId); Doctors see only enrollments in courses they
-    /// are assigned to teach.</summary>
+    /// <summary>Admin/Doctor: Get all enrollments (optionally filter by userId).</summary>
     [Authorize(Roles = "Admin,Doctor")]
     [HttpGet("all")]
     public async Task<ActionResult<IReadOnlyList<EnrollmentDto>>> GetAll([FromQuery] int? userId = null)
     {
-        var me = await _access.GetUserAsync(User.GetUserId());
-        if (me is null || me.IsDeleted) return Unauthorized();
-
         var query = _db.Enrollments.AsNoTracking().Include(e => e.Course).AsQueryable();
-
-        if (me.Role == UserRole.Doctor)
-        {
-            var courseIds = await _access.GetAssignedCourseIdsAsync(me.Id);
-            if (courseIds.Count == 0) return new List<EnrollmentDto>();
-            query = query.Where(e => courseIds.Contains(e.CourseId));
-        }
 
         if (userId.HasValue)
             query = query.Where(e => e.UserId == userId.Value);

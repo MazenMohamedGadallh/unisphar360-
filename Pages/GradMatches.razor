@@ -1,0 +1,99 @@
+@page "/graduate/matches"
+@inherits UniSphere.Api.Components.GradPageBase
+
+<PageTitle>AI Job Matches - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>AI Job Matches</h1>
+    <p>Deterministic match scores based on your profile, CV and preferences</p>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Scoring jobs against your profile...</div>
+}
+else if (_matches.Count == 0)
+{
+    <div class="empty-state">
+        No matches yet. Complete your profile (headline, skills, preferences) and upload a CV so the matcher can score jobs, then press Refresh.
+        <button class="btn btn-small" @onclick="LoadAsync">Refresh</button>
+    </div>
+}
+else
+{
+    <div class="grad-list">
+        @foreach (var match in _matches)
+        {
+            <div class="card" style="margin-bottom:12px;">
+                <div class="grad-overview-hero" style="padding:12px 16px; margin-bottom:0; @MatchBg(match.ScorePercent)">
+                    <div class="hero-text">
+                        <h2>@match.Job.Title</h2>
+                        <p>@match.Job.CompanyName &middot; @(string.IsNullOrEmpty(match.Job.Location) ? "Worldwide" : match.Job.Location)</p>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-size:2rem; font-weight:700;">@match.ScorePercent%</div>
+                        <div style="font-size:0.85rem; opacity:.9;">match score</div>
+                    </div>
+                </div>
+                <div style="padding:14px 18px;">
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+                        <span class="grad-badge">Source: @match.Job.Source</span>
+                        <a class="btn btn-small" href="@match.Job.Url" target="_blank" rel="noopener">Open posting</a>
+                        <button class="btn btn-small" @onclick="() => ToggleSaveAsync(match.Job)">@if (match.Job.IsSaved) { <text>Saved &#10003;</text> } else { <text>Save</text> }</button>
+                    </div>
+                    <p><strong>Matched skills:</strong> @if (match.MatchedSkills.Count > 0) { foreach (var s in match.MatchedSkills) { <span class="grad-badge">@s</span> } } else { <span class="muted">none from our catalog yet</span> }</p>
+                    @if (match.MissingSkills.Count > 0)
+                    {
+                        <p><strong>Missing skills:</strong> @foreach (var s in match.MissingSkills) { <span class="grad-badge bad">@s</span> }</p>
+                    }
+                    <p class="muted">@match.Explanation</p>
+                    <ul class="grad-list">
+                        @foreach (var action in match.Actions)
+                        {
+                            <li>@action</li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<GradMatchModel> _matches = [];
+
+    private static string MatchBg(int score) =>
+        score >= 70 ? "background:linear-gradient(135deg,#1E9E5E 0%,#127a45 100%);"
+        : score >= 45 ? "background:linear-gradient(135deg,#F6A723 0%,#C97B0D 100%);"
+        : "background:linear-gradient(135deg,#9AA0A6 0%,#6E7275 100%);";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        var matches = await GetJsonAsync<List<GradMatchModel>>("/api/grad/jobs/matches?limit=10&minScore=20");
+        if (matches is not null) _matches = matches;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task ToggleSaveAsync(GradJobModel job)
+    {
+        var error = job.IsSaved
+            ? await DeleteAsync($"/api/grad/jobs/{job.Id}/save")
+            : (await PostExpectNoBodyAsync($"/api/grad/jobs/{job.Id}/save", new { }));
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        await LoadAsync();
+    }
+}

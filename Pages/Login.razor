@@ -42,11 +42,18 @@
         </div>
 
         <div class="login-footer">
-            <p>Demo accounts:</p>
-            <ul>
-                <li><strong>Student:</strong> mazenmohamed@unisphere.edu / Password123!</li>
-                <li><strong>Admin:</strong> admin@unisphere.edu / Admin123!</li>
-                <li><strong>Doctor:</strong> doctor@unisphere.edu / sasaeldoctor123!</li>
+            <p>Demo accounts (click to fill, then Sign In):</p>
+            <ul class="demo-accounts">
+                @foreach (var account in DemoAccounts)
+                {
+                    <li>
+                        <button type="button" class="demo-btn" @onclick="(e) => FillDemo(account)">
+                            <strong>@account.Role</strong>
+                            <span>@account.Email</span>
+                            <span>@account.Password</span>
+                        </button>
+                    </li>
+                }
             </ul>
         </div>
     </div>
@@ -58,15 +65,59 @@
     private string? _error;
     private bool _loading;
 
+    private sealed record DemoUser(string Role, string Email, string Password);
+
+    // Matches the README "Demo Accounts" table.
+    private static readonly DemoUser[] DemoAccounts =
+    [
+        new("Student", "mazenmohamed@unisphere.edu", "Password123!"),
+        new("Graduate", "graduate@unisphere.edu", "Graduate123!"),
+        new("Doctor", "doctor@unisphere.edu", "Doctor123!"),
+        new("Admin", "admin@unisphere.edu", "Admin123!")
+    ];
+
+    private void FillDemo(DemoUser account)
+    {
+        _email = account.Email;
+        _password = account.Password;
+        _error = null;
+    }
+
     [SupplyParameterFromQuery(Name = "expired")]
     public string? Expired { get; set; }
+
+    // Deep links (or an F5 on a protected nested route) arrive here with a
+    // returnUrl courtesy of the auth challenge redirect in Program.cs.
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    /// <summary>Only navigate to local app paths. Rejects protocol URLs,
+    /// protocol-relative hosts (//evil.com), backslashes and control
+    /// characters so returnUrl can never act as an open redirect.</summary>
+    private static bool IsSafeReturnUrl(string? url) =>
+        !string.IsNullOrEmpty(url)
+        && url.StartsWith('/')
+        && !url.StartsWith("//")
+        && !url.StartsWith("/\\")
+        && !url.Contains('\\')
+        && url.All(c => !char.IsControl(c))
+        && url != "/login";
+
+    private string LandingPath =>
+        IsSafeReturnUrl(ReturnUrl) ? ReturnUrl!
+        : (string.Equals(Fetch?.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "/analytics" : "/dashboard");
+
+    private AuthUserDto? Fetch { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
         // Already signed in (typed URL / Back / link): don't show the form.
         var user = await AuthService.GetUserAsync();
         if (user is not null)
-            Nav.NavigateTo(HomeForRole(user.Role), replace: true);
+        {
+            Fetch = user;
+            Nav.NavigateTo(LandingPath, replace: true);
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -74,12 +125,9 @@
         // Full reload (F5): the scoped auth service starts empty, so the
         // persisted token can only be read once JS interop is available
         // (OnAfterRenderAsync — never during prerender). Restore it here:
-        // a signed-in user should land on their role's home, not the form.
+        // a signed-in user should land on their destination, not the form.
         if (firstRender && await AuthService.RestoreSessionAsync())
-        {
-            var user = await AuthService.GetUserAsync();
-            Nav.NavigateTo(HomeForRole(user?.Role), replace: true);
-        }
+            Nav.NavigateTo(LandingPath, replace: true);
     }
 
     private async Task HandleLogin(EventArgs e)
@@ -97,7 +145,13 @@
                 // forceLoad: true would reload the page, drop the token,
                 // and bounce straight back to /login.
                 var user = await AuthService.GetUserAsync();
-                Nav.NavigateTo(HomeForRole(user?.Role));
+                Fetch = user;
+                var target = IsSafeReturnUrl(ReturnUrl)
+                    ? ReturnUrl!.Trim()
+                    : user is not null && string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase)
+                        ? "/analytics"
+                        : "/dashboard";
+                Nav.NavigateTo(target);
             }
             else
             {
@@ -113,7 +167,4 @@
             _loading = false;
         }
     }
-
-    private static string HomeForRole(string? role) =>
-        UniSphere.Api.Services.BlazorAuthService.HomeForRole(role);
 }

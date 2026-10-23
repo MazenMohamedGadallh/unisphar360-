@@ -50,8 +50,10 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
         _ => "The AI provider is temporarily unavailable"
     };
 
-    /// <summary>Per-provider error mapping. Defaults to <see cref="MapStatusToMessage"/>.</summary>
-    protected virtual string MapError(int statusCode) => MapStatusToMessage(statusCode);
+    /// <summary>Per-provider error mapping. Defaults to <see cref="MapStatusToMessage"/>. The
+    /// server-side body is passed for providers that refine the message (e.g. invalid-key
+    /// detection). Bodies are provider diagnostic output — never log or echo API keys.</summary>
+    protected virtual string MapError(int statusCode, string body) => MapStatusToMessage(statusCode);
 
     public virtual async IAsyncEnumerable<string> StreamAsync(ChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
     {
@@ -102,7 +104,7 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
                 {
                     // 4xx (except 429) are NOT retried.
                     shouldRetry = false;
-                    fatal = new ChatProviderException(MapError(status));
+                    fatal = new ChatProviderException(MapError(status, truncated));
                 }
             }
             catch (OperationCanceledException)
@@ -275,7 +277,7 @@ public class OpenRouterChatProvider : StreamingChatProviderBase
     public override string Name => "openrouter";
     public override bool IsConfigured => !string.IsNullOrWhiteSpace(_config["OPENROUTER_API_KEY"]);
 
-    protected override string MapError(int statusCode) => statusCode switch
+    protected override string MapError(int statusCode, string body) => statusCode switch
     {
         401 or 403 => "The AI provider rejected the API key",
         402 => "The AI provider has run out of credits",
@@ -449,6 +451,18 @@ public class GeminiChatProvider : StreamingChatProviderBase
 
     public override string Name => "gemini";
     public override bool IsConfigured => !string.IsNullOrWhiteSpace(_config["GEMINI_API_KEY"]);
+
+    /// <summary>Gemini signals an invalid/absent key with HTTP 400 + "API key not
+    /// valid" in the body. Turn that into an actionable message (spell out the exact
+    /// configuration path) instead of a vague "request rejected". The key itself is
+    /// never included in any error output.</summary>
+    protected override string MapError(int statusCode, string body) =>
+        statusCode == 400 && (body.Contains("API_KEY_INVALID", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("API key not valid", StringComparison.OrdinalIgnoreCase))
+            ? "Gemini rejected the API key (API_KEY_INVALID). Set GEMINI_API_KEY to a valid Gemini " +
+              "API key from Google AI Studio (aistudio.google.com/apikey) via dotnet user-secrets, " +
+              "the GEMINI_API_KEY environment variable, or secret.json, then restart the app."
+            : MapStatusToMessage(statusCode);
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {

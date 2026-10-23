@@ -18,12 +18,7 @@ namespace UniSphere.Api.Controllers;
 public class UniversityController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly DoctorAccessService _access;
-    public UniversityController(AppDbContext db, DoctorAccessService access)
-    {
-        _db = db;
-        _access = access;
-    }
+    public UniversityController(AppDbContext db) => _db = db;
 
     private Task<User?> MeAsync() =>
         _db.Users.FirstOrDefaultAsync(u => u.Id == User.GetUserId());
@@ -39,7 +34,16 @@ public class UniversityController : ControllerBase
     {
         var user = await MeAsync();
         if (user is null || user.IsDeleted) return Unauthorized();
-        if (!user.UniversityId.HasValue) return NotFound("No university assigned to this account yet.");
+
+        // Graduates keep university access without a current-year academic
+        // scope: the page surfaces their university record (possibly null)
+        // instead of a hard 404, which previously broke the module for them.
+        if (!user.UniversityId.HasValue)
+        {
+            if (user.Role == UserRole.Graduate)
+                return new MyUniversityDto(null, user.Department, null, 0, 0);
+            return NotFound("No university assigned to this account yet.");
+        }
 
         var university = await _db.Universities.FindAsync(user.UniversityId.Value);
         if (university is null) return NotFound("University not found.");
@@ -178,12 +182,10 @@ public class UniversityController : ControllerBase
         var course = await _db.Courses.FindAsync(req.CourseId);
         if (course is null) return NotFound("Course not found.");
 
-        // A doctor may only add materials to a course they are assigned to
-        // teach; admins may add to any course (unchanged).
         if (user.Role == UserRole.Doctor
-            && !await _access.IsAssignedToCourseAsync(user.Id, course.Id))
+            && (!user.UniversityId.HasValue || course.UniversityId != user.UniversityId))
             return StatusCode(StatusCodes.Status403Forbidden,
-                "You can only add materials for courses you are assigned to teach.");
+                "You can only add materials for courses of your own university.");
 
         var material = new CourseMaterial
         {

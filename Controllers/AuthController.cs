@@ -79,7 +79,6 @@ public class AuthController : ControllerBase
             Age = req.Age,
             Major = string.IsNullOrWhiteSpace(req.Department) ? "Undeclared" : req.Department.Trim(),
             Department = req.Department?.Trim() ?? "",
-            Address = string.IsNullOrWhiteSpace(req.Address) ? null : req.Address.Trim(),
             UniversityId = universityId,
             AcademicYear = req.AcademicYear,
             Specialization = string.IsNullOrWhiteSpace(req.Specialization) ? null : req.Specialization.Trim(),

@@ -1,0 +1,269 @@
+@page "/graduate/jobs"
+@inherits UniSphere.Api.Components.GradPageBase
+
+<PageTitle>Find Jobs - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Find Jobs</h1>
+    <p>Search the catalog and sync fresh remote openings</p>
+    <button class="btn btn-small" @onclick="SyncAsync" disabled="@_syncing">Sync jobs</button>
+</div>
+
+<div style="display:flex; gap:8px; margin-bottom:14px;">
+    <button class="btn btn-small @(_view == AllView ? "btn-primary" : "")" @onclick="() => SetViewAsync(AllView)">All jobs</button>
+    <button class="btn btn-small @(_view == SavedView ? "btn-primary" : "")" @onclick="() => SetViewAsync(SavedView)">Saved jobs</button>
+</div>
+
+@if (_view == AllView)
+{
+<div class="form-inline" style="margin-bottom:14px;">
+    <div class="form-group">
+        <label for="grJobSearch">Keyword</label>
+        <input id="grJobSearch" @bind="_search" placeholder="backend, react, data..." @oninput="@(() => _page = 1)" />
+    </div>
+    <div class="form-group">
+        <label for="grJobLocation">Location</label>
+        <input id="grJobLocation" @bind="_location" placeholder="Cairo or Remote" />
+    </div>
+    <div class="form-group">
+        <label for="grJobRemote">Work mode</label>
+        <select id="grJobRemote" @bind="_remote">
+            <option value="">Any</option>
+            <option value="true">Remote only</option>
+            <option value="false">Onsite / hybrid</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="grJobSort">Sort</label>
+        <select id="grJobSort" @bind="_sort">
+            <option value="">Newest first</option>
+            <option value="title">By title</option>
+            <option value="company">By company</option>
+            <option value="oldest">Oldest first</option>
+        </select>
+    </div>
+    <button class="btn btn-primary" @onclick="SearchAsync">Search</button>
+    <button class="btn btn-small" @onclick="ResetAsync">Reset</button>
+</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(_syncMessage))
+{
+    <p><span class="grad-badge">@_syncMessage</span></p>
+}
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="SearchAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Loading jobs...</div>
+}
+else if (_jobs is null || _jobs.Jobs.Count == 0)
+{
+    <div class="empty-state">
+        @if (_view == SavedView)
+        {
+            <text>No saved jobs yet. Browse the "All jobs" tab and press Save to bookmark a listing.</text>
+        }
+        else
+        {
+            <text>No jobs match your search. Press "Sync jobs" to pull fresh remote openings.</text>
+        }
+    </div>
+}
+else
+{
+    <p class="muted">@_jobs.Total listings &middot; page @_jobs.Page of @Math.Max(1, (int)Math.Ceiling(_jobs.Total / (double)_jobs.PageSize))</p>
+    <div class="clips">
+        <table>
+            <thead>
+                <tr>
+                    <th>Job</th>
+                    <th>Source</th>
+                    <th>Posted</th>
+                    <th style="min-width:220px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var job in _jobs.Jobs)
+                {
+                    <tr>
+                        <td>
+                            <strong>@job.Title</strong>
+                            <div class="muted">@job.CompanyName &middot; @(string.IsNullOrEmpty(job.Location) ? "Worldwide" : job.Location) @if (job.Remote) { <span class="grad-badge">Remote</span> }</div>
+                            <div class="muted">@(job.JobType) @if (!string.IsNullOrEmpty(job.Salary)) { <span> &middot; @job.Salary</span> }</div>
+                            @if (job.KeySkills.Count > 0)
+                            {
+                                <div style="margin-top:4px;">
+                                    @foreach (var s in job.KeySkills.Take(6)) { <span class="grad-badge">@s</span> }
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(job.Snippet))
+                            {
+                                <div class="muted" style="max-width:560px; margin-top:4px;">@(job.Snippet.Length > 240 ? job.Snippet[..240] + "..." : job.Snippet)</div>
+                            }
+                        </td>
+                        <td><span class="grad-badge">@job.Source</span></td>
+                        <td class="muted">@job.PublishedAtUtc.ToString("d MMM yyyy")</td>
+                        <td>
+                            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                <button class="btn btn-small" @onclick="() => ToggleSaveAsync(job)">@if (job.IsSaved) { <text>Saved &#10003;</text> } else { <text>Save</text> }</button>
+                                @if (job.IsApplied)
+                                {
+                                    <span class="grad-badge">Applied</span>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-small btn-primary" @onclick="() => ApplyAsync(job)">Mark as applied</button>
+                                }
+                                <a class="btn btn-small" href="@job.Url" target="_blank" rel="noopener">Open</a>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn btn-small" @onclick="PrevAsync" disabled="@(_jobs.Page <= 1)">Previous</button>
+        <button class="btn btn-small" @onclick="NextAsync" disabled="@(_jobs.Page * _jobs.PageSize >= _jobs.Total)">Next</button>
+    </div>
+}
+
+@code {
+    private const string AllView = "all"; // catalog + filters
+    private const string SavedView = "saved"; // bookmarked listings
+    private GradPagedJobsModel? _jobs;
+    private string _view = AllView;
+    private string _search = "";
+    private string _location = "";
+    private string _remote = "";
+    private string _sort = "";
+    private int _page = 1;
+    private bool _syncing;
+    private string? _syncMessage;
+
+    [SupplyParameterFromQuery(Name = "view")]
+    public string? ViewQuery { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (string.Equals(ViewQuery, SavedView, StringComparison.OrdinalIgnoreCase))
+        {
+            _view = SavedView;
+            _page = 1;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+    }
+
+    private string BuildQuery() => _view == SavedView
+        ? $"/api/grad/jobs/saved?page={_page}&pageSize=8"
+        : $"/api/grad/jobs?search={Uri.EscapeDataString(_search)}&location={Uri.EscapeDataString(_location)}"
+            + (_remote.Length > 0 ? $"&remote={_remote}" : "")
+            + (_sort.Length > 0 ? $"&sort={_sort}" : "")
+            + $"&page={_page}&pageSize=8";
+
+    private async Task SetViewAsync(string view)
+    {
+        if (_view == view) return;
+        _view = view;
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        if (_view == SavedView)
+        {
+            // /saved returns the full bookmarked list (no filters apply there).
+            var saved = await GetJsonAsync<List<GradJobModel>>("/api/grad/jobs/saved");
+            if (saved is not null)
+                _jobs = new GradPagedJobsModel { Jobs = saved, Total = saved.Count, Page = 1, PageSize = saved.Count == 0 ? 8 : saved.Count };
+            else
+                _jobs = null;
+        }
+        else
+        {
+            _jobs = await GetJsonAsync<GradPagedJobsModel>(BuildQuery());
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task SearchAsync()
+    {
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private async Task ResetAsync()
+    {
+        _search = "";
+        _location = "";
+        _remote = "";
+        _sort = "";
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private async Task PrevAsync()
+    {
+        if (_jobs is null || _jobs.Page <= 1) return;
+        _page = _jobs.Page - 1;
+        await LoadAsync();
+    }
+
+    private async Task NextAsync()
+    {
+        if (_jobs is null || _jobs.Page * _jobs.PageSize >= _jobs.Total) return;
+        _page = _jobs.Page + 1;
+        await LoadAsync();
+    }
+
+    private async Task ToggleSaveAsync(GradJobModel job)
+    {
+        var error = job.IsSaved
+            ? await DeleteAsync($"/api/grad/jobs/{job.Id}/save")
+            : (await PostExpectNoBodyAsync($"/api/grad/jobs/{job.Id}/save", new { }));
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        await LoadAsync();
+    }
+
+    private async Task ApplyAsync(GradJobModel job)
+    {
+        var error = await PostExpectNoBodyAsync("/api/grad/applications", new
+        {
+            jobListingId = job.Id, status = "Applied"
+        });
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        await LoadAsync();
+    }
+
+    private async Task SyncAsync()
+    {
+        _syncing = true;
+        _syncMessage = null;
+        _error = null;
+        StateHasChanged();
+        var result = await GetJsonAsync<GradSyncResultModel>("/api/grad/jobs/sync");
+        _syncing = false;
+        if (result is not null)
+        {
+            if (result.Error is not null) _syncMessage = result.Error;
+            else if (result.Throttled) _syncMessage = "Synced recently. Next sync soon.";
+            else _syncMessage = $"Imported {result.Imported} new jobs.";
+            await LoadAsync();
+        }
+        StateHasChanged();
+    }
+}

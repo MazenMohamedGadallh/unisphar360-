@@ -51,9 +51,6 @@ public class RegisterRequestValidator : AbstractValidator<RegisterRequest>
             .Must(r => RegistrationRules.TryParseUserType(r, out _))
             .WithMessage("Role must be Student, Doctor or Graduate. Admin accounts can't be created through registration.");
 
-        RuleFor(x => x.Address).MaximumLength(200)
-            .When(x => !string.IsNullOrEmpty(x.Address));
-
         RuleFor(x => x.Password).NotEmpty().WithMessage("Password is required.")
             .Matches(PasswordPattern).WithMessage("Password must be at least 8 characters and include an upper-case letter, a lower-case letter, a digit and a symbol.");
         RuleFor(x => x.ConfirmPassword).NotEmpty().WithMessage("Please confirm your password.")
@@ -240,177 +237,30 @@ public class CreatePaperRequestValidator : AbstractValidator<CreatePaperRequest>
     }
 }
 
-// ---- Doctor module ----
-
-public class DoctorMaterialValidator : AbstractValidator<CreateDoctorMaterialRequest>
+public class GraduationApplyRequestValidator : AbstractValidator<GraduationApplyRequest>
 {
-    public static readonly string[] AllowedTypes = CreateMaterialRequestValidator.AllowedTypes;
-
-    public DoctorMaterialValidator()
+    public GraduationApplyRequestValidator()
     {
-        RuleFor(x => x.Title).NotEmpty().WithMessage("Title is required.").MaximumLength(200);
-        RuleFor(x => x.Type).NotEmpty().WithMessage("Type is required.")
-            .Must(t => AllowedTypes.Contains(t?.Trim() ?? "", StringComparer.OrdinalIgnoreCase))
-            .WithMessage("Type must be Summary, Lecture, Assignment, Exam or Announcement.");
-        RuleFor(x => x.Description).MaximumLength(2000).When(x => !string.IsNullOrEmpty(x.Description));
-        RuleFor(x => x.Content).MaximumLength(200000).When(x => !string.IsNullOrEmpty(x.Content));
-        RuleFor(x => x.FileUrl).MaximumLength(500)
-            .Must(u => string.IsNullOrEmpty(u)
-                || u.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase)
-                || Uri.TryCreate(u, UriKind.Absolute, out _))
-            .When(x => !string.IsNullOrEmpty(x.FileUrl))
-            .WithMessage("FileUrl must be an uploaded file path or a valid absolute URL.");
+        RuleFor(x => x.Note).MaximumLength(500)
+            .When(x => !string.IsNullOrEmpty(x.Note))
+            .WithMessage("Note must be at most 500 characters.");
+        RuleFor(x => x.ExpectedGraduationYear)
+            .InclusiveBetween(DateTime.UtcNow.Year, DateTime.UtcNow.Year + 5)
+            .When(x => x.ExpectedGraduationYear.HasValue)
+            .WithMessage($"Expected graduation year must be between {DateTime.UtcNow.Year} and {DateTime.UtcNow.Year + 5}.");
     }
 }
 
-public class UpdateDoctorMaterialRequestValidator : AbstractValidator<UpdateDoctorMaterialRequest>
+public class ReviewGraduationApplicationRequestValidator : AbstractValidator<ReviewGraduationApplicationRequest>
 {
-    public UpdateDoctorMaterialRequestValidator()
+    public ReviewGraduationApplicationRequestValidator()
     {
-        RuleFor(x => x.Title).NotEmpty().WithMessage("Title is required.").MaximumLength(200);
-        RuleFor(x => x.Type).NotEmpty().WithMessage("Type is required.")
-            .Must(t => DoctorMaterialValidator.AllowedTypes.Contains(t?.Trim() ?? "", StringComparer.OrdinalIgnoreCase))
-            .WithMessage("Type must be Summary, Lecture, Assignment, Exam or Announcement.");
-        RuleFor(x => x.Description).MaximumLength(2000).When(x => !string.IsNullOrEmpty(x.Description));
-        RuleFor(x => x.Content).MaximumLength(200000).When(x => !string.IsNullOrEmpty(x.Content));
-        RuleFor(x => x.FileUrl).MaximumLength(500)
-            .Must(u => string.IsNullOrEmpty(u)
-                || u.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase)
-                || Uri.TryCreate(u, UriKind.Absolute, out _))
-            .When(x => !string.IsNullOrEmpty(x.FileUrl))
-            .WithMessage("FileUrl must be an uploaded file path or a valid absolute URL.");
-    }
-}
-
-public class CreateCourseAnnouncementRequestValidator : AbstractValidator<CreateCourseAnnouncementRequest>
-{
-    public CreateCourseAnnouncementRequestValidator()
-    {
-        RuleFor(x => x.Title).NotEmpty().WithMessage("Title is required.").MaximumLength(200);
-        RuleFor(x => x.Body).NotEmpty().WithMessage("Body is required.").MaximumLength(5000);
-        RuleFor(x => x.Category).MaximumLength(50).When(x => !string.IsNullOrEmpty(x.Category));
-    }
-}
-
-public class CreateCourseAssignmentRequestValidator : AbstractValidator<CreateCourseAssignmentRequest>
-{
-    public CreateCourseAssignmentRequestValidator()
-    {
-        RuleFor(x => x.DoctorUserId).GreaterThan(0).WithMessage("DoctorUserId must be positive.");
-        RuleFor(x => x.CourseId).GreaterThan(0).WithMessage("CourseId must be positive.");
-    }
-}
-
-public class QuizGenerationRequestValidator : AbstractValidator<QuizGenerationRequest>
-{
-    public QuizGenerationRequestValidator()
-    {
-        RuleFor(x => x.CourseId).GreaterThan(0).WithMessage("CourseId must be positive.");
-        RuleFor(x => x.QuestionCount).InclusiveBetween(1, 15).WithMessage("Question count must be between 1 and 15.");
-    }
-}
-
-public class SummarizeRequestValidator : AbstractValidator<SummarizeRequest>
-{
-    public SummarizeRequestValidator()
-    {
-        RuleFor(x => x.CourseId).GreaterThan(0);
-        RuleFor(x => x.MaterialId).GreaterThan(0);
-    }
-}
-
-public class LectureQuestionRequestValidator : AbstractValidator<LectureQuestionRequest>
-{
-    public LectureQuestionRequestValidator()
-    {
-        RuleFor(x => x.CourseId).GreaterThan(0).WithMessage("CourseId must be positive.");
-        RuleFor(x => x.Question).NotEmpty().WithMessage("Question is required.").MaximumLength(1000);
-    }
-}
-
-// ---- Doctor profile (Phase 1) ----
-
-public class UpdateDoctorProfileRequestValidator : AbstractValidator<UpdateDoctorProfileRequest>
-{
-    public UpdateDoctorProfileRequestValidator()
-    {
-        // Only the editable field exists on the DTO; locked fields are
-        // rejected by the controller before this validator runs.
-        RuleFor(x => x.AvatarUrl).MaximumLength(500)
-            .Must(u => string.IsNullOrEmpty(u)
-                || u.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase)
-                || Uri.TryCreate(u, UriKind.Absolute, out _))
-            .When(x => !string.IsNullOrEmpty(x.AvatarUrl))
-            .WithMessage("Avatar must be an uploaded file path or a valid absolute URL.");
-    }
-}
-
-/// <summary>Course display title rule: 3-120 characters when set, plain text
-/// only (no HTML/open angle brackets), so no injected markup can reach
-/// students. Empty/null clears the override (students see the catalog title).</summary>
-public class SetCourseDisplayTitleRequestValidator : AbstractValidator<SetCourseDisplayTitleRequest>
-{
-    public SetCourseDisplayTitleRequestValidator()
-    {
-        RuleFor(x => x.DisplayTitle)
-            .Must(t => string.IsNullOrWhiteSpace(t) || t.Trim().Length >= 3)
-            .WithMessage("Display title must be at least 3 characters.")
-            .Must(t => string.IsNullOrWhiteSpace(t) || t.Trim().Length <= 120)
-            .WithMessage("Display title must be at most 120 characters.")
-            .Must(t => string.IsNullOrWhiteSpace(t) || !t.Trim().Contains('<') && !t.Trim().Contains('>'))
-            .WithMessage("Display title must be plain text (no HTML).");
-    }
-}
-
-public class AdminUpdateUserRequestValidator : AbstractValidator<AdminUpdateUserRequest>
-{
-    public AdminUpdateUserRequestValidator()
-    {
-        RuleFor(x => x.FirstName).NotEmpty().WithMessage("First name is required.").MaximumLength(100);
-        RuleFor(x => x.MiddleName).MaximumLength(100).When(x => !string.IsNullOrEmpty(x.MiddleName));
-        RuleFor(x => x.LastName).NotEmpty().WithMessage("Last name is required.").MaximumLength(100);
-        RuleFor(x => x.Email).NotEmpty().WithMessage("Email is required.").EmailAddress().WithMessage("Enter a valid email address.").MaximumLength(200);
-        RuleFor(x => x.Address).MaximumLength(200).When(x => !string.IsNullOrEmpty(x.Address));
-        RuleFor(x => x.PhoneNumber).MaximumLength(30).When(x => !string.IsNullOrEmpty(x.PhoneNumber));
-        RuleFor(x => x.Department).MaximumLength(200).When(x => !string.IsNullOrEmpty(x.Department));
-    }
-}
-
-// ---- Research Hub (Phase 2) ----
-
-/// <summary>Research paper metadata. Plain text only (no HTML angle brackets)
-/// so no injected markup can reach the research hub UI. The PDF file itself
-/// is validated by the controller via magic bytes and a 20 MB cap — the
-/// client's declared MIME type is never trusted.</summary>
-public class ResearchUploadFormValidator : AbstractValidator<ResearchUploadForm>
-{
-    public ResearchUploadFormValidator()
-    {
-        RuleFor(x => x.Title).NotEmpty().WithMessage("Title is required.")
-            .Must(t => t.Trim().Length >= 3).WithMessage("Title must be at least 3 characters.")
-            .MaximumLength(300).WithMessage("Title must be at most 300 characters.")
-            .Must(t => !t.Contains('<') && !t.Contains('>')).WithMessage("Title must be plain text (no HTML).");
-
-        RuleFor(x => x.Abstract).NotEmpty().WithMessage("Abstract is required.")
-            .MaximumLength(5000).WithMessage("Abstract must be at most 5000 characters.")
-            .Must(t => !t.Contains('<') && !t.Contains('>')).WithMessage("Abstract must be plain text (no HTML).");
-
-        RuleFor(x => x.Authors).NotEmpty().WithMessage("Authors are required.")
-            .MaximumLength(300).WithMessage("Authors must be at most 300 characters.")
-            .Must(t => !t.Contains('<') && !t.Contains('>')).WithMessage("Authors must be plain text (no HTML).");
-
-        RuleFor(x => x.Keywords).NotEmpty().WithMessage("Keywords are required.")
-            .MaximumLength(300).WithMessage("Keywords must be at most 300 characters.")
-            .Must(t => !t.Contains('<') && !t.Contains('>')).WithMessage("Keywords must be plain text (no HTML).");
-
-        RuleFor(x => x.Year).InclusiveBetween(1950, 2100).WithMessage("Year must be between 1950 and 2100.");
-
-        RuleFor(x => x.Field).NotEmpty().WithMessage("Field is required.")
-            .MaximumLength(200).WithMessage("Field must be at most 200 characters.")
-            .Must(t => !t.Contains('<') && !t.Contains('>')).WithMessage("Field must be plain text (no HTML).");
-
-        RuleFor(x => x.DoiOrUrl).MaximumLength(500).WithMessage("DOI/URL must be at most 500 characters.")
-            .Must(t => !t.Contains('<') && !t.Contains('>')).WithMessage("DOI/URL must be plain text (no HTML).")
-            .When(x => !string.IsNullOrEmpty(x.DoiOrUrl));
+        RuleFor(x => x.Note).MaximumLength(500)
+            .When(x => !string.IsNullOrEmpty(x.Note))
+            .WithMessage("Note must be at most 500 characters.");
+        RuleFor(x => x.GraduationYear)
+            .InclusiveBetween(1950, DateTime.UtcNow.Year + 1)
+            .When(x => x.GraduationYear.HasValue)
+            .WithMessage($"Graduation year must be between 1950 and {DateTime.UtcNow.Year + 1}.");
     }
 }

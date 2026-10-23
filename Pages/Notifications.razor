@@ -1,4 +1,5 @@
 @page "/notifications"
+@using System.Net
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -14,6 +15,14 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     <h1>Notifications</h1>
     <p>Stay updated with the latest announcements and reminders.</p>
 </div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-error">
+        @_error
+        <button class="btn-sm btn btn-secondary" @onclick="LoadAsync">Retry</button>
+    </div>
+}
 
 <div class="card">
     <div class="card-header">
@@ -58,15 +67,42 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 
 @code {
     private List<NotificationDto>? _notifications;
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
-        _notifications = await Http.GetFromJsonAsync<List<NotificationDto>>("/api/notifications");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _notifications = null;
+        StateHasChanged();
+        try
+        {
+            _notifications = await Http.GetFromJsonAsync<List<NotificationDto>>("/api/notifications");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            Nav.NavigateTo("/login?expired=1", replace: true);
+        }
+        catch (Exception ex)
+        {
+            // Network/timeout/parse issues must surface as a retryable
+            // message, not an unhandled circuit failure (CircuitNotActive).
+            _error = $"Could not load notifications ({(ex.InnerException ?? ex).Message}).";
+        }
+        StateHasChanged();
     }
 
     private async Task MarkRead(int id)
     {
-        await Http.PostAsync($"/api/notifications/{id}/read", null);
+        try
+        {
+            await Http.PostAsync($"/api/notifications/{id}/read", null);
+        }
+        catch { /* keep UI feedback; badge refresh happens on next load */ }
         if (_notifications is not null)
         {
             var index = _notifications.FindIndex(n => n.Id == id);
@@ -80,7 +116,11 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 
     private async Task MarkAllRead()
     {
-        await Http.PostAsync("/api/notifications/read-all", null);
+        try
+        {
+            await Http.PostAsync("/api/notifications/read-all", null);
+        }
+        catch { /* same as above */ }
         if (_notifications is not null)
         {
             for (int i = 0; i < _notifications.Count; i++)
