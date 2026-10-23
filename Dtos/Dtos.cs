@@ -124,23 +124,6 @@ public record AdminUserDto(
     int Id, string FullName, string Email, string Role, int RoleId,
     bool IsActive, bool IsDeleted, DateTime CreatedAtUtc, DateTime? LastLoginAtUtc, string Major);
 
-/// <summary>Full profile of a user for the admin panel edit dialog
-/// (GET /api/admin/users/{id}). These fields are locked for the users
-/// themselves: the admin is the only one who can change them.</summary>
-public record AdminUserDetailDto(
-    int Id, string FirstName, string? MiddleName, string LastName,
-    string Email, string? Address, string PhoneNumber,
-    string Department, int? UniversityId, string? UniversityName,
-    string Role, bool IsActive, bool IsDeleted);
-
-/// <summary>PUT /api/admin/users/{id} body: only the locked fields the
-/// admin may set. Audit-logged by the controller; never model-binds
-/// role/activity/password fields (use the dedicated endpoints instead).</summary>
-public record AdminUpdateUserRequest(
-    string FirstName, string? MiddleName, string LastName,
-    string Email, string? Address, string PhoneNumber,
-    string Department, int? UniversityId);
-
 public record PagedResultDto<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
 public record PatchUserStatusRequest(bool IsActive);
@@ -164,7 +147,7 @@ public record SystemHealthDto(
 public record UniversityDto(int Id, string Name, string? Logo);
 
 public record MyUniversityDto(
-    string UniversityName, string Department, int? AcademicYear,
+    string? UniversityName, string? Department, int? AcademicYear,
     int CoursesCount, int MaterialsCount);
 
 public record UniversityCourseDto(
@@ -209,8 +192,7 @@ public record RegisterRequest(
     int? AcademicYear, string? Department,
     string? Specialization,
     string? GraduatedFrom, int? GraduationYear,
-    int? UniversityId,
-    string? Address = null);
+    int? UniversityId);
 
 // RoleId is optional: if sent, it must match the account's role (1 Student, 2 Graduate, 3 Doctor, 4 Admin).
 public record LoginRequest(string Email, string Password, int? RoleId = null);
@@ -222,3 +204,43 @@ public record AuthUserDto(int Id, string FullName, string Email, int RoleId, str
 public record RoleDto(int Id, string Name);
 
 public record AuthResponse(string Token, DateTime ExpiresAtUtc, AuthUserDto User);
+
+// ---- Graduation (/api/graduation/*)
+public record GraduationChecklistItemDto(string Key, string Title, string Detail, bool IsMet);
+
+public record GraduationApplicationSummaryDto(
+    int Id, string Status, DateTime SubmittedAtUtc,
+    DateTime? ReviewedAtUtc, string? DecisionNote, int? ConferredGraduationYear);
+
+/// <summary>Alumni block shown for accounts with the Graduate role.</summary>
+public record GraduationAlumniDto(
+    string GraduatedFrom, int? GraduationYear, double FinalGpa, string Honors, bool HasCertificate);
+
+public record GraduationOverviewResponse(
+    string Role, bool IsGraduated,
+    string Degree, string Department, string UniversityName, int? AcademicYear,
+    double Gpa, double MinGpaRequired,
+    int CoursesCompleted, int CoursesRequired, int CompletionPercent,
+    int CreditsCompleted, int CreditsInProgress,
+    IReadOnlyList<string> FailedCourses,
+    bool IsEligible, IReadOnlyList<string> BlockingReasons,
+    IReadOnlyList<GraduationChecklistItemDto> Checklist,
+    string ApplicationStatus, // "none" | Pending | InReview | Approved | Rejected | Withdrawn
+    GraduationApplicationSummaryDto? Application,
+    GraduationAlumniDto? Alumni);
+
+public record GraduationApplyRequest(string? Note, int? ExpectedGraduationYear);
+
+public record GraduationCeremonyDto(int Id, string Title, string Location, DateTime StartsAtUtc, string? Description);
+
+public record GraduationCertificateDto(
+    string CertificateId, string Holder, string Degree, string University,
+    int GraduationYear, double FinalGpa, string Honors, DateTime? ConferredOnUtc);
+
+public record GraduationApplicationAdminDto(
+    int Id, int UserId, string StudentName, string Email, string Degree,
+    double GpaAtApplication, int CoursesCompleted, int CoursesRequired,
+    string Status, DateTime SubmittedAtUtc, DateTime? ReviewedAtUtc,
+    string? DecisionNote, int? ConferredGraduationYear);
+
+public record ReviewGraduationApplicationRequest(bool Approve, string? Note, int? GraduationYear);

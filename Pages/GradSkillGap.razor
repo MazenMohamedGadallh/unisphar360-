@@ -1,0 +1,130 @@
+@page "/graduate/skill-gap"
+@inherits UniSphere.Api.Components.GradPageBase
+
+<PageTitle>Skill Gap Analysis - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Skill Gap Analysis</h1>
+    <p>See what your target role expects and close the gap</p>
+</div>
+
+<div class="form-inline" style="margin-bottom:14px;">
+    <div class="form-group">
+        <label for="grRole">Target role</label>
+        <select id="grRole" @bind="_role">
+            <option value="">Auto-detect from my profile</option>
+            <option>Backend Developer</option>
+            <option>Frontend Developer</option>
+            <option>Full-Stack Developer</option>
+            <option>Data Analyst</option>
+            <option>Data Scientist</option>
+            <option>Machine Learning Engineer</option>
+            <option>NLP Engineer</option>
+            <option>Mobile Developer</option>
+            <option>DevOps Engineer</option>
+            <option>QA Engineer</option>
+            <option>Software Engineer</option>
+        </select>
+    </div>
+    <button class="btn btn-primary" @onclick="LoadAsync">Analyze</button>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Analyzing your skills...</div>
+}
+else if (_gap is not null)
+{
+    <div class="card" style="margin-bottom:14px;">
+        <div class="card-header"><h3>Target role: @_gap.TargetRole &middot; coverage @_gap.CoveragePercent%</h3></div>
+        <div class="grad-score-meter"><div style="width:@_gap.CoveragePercent%;"></div></div>
+        <p class="muted">Coverage weighs the role's core skills against what we detected in your profile and CV.</p>
+    </div>
+
+    <div class="grad-two-col">
+        <div class="card">
+            <div class="card-header"><h3>Skills you have</h3></div>
+            @if (_gap.Matched.Count == 0)
+            {
+                <div class="empty-state">No role skills detected yet — add skills to your profile.</div>
+            }
+            else
+            {
+                <ul class="grad-list">
+                    @foreach (var row in _gap.Matched)
+                    {
+                        <li>
+                            <strong>@row.Skill</strong>
+                            <span class="grad-badge">@row.Priority</span>
+                            @if (!string.IsNullOrEmpty(row.Level)) { <span class="muted"> &middot; @row.Level</span> }
+                            <div class="muted">@row.JobsRequiring</div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Skills to learn next</h3></div>
+            @if (_gap.Missing.Count == 0)
+            {
+                <div class="empty-state">Nothing missing — you cover this role's core stack.</div>
+            }
+            else
+            {
+                <ul class="grad-list">
+                    @foreach (var row in _gap.Missing)
+                    {
+                        <li>
+                            <strong>@row.Skill</strong>
+                            <span class="grad-badge @(row.Priority == "High" ? "bad" : "warn")">@row.Priority</span>
+                            <div class="muted">@row.JobsRequiring</div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h3>Recommended steps</h3></div>
+        <ul class="grad-list">
+            @foreach (var step in _gap.RecommendedSteps)
+            {
+                <li>@step</li>
+            }
+        </ul>
+    </div>
+}
+else
+{
+    <div class="empty-state">Pick a role (or let us guess from your preferences) and press Analyze.</div>
+}
+
+@code {
+    private string _role = "";
+    private GradSkillGapModel? _gap;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+    }
+
+    private string BuildUrl() =>
+        _role.Length == 0 ? "/api/grad/jobs/skill-gap" : $"/api/grad/jobs/skill-gap?role={Uri.EscapeDataString(_role)}";
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        _gap = await GetJsonAsync<GradSkillGapModel>(BuildUrl());
+        _loading = false;
+        StateHasChanged();
+    }
+}

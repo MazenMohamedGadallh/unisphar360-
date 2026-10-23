@@ -1,0 +1,253 @@
+@page "/graduate/cv"
+@inherits UniSphere.Api.Components.GradPageBase
+@using System.Net.Http.Headers
+@using Microsoft.AspNetCore.Components.Forms
+@using UniSphere.Api.Services
+
+<PageTitle>CV & Resume Studio - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>CV &amp; Resume Studio</h1>
+    <p>Upload your CV, review the AI analysis and refine your draft</p>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Loading CVs...</div>
+}
+else
+{
+    <div class="grad-two-col">
+        <div class="card">
+            <div class="card-header"><h3>Upload a CV</h3></div>
+            <p class="muted">Accepted: .pdf, .docx, .txt (max 10 MB). The text is extracted automatically; if extraction fails you can paste the text manually.</p>
+            <InputFile OnChange="UploadAsync" accept=".pdf,.docx,.txt" class="form-control" />
+            @if (_uploading)
+            {
+                <div class="loading">Uploading...</div>
+            }
+            @if (_successMessage is not null)
+            {
+                <div class="grad-badge" style="margin-top:8px;">@_successMessage</div>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Your CVs (@_cvs.Count)</h3></div>
+            @if (_cvs.Count == 0)
+            {
+                <div class="empty-state">No CVs uploaded yet.</div>
+            }
+            else
+            {
+                <ul class="grad-list grad-cv-list">
+                    @foreach (var cv in _cvs)
+                    {
+                        <li>
+                            <div>
+                                <strong>@cv.FileName</strong>
+                                <div class="muted">@(cv.SizeBytes / 1024) KB &middot; @(cv.ParseStatus switch { "Parsed" => "text extracted", "Failed" => "needs manual text", "Manual" => "manual text", _ => "processing" })</div>
+                            </div>
+                            <div style="display:flex; gap:6px;">
+                                <button class="btn btn-small" @onclick="() => SelectAsync(cv.Id)">Manage</button>
+                                <button class="btn btn-small btn-danger" @onclick="() => DeleteAsync(cv.Id)">Delete</button>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+
+    @if (_selected is not null)
+    {
+        <div class="card" style="margin-bottom:14px;">
+            <div class="card-header"><h3>@_selected.FileName</h3></div>
+            <div class="grad-two-col">
+                <div>
+                    @if (_selected.ParseStatus == "Failed" || _selected.ParseStatus == "UploadOnly" || _selected.TextChars < 80)
+                    {
+                        <div class="form-group">
+                            <label for="grCvManual">Extracted text missing or thin — paste your CV text</label>
+                            <textarea id="grCvManual" rows="8" @bind-value="_manualText" @bind-value:event="oninput" placeholder="Paste the full text of your CV here..."></textarea>
+                        </div>
+                        <button class="btn btn-primary" @onclick="SaveManualTextAsync" disabled="@string.IsNullOrWhiteSpace(_manualText)">Save text</button>
+                    }
+                    else
+                    {
+                        <p>Extracted text: <strong>@_selected.TextChars characters</strong>. You can regenerate the analysis or edit the manual text below.</p>
+                        <div class="form-group">
+                            <label for="grCvManual2">Manual text override</label>
+                            <textarea id="grCvManual2" rows="6" @bind-value="_manualText" @bind-value:event="oninput" placeholder="Optional: paste refined CV text to analyze instead"></textarea>
+                        </div>
+                        <button class="btn btn-small" @onclick="SaveManualTextAsync" disabled="@string.IsNullOrWhiteSpace(_manualText)">Save text override</button>
+                    }
+                </div>
+                <div>
+                    <h3>AI analysis</h3>
+                    @if (_busyAnalyze)
+                    {
+                        <div class="loading">Analyzing with AI... this can take up to a minute.</div>
+                    }
+                    <button class="btn btn-primary" @onclick="AnalyzeAsync" disabled="@_busyAnalyze">Analyze with AI</button>
+                    @if (_analysis is not null)
+                    {
+                        <div style="margin-top:12px;">
+                            @if (_analysis.ScorePercent is not null)
+                            {
+                                <div class="grad-score-meter"><div style="width:@_analysis.ScorePercent%;"></div></div>
+                                <p><strong> ATS score: @_analysis.ScorePercent%</strong></p>
+                            }
+                            <p>@_analysis.OverallAssessment</p>
+                            <p class="muted">Provider: @_analysis.ProviderName / @_analysis.Model</p>
+                            @if (_analysis.Strengths.Count > 0)
+                            {
+                                <h4>Strengths</h4>
+                                <ul class="grad-list">@foreach (var s in _analysis.Strengths) { <li>&#9989; @s</li> }</ul>
+                            }
+                            @if (_analysis.Weaknesses.Count > 0)
+                            {
+                                <h4>Weaknesses</h4>
+                                <ul class="grad-list">@foreach (var s in _analysis.Weaknesses) { <li>&#10060; @s</li> }</ul>
+                            }
+                            @if (_analysis.Suggestions.Count > 0)
+                            {
+                                <h4>Suggestions</h4>
+                                <ul class="grad-list">@foreach (var s in _analysis.Suggestions) { <li>&#128161; @s</li> }</ul>
+                            }
+                            @if (_analysis.Keywords.Count > 0)
+                            {
+                                <h4>Top ATS keywords</h4>
+                                <p>
+                                    @foreach (var k in _analysis.Keywords) { <span class="grad-badge">@k</span> }
+                                </p>
+                            }
+                            @if (_analysis.Rewrites.Count > 0)
+                            {
+                                <h4>Rewrites</h4>
+                                <div class="clips">
+                                    <table>
+                                        <thead><tr><th>Original</th><th>Rewritten</th><th>Why</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var r in _analysis.Rewrites)
+                                            {
+                                                <tr><td>@r.Original</td><td>@r.Rewritten</td><td class="muted">@r.Why</td></tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private List<GradCvModel> _cvs = [];
+    private GradCvModel? _selected;
+    private GradCvAnalysisModel? _analysis;
+    private string _manualText = "";
+    private bool _uploading;
+    private bool _busyAnalyze;
+    private string? _successMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        var cvs = await GetJsonAsync<List<GradCvModel>>("/api/grad/profile/cv");
+        if (cvs is not null) _cvs = cvs;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs e)
+    {
+        _successMessage = null;
+        if (e.File is null) return;
+        if (e.File.Size > 10 * 1024 * 1024)
+        {
+            _error = "File is larger than 10 MB.";
+            return;
+        }
+        _uploading = true;
+        _error = null;
+        StateHasChanged();
+        using var content = new MultipartFormDataContent();
+        content.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data") { Name = "file" };
+        await using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+        var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer);
+        buffer.Position = 0;
+        var fileContent = new StreamContent(buffer);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(e.File.ContentType);
+        content.Add(fileContent, "file", e.File.Name);
+        var (value, error) = await PostMultipartAsync<GradCvModel>("/api/grad/profile/cv", content);
+        _uploading = false;
+        if (error is not null) { _error = error; }
+        else { _successMessage = "CV uploaded."; }
+        StateHasChanged();
+        await LoadAsync();
+    }
+
+    private void SelectAsync(int id)
+    {
+        var cv = _cvs.FirstOrDefault(c => c.Id == id);
+        if (cv is not null)
+        {
+            _selected = cv;
+            _analysis = null;
+            _manualText = "";
+        }
+        StateHasChanged();
+    }
+
+    private async Task SaveManualTextAsync()
+    {
+        if (_selected is null || string.IsNullOrWhiteSpace(_manualText)) return;
+        var (value, error) = await PutJsonAsync<GradCvModel>($"/api/grad/profile/cv/{_selected.Id}/manual-text", new { manualText = _manualText });
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        if (value is not null) _selected = value;
+        _successMessage = "Text saved. You can now run the analysis.";
+        StateHasChanged();
+    }
+
+    private async Task AnalyzeAsync()
+    {
+        if (_selected is null) return;
+        _busyAnalyze = true;
+        _error = null;
+        StateHasChanged();
+        var (value, error) = await PostJsonAsync<GradCvAnalysisModel>($"/api/grad/profile/cv/{_selected.Id}/analyze", new { });
+        _busyAnalyze = false;
+        if (error is not null) { _error = error; }
+        else { _analysis = value; _successMessage = "Analysis ready."; }
+        StateHasChanged();
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        var error = await DeleteAsync($"/api/grad/profile/cv/{id}");
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        if (_selected?.Id == id)
+        {
+            _selected = null;
+            _analysis = null;
+        }
+        await LoadAsync();
+    }
+}

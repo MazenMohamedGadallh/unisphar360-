@@ -1,0 +1,232 @@
+@page "/graduate"
+@inherits UniSphere.Api.Components.GradPageBase
+@using System.Net
+
+<PageTitle>Career Overview - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Career Overview</h1>
+    <p>Your job search and career progress at a glance</p>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Loading overview...</div>
+}
+else if (_overview is not null)
+{
+    <div class="grad-overview-hero">
+        <div class="hero-text">
+            <h2>Welcome, @_overview.FirstName</h2>
+            <p>@Brief()</p>
+        </div>
+        <a class="btn btn-primary" href="/graduate/jobs">Find Jobs</a>
+    </div>
+
+    <div class="grad-stat-grid">
+        <div class="card stat-card">
+            <div class="stat-value">@_overview.ProfileCompletionPercent%</div>
+            <div class="stat-label">Profile completion</div>
+            <a class="btn btn-small" href="/graduate/profile">Improve</a>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-value">@_overview.MatchingJobsCount</div>
+            <div class="stat-label">Matching jobs</div>
+            <a class="btn btn-small" href="/graduate/matches">View matches</a>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-value">@_overview.SavedJobsCount</div>
+            <div class="stat-label">Saved jobs</div>
+            <a class="btn btn-small" href="/graduate/jobs?view=saved">Saved jobs</a>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-value">@_overview.ApplicationsInProgress</div>
+            <div class="stat-label">Applications in progress</div>
+            <a class="btn btn-small" href="/graduate/applications">My Applications</a>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-value">@_overview.UpcomingFollowUpsCount</div>
+            <div class="stat-label">Follow-ups this week</div>
+            <a class="btn btn-small" href="/graduate/applications">Track</a>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-value">@_overview.RoadmapProgressPercent%</div>
+            <div class="stat-label">Roadmap progress</div>
+            <a class="btn btn-small" href="/graduate/roadmap">Career Roadmap</a>
+        </div>
+    </div>
+
+    <div class="grad-two-col">
+        <div class="card">
+            <div class="card-header"><h3>Next actions</h3></div>
+            @if (_overview.NextActions.Count == 0)
+            {
+                <div class="empty-state">No pending actions.</div>
+            }
+            else
+            {
+                <ul class="grad-list">
+                    @foreach (var action in _overview.NextActions)
+                    {
+                        <li>@action</li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>CV status</h3></div>
+            @if (_overview.CvStatus is null)
+            {
+                <p>No CV uploaded yet. Upload one to enable AI analysis and stronger matches.</p>
+                <a class="btn btn-primary btn-small" href="/graduate/cv">CV &amp; Resume Studio</a>
+            }
+            else
+            {
+                <p>Latest CV: <strong>@StatusLabel(_overview.CvStatus)</strong>
+                @if (_overview.CvUploadedAtUtc is { } uploaded)
+                {
+                    <span>&middot; uploaded @uploaded.ToString("dd MMM yyyy")</span>
+                }
+                @if (_overview.CvAnalysisScore is { } score)
+                {
+                    <span>&middot; AI score @score/100</span>
+                }
+                </p>
+                <a class="btn btn-small" href="/graduate/cv">CV &amp; Resume Studio</a>
+            }
+        </div>
+    </div>
+
+    <div class="grad-two-col">
+        <div class="card">
+            <div class="card-header"><h3>Top skill gaps</h3></div>
+            @if (_overview.TopSkillGaps.Count == 0)
+            {
+                <div class="empty-state">No gaps for your target role right now.</div>
+            }
+            else
+            {
+                <ul class="grad-list">
+                    @foreach (var gap in _overview.TopSkillGaps)
+                    {
+                        <li><strong>@gap.Skill</strong> <span class="grad-badge">@gap.Priority</span>
+                            <span class="muted">@gap.JobsRequiring jobs want this</span></li>
+                    }
+                </ul>
+                <a class="btn btn-small" href="/graduate/skill-gap">Skill Gap Analysis</a>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Upcoming events</h3></div>
+            @if (_overview.UpcomingEvents.Count == 0)
+            {
+                <div class="empty-state">No upcoming events.</div>
+            }
+            else
+            {
+                <ul class="grad-list">
+                    @foreach (var ev in _overview.UpcomingEvents)
+                    {
+                        <li><strong>@ev.Title</strong>
+                            <div class="muted">@ev.StartsAtUtc.ToString("ddd, dd MMM HH:mm") &middot; @ev.Location</div></li>
+                    }
+                </ul>
+                <a class="btn btn-small" href="/graduate/alumni">Alumni &amp; University Services</a>
+            }
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h3>Recent activity</h3></div>
+        @if (_overview.RecentActivity.Count == 0)
+        {
+            <div class="empty-state">No recent activity yet.</div>
+        }
+        else
+        {
+            <ul class="grad-list">
+                @foreach (var activity in _overview.RecentActivity)
+                {
+                    <li class="muted">@activity.CreatedAtUtc.ToString("dd MMM HH:mm") — @activity.Message</li>
+                }
+            </ul>
+        }
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3>Career notifications</h3>
+            <a class="btn btn-small" href="/notifications">See all</a>
+        </div>
+        @if (_notifications is null || _notifications.Count == 0)
+        {
+            <div class="empty-state">No notifications yet. Strong new matches, follow-up reminders and career announcements appear here.</div>
+        }
+        else
+        {
+            <ul class="grad-list">
+                @foreach (var notification in _notifications.OrderByDescending(n => n.CreatedAtUtc).Take(4))
+                {
+                    <li>
+                        @if (!notification.IsRead)
+                        {
+                            <span class="grad-badge">New</span>
+                        }
+                        <strong>@notification.Title</strong>
+                        <div class="muted">@Truncate(notification.Body, 160)</div>
+                        <div class="muted">@notification.CreatedAtUtc.ToString("dd MMM, HH:mm")</div>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+}
+
+@code {
+    private GradOverviewModel? _overview;
+    private List<GradNotificationRow>? _notifications;
+
+    private sealed record GradNotificationRow(int Id, string Title, string Body, DateTime CreatedAtUtc, bool IsRead);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        _overview = await GetJsonAsync<GradOverviewModel>("/api/grad/overview");
+        _loading = false;
+        // A lighter read for the notifications card (overview reload also
+        // refreshes it). Errors land in the generic _error banner above.
+        if (_overview is not null)
+            _notifications = await GetJsonAsync<List<GradNotificationRow>>("/api/notifications");
+        StateHasChanged();
+    }
+
+    private static string Truncate(string text, int max) =>
+        text.Length <= max ? text : text[..max].TrimEnd() + "…";
+
+    private string Brief() =>
+        _overview is null
+            ? ""
+            : $"{_overview.MatchingJobsAboveThreshold} new match(es) above your alert threshold, {_overview.ApplicationsCount} application(s) on record.";
+
+    private static string StatusLabel(string status) => status switch
+    {
+        "Parsed" => "parsed successfully",
+        "Manual" => "manual text ready",
+        "Failed" => "could not auto-extract text (manual entry still works)",
+        "UploadOnly" => "stored, text pending",
+        _ => status
+    };
+}

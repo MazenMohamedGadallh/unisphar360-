@@ -17,17 +17,14 @@ public class AdminController : ControllerBase
     private readonly AppDbContext _db;
     private readonly PerformanceAnalysisService _analysis;
     private readonly IValidator<PatchUserRoleRequest> _roleValidator;
-    private readonly IValidator<AdminUpdateUserRequest> _userValidator;
     public AdminController(
         AppDbContext db,
         PerformanceAnalysisService analysis,
-        IValidator<PatchUserRoleRequest> roleValidator,
-        IValidator<AdminUpdateUserRequest> userValidator)
+        IValidator<PatchUserRoleRequest> roleValidator)
     {
         _db = db;
         _analysis = analysis;
         _roleValidator = roleValidator;
-        _userValidator = userValidator;
     }
 
     /// <summary>Administrative analytics: student count, enrollment stats, GPA distribution.</summary>
@@ -307,81 +304,6 @@ public class AdminController : ControllerBase
             .ToListAsync();
 
         return new PagedResultDto<AdminUserDto>(items, total, page, pageSize);
-    }
-
-    /// <summary>Full profile of one user for the admin edit dialog. Admins
-    /// are the only ones who can change these locked fields.</summary>
-    [HttpGet("users/{id:int}")]
-    public async Task<ActionResult<AdminUserDetailDto>> GetUser(int id)
-    {
-        var user = await _db.Users.AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Id == id);
-        if (user is null || user.IsDeleted) return NotFound();
-
-        string? universityName = null;
-        if (user.UniversityId is not null)
-        {
-            universityName = await _db.Universities.AsNoTracking()
-                .Where(u => u.Id == user.UniversityId.Value)
-                .Select(u => u.Name)
-                .FirstOrDefaultAsync();
-        }
-
-        return new AdminUserDetailDto(
-            user.Id, user.FirstName, user.MiddleName, user.LastName,
-            user.Email, user.Address, user.PhoneNumber,
-            user.Department, user.UniversityId, universityName,
-            user.Role.ToString(), user.IsActive, user.IsDeleted);
-    }
-
-    /// <summary>PUT /api/admin/users/{id} — admins edit the fields that are
-    /// LOCKED for the user (name parts, email, address, phone, university,
-    /// department). Never model-binds the User entity, never touches role/
-    /// activity/password (dedicated endpoints exist for those), keeps
-    /// FullName in sync with the name parts, validates the email is unique
-    /// and that the university exists, and audit-logs the change.</summary>
-    [HttpPut("users/{id:int}")]
-    public async Task<IActionResult> UpdateUser(int id, [FromBody] AdminUpdateUserRequest req)
-    {
-        var validation = await _userValidator.ValidateAsync(req);
-        if (!validation.IsValid)
-            return BadRequest(new ValidationProblemDetails(validation.ToDictionary())
-            {
-                Title = "One or more validation errors occurred.",
-                Status = StatusCodes.Status400BadRequest
-            });
-
-        var email = req.Email.Trim().ToLowerInvariant();
-
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id);
-        if (user is null || user.IsDeleted) return NotFound();
-
-        if (await _db.Users.AnyAsync(u => u.Id != id && u.Email == email))
-            return Conflict("This email is already used by another account.");
-
-        int? universityId = user.UniversityId; // keep current when not supplied
-        if (req.UniversityId.HasValue)
-        {
-            if (!await _db.Universities.AnyAsync(u => u.Id == req.UniversityId.Value))
-                return BadRequest("Selected university does not exist.");
-            universityId = req.UniversityId.Value;
-        }
-
-        user.FirstName = req.FirstName.Trim();
-        user.MiddleName = string.IsNullOrWhiteSpace(req.MiddleName) ? null : req.MiddleName.Trim();
-        user.LastName = req.LastName.Trim();
-        user.FullName = string.Join(" ",
-            new[] { user.FirstName, user.MiddleName, user.LastName }
-                .Where(s => !string.IsNullOrWhiteSpace(s)));
-        user.Email = email;
-        user.Address = string.IsNullOrWhiteSpace(req.Address) ? null : req.Address.Trim();
-        user.PhoneNumber = req.PhoneNumber?.Trim() ?? user.PhoneNumber;
-        user.Department = req.Department?.Trim() ?? user.Department;
-        user.UniversityId = universityId;
-
-        await LogAdminAsync(User.GetUserId(), $"PUT /api/admin/users/{id} (locked profile fields)");
-        await _db.SaveChangesAsync();
-        return NoContent();
     }
 
     [HttpPatch("users/{id:int}/status")]

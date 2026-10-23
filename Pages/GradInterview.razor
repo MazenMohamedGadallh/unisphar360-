@@ -1,0 +1,204 @@
+@page "/graduate/interview"
+@inherits UniSphere.Api.Components.GradPageBase
+
+<PageTitle>AI Interview Coach - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>AI Interview Coach</h1>
+    <p>Practice with AI-generated questions and get instant feedback on your answers</p>
+</div>
+
+<div class="card" style="margin-bottom:14px;">
+    <div class="card-header"><h3>Start a session</h3></div>
+    <div class="form-inline">
+        <div class="form-group">
+            <label for="grIntRole">Target role</label>
+            <input id="grIntRole" @bind="_role" placeholder="Backend Engineer" />
+        </div>
+        <div class="form-group">
+            <label for="grIntMode">Question source</label>
+            <select id="grIntMode" @bind="_useAi">
+                <option value="false">Curated bank (no AI key needed)</option>
+                <option value="true">AI-generated (requires AI key)</option>
+            </select>
+        </div>
+        <button class="btn btn-primary" @onclick="StartAsync" disabled="@_starting">@(_starting ? "Preparing..." : "Start session")</button>
+    </div>
+    <p class="muted">Without an AI key configured, choose the curated bank: real questions, standard grading.</p>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Loading sessions...</div>
+}
+else
+{
+    @if (_sessions.Count == 0)
+    {
+        <div class="empty-state">No practice sessions yet.</div>
+    }
+    <div class="grad-list" style="margin-bottom:16px;">
+        @foreach (var session in _sessions)
+        {
+            <li style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+                <div>
+                    <strong>@session.TargetRole</strong>
+                    <span class="grad-badge">@session.QuestionSource</span>
+                    <span class="muted">&middot; @session.AnsweredCount/@session.TotalCount answered &middot; @session.CreatedAtUtc.ToString("d MMM yyyy")</span>
+                </div>
+                <div style="display:flex; gap:6px;">
+                    <button class="btn btn-small @(_selected is not null && _selected.Id == session.Id ? "btn-primary" : "")" @onclick="() => SelectAsync(session.Id)">Open</button>
+                    <button class="btn btn-small btn-danger" @onclick="() => RemoveAsync(session.Id)">Delete</button>
+                </div>
+            </li>
+        }
+    </div>
+
+    @if (_selected is not null)
+    {
+        <div class="card">
+            <div class="card-header"><h3>Session: @_selected.TargetRole <span class="grad-badge">@_selected.QuestionSource</span></h3></div>
+            @{ var qIndex = 0; }
+            @foreach (var q in _selected.Questions ?? [])
+            {
+                qIndex++;
+                <div class="interview-qa">
+                    <p><strong>Q@qIndex:</strong> @q.QuestionText</p>
+                    <textarea class="form-control" rows="3" value="@GetDraft(q.Id)" @oninput='e => _drafts[q.Id] = e.Value?.ToString() ?? ""' placeholder="Type your answer..." style="width:100%;"></textarea>
+                    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+                        <button class="btn btn-primary btn-small" @onclick="() => AnswerAsync(q)" disabled="@(!CanAnswer(q))">@if (q.AnswerText is not null) { <text>Re-grade</text> } else { <text>Submit answer</text> }</button>
+                        @if (q.FeedbackScore is int score)
+                        {
+                            <span class="grad-badge">Score @score/10</span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrEmpty(q.AnswerText))
+                    {
+                        <details style="margin-top:6px;">
+                            <summary class="muted">My answer</summary>
+                            <p>@q.AnswerText</p>
+                        </details>
+                    }
+                    @if (!string.IsNullOrEmpty(q.Feedback))
+                    {
+                        <div style="margin-top:6px; padding:10px; background:rgba(30,158,94,.08); border-radius:8px;">
+                            <strong>Coach feedback</strong>
+                            <p style="margin:4px 0 0;">@q.Feedback</p>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private List<GradInterviewSessionModel> _sessions = [];
+    private GradInterviewSessionModel? _selected;
+    private string _role = "Backend Developer";
+    private string _useAi = "false";
+    private bool _starting;
+    private System.Collections.Generic.Dictionary<int, string> _drafts = [];
+    private System.Collections.Generic.HashSet<int> _busy = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        var sessions = await GetJsonAsync<List<GradInterviewSessionModel>>("/api/grad/interview/sessions");
+        if (sessions is not null) _sessions = sessions;
+        // List rows never carry question bodies, so NEVER replace the detail
+        // object (_selected) with one — only clear it when the session was
+        // deleted or vanished. Replacing used to null out _selected.Questions
+        // and crash the rendering loop below (NullReferenceException).
+        if (_selected is not null && _sessions.All(s => s.Id != _selected.Id))
+        {
+            _selected = null;
+            _drafts.Clear();
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task StartAsync()
+    {
+        _starting = true;
+        _error = null;
+        StateHasChanged();
+        var (value, error) = await PostJsonAsync<GradInterviewSessionModel>("/api/grad/interview/sessions", new
+        {
+            targetRole = string.IsNullOrWhiteSpace(_role) ? (object?)null : _role,
+            useAi = bool.Parse(_useAi)
+        });
+        _starting = false;
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        if (value is not null) await SelectAsync(value.Id);
+        await LoadAsync();
+    }
+
+    private async Task SelectAsync(int id)
+    {
+        var session = await GetJsonAsync<GradInterviewSessionModel>($"/api/grad/interview/sessions/{id}");
+        if (session is not null)
+        {
+            _selected = session;
+            foreach (var q in session.Questions)
+            {
+                if (!_drafts.ContainsKey(q.Id)) _drafts[q.Id] = q.AnswerText ?? "";
+            }
+        }
+        StateHasChanged();
+    }
+
+    private bool CanAnswer(GradInterviewQuestionModel q) => GetDraft(q.Id).Length > 8 && !_busy.Contains(q.Id);
+
+    private string GetDraft(int questionId)
+    {
+        if (_drafts.TryGetValue(questionId, out var v)) return v;
+        return "";
+    }
+
+    private async Task AnswerAsync(GradInterviewQuestionModel q)
+    {
+        if (_selected is null) return;
+        var session = _selected;
+        var text = _drafts.TryGetValue(q.Id, out var draft) ? draft : "";
+        _busy.Add(q.Id);
+        StateHasChanged();
+        var (value, error) = await PostJsonAsync<GradInterviewQuestionModel>($"/api/grad/interview/sessions/{session.Id}/questions/{q.Id}/answer", new { answerText = text });
+        _busy.Remove(q.Id);
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        if (value is not null)
+        {
+            var existing = session.Questions.FirstOrDefault(x => x.Id == value.Id);
+            if (existing is not null)
+            {
+                existing.AnswerText = value.AnswerText;
+                existing.Feedback = value.Feedback;
+                existing.FeedbackScore = value.FeedbackScore;
+            }
+        }
+        await LoadAsync();
+        await SelectAsync(session.Id);
+    }
+
+    private async Task RemoveAsync(int id)
+    {
+        var error = await DeleteAsync($"/api/grad/interview/sessions/{id}");
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        if (_selected?.Id == id) _selected = null;
+        await LoadAsync();
+    }
+
+}

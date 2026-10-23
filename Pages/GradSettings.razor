@@ -1,0 +1,104 @@
+@page "/graduate/settings"
+@inherits UniSphere.Api.Components.GradPageBase
+
+<PageTitle>Settings - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Settings</h1>
+    <p>Control career notifications and what shows on your profile</p>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Loading settings...</div>
+}
+else if (_settings is not null)
+{
+    <div class="card" style="max-width:620px;">
+        <div class="card-header"><h3>Career notifications</h3></div>
+        <div class="grad-list">
+            <div class="form-group" style="display:flex; align-items:center; gap:10px;">
+                <input id="grNMatch" type="checkbox" @bind="_matchToggle" />
+                <label for="grNMatch">Notify me in-app when strong new matches appear</label>
+            </div>
+            <div class="form-group" style="display:flex; align-items:center; gap:10px;">
+                <input id="grNFollow" type="checkbox" @bind="_followToggle" />
+                <label for="grNFollow">Remind me in-app about follow-ups (interviews, deadlines)</label>
+            </div>
+        </div>
+
+        <div class="form-inline" style="margin-top:10px;">
+            <div class="form-group">
+                <label for="grThreshold">Match alert threshold (%)</label>
+                <input id="grThreshold" type="number" min="0" max="100" @bind="_threshold" />
+            </div>
+            <div class="form-group" style="display:flex; align-items:center; gap:10px; margin-top:20px;">
+                <input id="grGpa" type="checkbox" @bind="_gpaToggle" />
+                <label for="grGpa">Show GPA on my profile</label>
+            </div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:12px;" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Saving..." : "Save settings")</button>
+        @if (_savedMessage is not null)
+        {
+            <p><span class="grad-badge">@_savedMessage</span></p>
+        }
+    </div>
+}
+
+@code {
+    private GradSettingsModel? _settings;
+    private bool _saving;
+    private string? _savedMessage;
+
+    private bool _matchToggle;
+    private bool _followToggle;
+    private bool _gpaToggle;
+    private int _threshold = 50;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        var settings = await GetJsonAsync<GradSettingsModel>("/api/grad/settings");
+        if (settings is not null)
+        {
+            _settings = settings;
+            _matchToggle = settings.NotifyNewMatches;
+            _followToggle = settings.NotifyFollowUps;
+            _gpaToggle = settings.ShowGpaOnProfile;
+            _threshold = settings.MatchAlertThresholdPercent;
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _savedMessage = null;
+        StateHasChanged();
+        var (value, error) = await PutJsonAsync<GradSettingsModel>("/api/grad/settings", new
+        {
+            notifyNewMatches = _matchToggle,
+            notifyFollowUps = _followToggle,
+            matchAlertThresholdPercent = _threshold,
+            showGpaOnProfile = _gpaToggle
+        });
+        _saving = false;
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        if (value is not null) _settings = value;
+        _savedMessage = "Settings saved.";
+        StateHasChanged();
+    }
+}

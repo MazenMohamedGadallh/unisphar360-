@@ -22,9 +22,6 @@ public class User
     // Role-specific profile fields (only the ones matching Role are used)
     public string Department { get; set; } = "";  // student / doctor / graduate department
     public int? UniversityId { get; set; }        // home university (null = none assigned)
-    // Locked profile field: set at registration or by an admin only
-    // (administrators manage it via PUT /api/admin/users/{id}).
-    public string? Address { get; set; }
     public int? AcademicYear { get; set; }        // student: 1-5
     public string? Specialization { get; set; }   // doctor: field they teach
     public string? GraduatedFrom { get; set; }    // graduate: university/faculty
@@ -61,6 +58,14 @@ public class Notification
     public string Body { get; set; } = "";
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public bool IsRead { get; set; }
+    // Career notification fields (added post-launch; see DbSchemaPatcher).
+    // "System" covers every row created before career notifications existed
+    // and all non-career notifications (welcome, announcements, graduation).
+    public string Category { get; set; } = "System";
+    /// <summary>Stable per-user key that makes regenerated career
+    /// notifications idempotent (e.g. "match:42"). Null for rows that are
+    /// inserted once by explicit feature writes.</summary>
+    public string? DedupeKey { get; set; }
 }
 
 public class Course
@@ -193,7 +198,6 @@ public class CourseMaterial
     public string Content { get; set; } = "";
     public string? FileUrl { get; set; }
     public int? UploadedByUserId { get; set; }
-    public DateTime? DeadlineUtc { get; set; }  // assignments: submission deadline
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
@@ -202,4 +206,51 @@ public class RoleItem
 {
     public int Id { get; set; }
     public string Name { get; set; } = "";
+}
+
+/// <summary>Lifecycle of a graduation application.</summary>
+public static class GraduationStatus
+{
+    public const string Pending = "Pending";
+    public const string InReview = "InReview";
+    public const string Approved = "Approved";
+    public const string Rejected = "Rejected";
+    public const string Withdrawn = "Withdrawn";
+
+    /// <summary>Statuses that block a second application for the same student.</summary>
+    public static readonly string[] ActiveStatuses = { Pending, InReview };
+
+    /// <summary>Statuses an application cannot leave (a new one must be filed instead).</summary>
+    public static bool IsFinal(string status) =>
+        status is Approved or Rejected or Withdrawn;
+}
+
+/// <summary>
+/// A student's graduation application (degree audit). Submitted once the student
+/// believes they are done; the registrar approves or rejects it, and an approval
+/// is the conferral — the user's GraduationYear/GraduatedFrom are stamped from it.
+/// </summary>
+public class GraduationApplication
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+
+    public string Status { get; set; } = GraduationStatus.Pending;
+
+    // Snapshot of the student's record at submission time (audit trail).
+    public string Degree { get; set; } = "";        // Major/program at submission
+    public string Department { get; set; } = "";
+    public double GpaAtApplication { get; set; }
+    public int CoursesCompleted { get; set; }
+    public int CoursesRequired { get; set; }
+
+    public string? Note { get; set; }               // student's message to the registrar
+    public int? ExpectedGraduationYear { get; set; }
+
+    public string? DecisionNote { get; set; }       // registrar's message
+    public int? ReviewedByUserId { get; set; }
+    public DateTime? ReviewedAtUtc { get; set; }
+    public int? ConferredGraduationYear { get; set; } // set when approved
+    public DateTime SubmittedAtUtc { get; set; } = DateTime.UtcNow;
 }

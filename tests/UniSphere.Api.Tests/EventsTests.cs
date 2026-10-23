@@ -18,7 +18,8 @@ public class EventsTests : IClassFixture<ApiFactory>
         response.EnsureSuccessStatusCode();
         var events = await response.Content.ReadFromJsonAsync<List<Event>>();
         Assert.NotNull(events);
-        Assert.Equal(3, events!.Count);
+        Assert.Equal(4, events!.Count); // AI Workshop, Tech Club, Career Fair, Graduation Ceremony
+        Assert.Contains(events, e => e.Title == "Graduation Ceremony 2026");
         Assert.All(events, e => Assert.True(e.StartsAtUtc >= DateTime.UtcNow.AddMinutes(-1)));
     }
 

@@ -12,7 +12,6 @@ A full-stack university student platform with a Blazor Server web dashboard and 
 | **Authentication** | JWT (HMAC-SHA256) |
 | **Validation** | FluentValidation |
 | **Testing** | xUnit + WebApplicationFactory |
-| **AI** | Provider registry (OpenAI/Anthropic/Gemini/OpenRouter/Ollama) + lexical RAG |
 
 ## Project Structure
 
@@ -24,7 +23,7 @@ UniSphere.Api/
 ├── Components/                   -- Blazor components
 │   ├── App.razor                 -- Root component with routing
 │   └── MainLayout.razor           -- Layout with sidebar + topbar
-├── Controllers/                  -- API controllers (14)
+├── Controllers/                  -- API controllers (11)
 │   ├── AuthController.cs         -- register, login, me, change-password
 │   ├── UsersController.cs        -- profile CRUD, role-based lookup
 │   ├── HomeController.cs         -- Home screen aggregate
@@ -36,26 +35,22 @@ UniSphere.Api/
 │   ├── StudyPlannerController.cs -- CRUD + toggle
 │   ├── ActivityController.cs     -- recent activity feed
 │   ├── CoursesController.cs      -- list, get, recommended
-│   ├── EnrollmentsController.cs  -- enroll, drop, grade management
-│   ├── AdminController.cs        -- analytics, audit logs, notifications
-│   ├── CareerController.cs       -- career recommendations, skill gaps
-│   ├── ResearchController.cs     -- paper search, summarization
-│   ├── CourseAssignmentsController.cs -- NEW: doctor↔course assignment (Admin-only)
-│   ├── DoctorController.cs       -- NEW: dashboard, courses, materials, announcements, grades
-│   └── DoctorAiController.cs     -- NEW: AI teaching assistant (quiz/summarize/ask)
+│   ├── EnrollmentsController.cs  -- NEW: enroll, drop, grade management
+│   ├── AdminController.cs        -- NEW: analytics, audit logs, notifications
+│   ├── CareerController.cs       -- NEW: career recommendations, skill gaps
+│   └── ResearchController.cs     -- NEW: paper search, summarization
 ├── Data/
-│   ├── AppDbContext.cs           -- EF Core DbContext (18 DbSets, indexes)
-│   └── DbSeeder.cs              -- Seeds roles, users, courses, doctor assignments
+│   ├── AppDbContext.cs           -- EF Core DbContext (14 DbSets, indexes)
+│   └── DbSeeder.cs              -- Seeds roles, users, courses, etc.
 ├── Middleware/
 │   ├── ExceptionHandlingMiddleware.cs -- Global exception handler (RFC 7807)
 │   └── AuditLogMiddleware.cs    -- Request/audit logging
 ├── Models/
 │   ├── Entities.cs               -- User, Course, Enrollment, etc.
-│   ├── CourseAssignment.cs       -- NEW: doctor↔course join entity
-│   ├── AuditLog.cs              -- Audit trail
-│   ├── Announcement.cs          -- Announcements (course-scoped support)
-│   ├── CareerRecommendation.cs  -- Career recommendations
-│   └── ResearchPaper.cs         -- Research papers
+│   ├── AuditLog.cs              -- NEW: Audit trail
+│   ├── Announcement.cs          -- NEW: Announcements
+│   ├── CareerRecommendation.cs  -- NEW: Career recommendations
+│   └── ResearchPaper.cs         -- NEW: Research papers
 ├── Pages/                        -- Blazor Server pages
 │   ├── Dashboard.razor           -- Main dashboard
 │   ├── Login.razor              -- Login page
@@ -71,26 +66,18 @@ UniSphere.Api/
 │   ├── Notifications.razor     -- Notifications page
 │   ├── Settings.razor           -- Settings page
 │   ├── Help.razor               -- Help & Support page
-│   ├── Search.razor             -- Search results page
-│   ├── DoctorDashboard.razor    -- NEW: Doctor dashboard overview
-│   ├── DoctorCourses.razor      -- NEW: Doctor assigned courses list
-│   ├── DoctorCourse.razor       -- NEW: Course detail (students/analytics/materials/announcements)
-│   └── DoctorAiAssistant.razor  -- NEW: AI Teaching Assistant page
+│   └── Search.razor             -- Search results page
 ├── Services/
 │   ├── AcademicService.cs       -- Academic Advisor business logic
-│   ├── BlazorAuthService.cs     -- Blazor auth state provider
+│   ├── BlazorAuthService.cs     -- NEW: Blazor auth state provider
 │   ├── ClaimsExtensions.cs      -- GetUserId() from JWT
-│   ├── DoctorAccessService.cs   -- NEW: Doctor course-scoped authorization
-│   ├── DoctorService.cs         -- NEW: Doctor dashboard/students/analytics/alerts
-│   ├── DoctorAiService.cs       -- NEW: AI quiz/summarize/grounded Q&A
-│   ├── DoctorAiTypes.cs         -- NEW: AI options + exceptions
 │   ├── PasswordService.cs       -- PBKDF2 hashing
 │   ├── Recommender.cs           -- Rule-based course recommender
 │   └── TokenService.cs          -- JWT creation
 ├── Validators/
-│   └── RequestValidators.cs      -- NEW: FluentValidation validators (incl. doctor module)
+│   └── RequestValidators.cs      -- NEW: FluentValidation validators
 ├── tests/                        -- Integration tests
-│   └── UniSphere.Api.Tests/      -- 78 tests (all passing)
+│   └── UniSphere.Api.Tests/      -- 44 tests (all passing)
 └── wwwroot/
     └── css/
         └── app.css              -- Complete design system
@@ -129,6 +116,8 @@ dotnet test tests/UniSphere.Api.Tests/UniSphere.Api.Tests.csproj
 | Doctor | doctor@unisphere.edu | Doctor123! |
 | Admin | admin@unisphere.edu | Admin123! |
 
+The Graduate account ships with a career-starter bundle: profile + skills, 12 labeled demo jobs, 2 applications, 1 saved job, roadmap steps, settings. Without AI keys configured, AI features fail with an explicit 503 (never fake output); the curated interview bank and deterministic matching work offline.
+
 ## API Endpoints
 
 ### Authentication
@@ -147,14 +136,50 @@ dotnet test tests/UniSphere.Api.Tests/UniSphere.Api.Tests.csproj
 | GET | `/api/academic/stats` | GPA, attendance, progress |
 | GET | `/api/academic/performance` | Grade table |
 | GET | `/api/academic/insights` | AI insights (rule-based) |
+| GET | `/api/academic/quick-actions` | Shortcuts to Academic screens |
 | GET | `/api/study-planner` | Weekly study plan |
 | POST | `/api/study-planner` | Add study item |
 | POST | `/api/study-planner/{id}/toggle` | Toggle completion |
 | DELETE | `/api/study-planner/{id}` | Delete study item |
 
-### Courses & Enrollments
+### Graduation
 | Method | Route | Description |
 |---|---|---|
+| GET | `/api/graduation/overview` | Eligibility, checklist, ceremony, alumni conferral block |
+| POST | `/api/graduation/apply` | Submit graduation application (Student, 422 with reasons if the audit fails) |
+| GET | `/api/graduation/application` | My current graduation application |
+| POST | `/api/graduation/application/withdraw` | Withdraw a pending / in-review application |
+| GET | `/api/graduation/ceremony` | Next upcoming graduation ceremony |
+| GET | `/api/graduation/certificate` | Digital certificate with Latin honors (after conferral) |
+| GET | `/api/graduation/applications` | Admin: paged list of applications, `?status=` filter |
+| POST | `/api/graduation/applications/{id}/review` | Admin: approve (confers the degree) or reject |
+
+### Graduate Career Platform (role: Graduate, `api/grad/*`)
+| Method | Route | Description |
+|---|---|---|
+| GET/PUT | `/api/grad/profile` | Career profile fields (headline, summary, links, preferences, goal) |
+| GET | `/api/grad/profile/completion` | Weighted profile-completion score + missing fields |
+| POST/DELETE | `/api/grad/profile/skills` , `/skills/{id}` | Add (case-insensitive dedupe) / remove skills |
+| POST/PUT/DELETE | `/api/grad/profile/entries` , `/entries/{id}` | Experience / project / certification / education entries |
+| POST/GET/DELETE | `/api/grad/profile/cv` , `/cv/{id}` | CV upload (.pdf/.docx/.txt, max 10 MB) with extraction, list, delete |
+| PUT | `/api/grad/profile/cv/{id}/manual-text` | Manual CV text (fallback when extraction fails) |
+| POST/GET | `/api/grad/profile/cv/{id}/analyze` , `/cv/{id}/analyses` | REAL AI CV analysis (503 with reason when no provider configured) + history |
+| GET/PUT | `/api/grad/settings` | Career notifications + match threshold + GPA visibility |
+| GET | `/api/grad/overview` | Career Overview aggregate (completion, matches, apps, roadmap, events, activity) |
+| GET | `/api/grad/alumni` | Alumni & university services (career events, announcements, tips, contacts) |
+| GET | `/api/grad/insights` | Job-catalog insights (top skills, industries, work types) |
+| GET | `/api/grad/jobs` (`.?search&location&remote&sort&page`) | Search the catalog (labeled demo jobs + synced live rows) |
+| GET | `/api/grad/jobs/{id}` , `/saved` , `/sync` | Job detail, saved list, live Remotive sync (5-min throttle) |
+| POST/DELETE | `/api/grad/jobs/{id}/save` , `/save` | Save / unsave a job (409 on duplicate save) |
+| GET | `/api/grad/jobs/matches?limit&minScore` | Deterministic match ranking (documented weights, no AI) |
+| GET | `/api/grad/jobs/skill-gap?role=` | Target-role skill coverage + missing skills + steps |
+| GET/PUT/DELETE | `/api/grad/applications` (…, `/{id}`) | Applications tracker CRUD + `/summary` stats |
+| GET/POST/PUT/DELETE | `/api/grad/roadmap` , `/progress`, `/apply-suggestions` | Career roadmap CRUD + progress + AI suggestions (`/suggest` requires provider) |
+| GET/POST/DELETE | `/api/grad/interview/sessions` , `/{id}` | Interview practice: AI-generated (503 without provider) or curated bank |
+| POST | `/api/grad/interview/sessions/{sid}/questions/{qid}/answer` | Submit answer → REAL AI feedback (503 without provider) |
+
+### Courses & Enrollments
+| Method | Route | Description ||---|---|---|
 | GET | `/api/courses` | List courses |
 | GET | `/api/courses/{id}` | Course detail |
 | GET | `/api/courses/recommended` | Recommended courses |
@@ -162,35 +187,6 @@ dotnet test tests/UniSphere.Api.Tests/UniSphere.Api.Tests.csproj
 | POST | `/api/enrollments` | Enroll in course |
 | DELETE | `/api/enrollments/{id}` | Drop course |
 | PUT | `/api/enrollments/{id}/grade` | Update grade (Admin/Doctor) |
-
-### Doctor Module
-| Method | Route | Description |
-|---|---|---|
-| GET | `/api/doctor/dashboard` | Doctor overview (courses, students, alerts, avg grade/attendance) |
-| GET | `/api/doctor/courses` | Courses assigned to the calling doctor |
-| GET | `/api/doctor/courses/{id}` | Course detail |
-| GET | `/api/doctor/courses/{id}/students` | Enrolled students with grades/attendance |
-| GET | `/api/doctor/courses/{id}/analytics` | Grade & attendance distributions + alerts |
-| GET | `/api/doctor/courses/{id}/materials` | Materials & assignments list |
-| POST | `/api/doctor/courses/{id}/materials` | Create material |
-| PUT | `/api/doctor/materials/{id}` | Update material (own course only) |
-| DELETE | `/api/doctor/materials/{id}` | Delete material (own course only) |
-| POST | `/api/doctor/courses/{id}/materials/upload` | Upload lecture file (10 MB, whitelisted types) |
-| GET | `/api/doctor/courses/{id}/announcements` | Announcements list |
-| POST | `/api/doctor/courses/{id}/announcements` | Create announcement |
-| PUT | `/api/doctor/announcements/{id}` | Update announcement (own course only) |
-| DELETE | `/api/doctor/announcements/{id}` | Delete announcement (own course only) |
-| GET | `/api/doctor/ai/status` | AI provider availability |
-| POST | `/api/doctor/ai/quiz` | Generate quiz draft from material |
-| POST | `/api/doctor/ai/summarize` | Summarize a lecture material |
-| POST | `/api/doctor/ai/ask` | Ask a grounded question about a course |
-
-### Admin: Course Assignments
-| Method | Route | Description |
-|---|---|---|
-| GET | `/api/course-assignments` | List doctor↔course assignments |
-| POST | `/api/course-assignments` | Assign a doctor to a course |
-| DELETE | `/api/course-assignments/{id}` | Remove an assignment |
 
 ### Career & Research
 | Method | Route | Description |
@@ -231,19 +227,16 @@ dotnet test tests/UniSphere.Api.Tests/UniSphere.Api.Tests.csproj
 - **Global Exception Handling** (RFC 7807 JSON responses)
 - **Audit Logging** (every authenticated API call logged)
 - **FluentValidation** on all request DTOs
-- **Course-scoped Doctor authorization** — every doctor course action re-verifies the doctor is assigned to that course (doctors can never read/modify another doctor's course or university-wide data)
 - **CORS** restricted to known origins
 - **Environment-based JWT key** (set `UNISPHERE_JWT_KEY` env var)
-- **Safe file uploads** — server-generated GUID filenames, extension whitelist, 10 MB cap, relative URL only
-- **Honest AI** — unavailable provider returns 503 (never a fabricated success); malformed AI output returns 502
 
 ## Database
 
 - **SQLite** database (`unisphere-v6.db`)
-- **18 tables**: Users, Roles, Modules, Events, Notifications, Courses, Enrollments, SemesterRecords, StudyPlanItems, Activities, AuditLogs, Announcements, CourseAssignments, CareerRecommendations, ResearchPapers, CourseMaterials, ...
+- **14 tables**: Users, Roles, Modules, Events, Notifications, Courses, Enrollments, SemesterRecords, StudyPlanItems, Activities, AuditLogs, Announcements, CareerRecommendations, ResearchPapers
 - **Indexes** on all foreign keys and frequently queried columns
-- **Unique constraints** on Users.Email and Enrollments(UserId, CourseId) and CourseAssignments(DoctorUserId, CourseId)
-- **Seeded** with demo data on first run; additive SQLite schema upgrade runs before seeding
+- **Unique constraints** on Users.Email and Enrollments(UserId, CourseId)
+- **Seeded** with demo data on first run
 
 ## Frontend Features
 
@@ -258,7 +251,6 @@ dotnet test tests/UniSphere.Api.Tests/UniSphere.Api.Tests.csproj
 - **Career guidance** with skill gap analysis
 - **Research hub** with paper search and summarization
 - **Admin analytics** dashboard
-- **Doctor module** — dashboard, assigned courses, student grades & attendance, course analytics, materials & assignments, announcements, AI teaching assistant
 - **Profile management**
 - **Notifications** with mark-as-read
 - **Settings** with password change

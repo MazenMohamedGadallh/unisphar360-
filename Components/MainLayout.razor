@@ -22,6 +22,12 @@
         </div>
 
         <nav class="sidebar-nav">
+            @if (_userRole == "Graduate")
+            {
+                <GradNav OnNavigate="() => _sidebarOpen = false" />
+            }
+            else
+            {
             <NavLink href="/dashboard" class="nav-item" @onclick="() => _sidebarOpen = false">
                 <span class="nav-icon">&#8962;</span>
                 <span>Home</span>
@@ -36,7 +42,7 @@
             </NavLink>
             <NavLink href="/research-hub" class="nav-item" @onclick="() => _sidebarOpen = false">
                 <span class="nav-icon">&#128269;</span>
-                <span>Research Hub (public)</span>
+                <span>Research Hub</span>
             </NavLink>
             @if (_userRole is "Student" or "Graduate" or "Doctor")
             {
@@ -63,33 +69,11 @@
                     <span>Admin Panel</span>
                 </NavLink>
             }
-            @if (_userRole == "Doctor")
-            {
-                <NavLink href="/doctor" class="nav-item" @onclick="() => _sidebarOpen = false">
-                    <span class="nav-icon">&#128202;</span>
-                    <span>Doctor Dashboard</span>
-                </NavLink>
-                <NavLink href="/doctor/courses" class="nav-item" @onclick="() => _sidebarOpen = false">
-                    <span class="nav-icon">&#128218;</span>
-                    <span>My Course</span>
-                </NavLink>
-                <NavLink href="/doctor/ai" class="nav-item" @onclick="() => _sidebarOpen = false">
-                    <span class="nav-icon">&#129302;</span>
-                    <span>Teaching Assistant</span>
-                </NavLink>
-                <NavLink href="/doctor/research" class="nav-item" @onclick="() => _sidebarOpen = false">
-                    <span class="nav-icon">&#128221;</span>
-                    <span>Research Hub</span>
-                </NavLink>
-                <NavLink href="/doctor/profile" class="nav-item" @onclick="() => _sidebarOpen = false">
-                    <span class="nav-icon">&#128100;</span>
-                    <span>Doctor Profile</span>
-                </NavLink>
-            }
             <NavLink href="/chat" class="nav-item" @onclick="() => _sidebarOpen = false">
                 <span class="nav-icon">&#128241;</span>
                 <span>AI Assistant</span>
             </NavLink>
+            }
         </nav>
 
         <div class="sidebar-section sidebar-pinned">
@@ -102,13 +86,13 @@
                 <span class="nav-icon">&#128276;</span>
                 <span>Notifications</span>
             </NavLink>
-            <NavLink href="/settings" class="nav-item" @onclick="() => _sidebarOpen = false">
+            <NavLink href="@(_userRole == "Graduate" ? "/graduate/settings" : "/settings")" class="nav-item" @onclick="() => _sidebarOpen = false">
                 <span class="nav-icon">&#9881;</span>
                 <span>Settings</span>
             </NavLink>
             <NavLink href="/help" class="nav-item" @onclick="() => _sidebarOpen = false">
                 <span class="nav-icon">&#10067;</span>
-                <span>Help & Support</span>
+                <span>Help &amp; Support</span>
             </NavLink>
             <button class="nav-item logout-btn sidebar-logout" @onclick="OpenLogoutModal" title="Log out" aria-label="Log out">
                 <span class="nav-icon">&#128682;</span>
@@ -274,6 +258,12 @@
                     </div>
 
                     <nav class="sidebar-nav">
+                        @if (_userRole == "Graduate")
+                        {
+                            <GradNav OnNavigate="() => _sidebarOpen = false" />
+                        }
+                        else
+                        {
                         <NavLink href="/dashboard" class="nav-item" @onclick="() => _sidebarOpen = false">
                             <span class="nav-icon">&#8962;</span>
                             <span>Home</span>
@@ -288,7 +278,7 @@
                         </NavLink>
                         <NavLink href="/research-hub" class="nav-item" @onclick="() => _sidebarOpen = false">
                             <span class="nav-icon">&#128269;</span>
-                            <span>Research Hub (public)</span>
+                            <span>Research Hub</span>
                         </NavLink>
                         @if (_userRole is "Student" or "Graduate" or "Doctor")
                         {
@@ -315,33 +305,11 @@
                                 <span>Admin Panel</span>
                             </NavLink>
                         }
-                        @if (_userRole == "Doctor")
-                        {
-                            <NavLink href="/doctor" class="nav-item" @onclick="() => _sidebarOpen = false">
-                                <span class="nav-icon">&#128202;</span>
-                                <span>Doctor Dashboard</span>
-                            </NavLink>
-                            <NavLink href="/doctor/courses" class="nav-item" @onclick="() => _sidebarOpen = false">
-                                <span class="nav-icon">&#128218;</span>
-                                <span>My Course</span>
-                            </NavLink>
-                            <NavLink href="/doctor/ai" class="nav-item" @onclick="() => _sidebarOpen = false">
-                                <span class="nav-icon">&#129302;</span>
-                                <span>Teaching Assistant</span>
-                            </NavLink>
-                            <NavLink href="/doctor/research" class="nav-item" @onclick="() => _sidebarOpen = false">
-                                <span class="nav-icon">&#128221;</span>
-                                <span>Research Hub</span>
-                            </NavLink>
-                            <NavLink href="/doctor/profile" class="nav-item" @onclick="() => _sidebarOpen = false">
-                                <span class="nav-icon">&#128100;</span>
-                                <span>Doctor Profile</span>
-                            </NavLink>
-                        }
                         <NavLink href="/chat" class="nav-item" @onclick="() => _sidebarOpen = false">
                             <span class="nav-icon">&#128241;</span>
                             <span>AI Assistant</span>
                         </NavLink>
+                        }
                     </nav>
 
                     <div class="sidebar-section sidebar-pinned">
@@ -543,7 +511,7 @@
                 await RefreshUserAsync();
                 var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
                 if (path is "/login" or "/register")
-                    Nav.NavigateTo(UniSphere.Api.Services.BlazorAuthService.HomeForRole(_userRole), replace: true);
+                    Nav.NavigateTo("/dashboard", replace: true);
                 else
                     StateHasChanged();
             }

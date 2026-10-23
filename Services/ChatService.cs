@@ -282,17 +282,93 @@ public class ChatService
         history.Reverse();
 
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
-        var context = user is null ? "" : await BuildStudentContextAsync(user, content, ct);
+        var isGraduate = user?.Role == UserRole.Graduate;
+        var context = user is null
+            ? ""
+            : isGraduate
+                ? await BuildGraduateContextAsync(user, content, ct)
+                : await BuildStudentContextAsync(user, content, ct);
+        var systemPrompt = isGraduate ? GraduateSystemPrompt : SystemPrompt;
 
         var request = new ChatRequest
         {
             Provider = provider.Name,
             Model = _registry.ResolveModel(provider.Name),
-            SystemPrompt = string.IsNullOrEmpty(context) ? SystemPrompt : SystemPrompt + "\n\n" + context,
+            SystemPrompt = string.IsNullOrEmpty(context) ? systemPrompt : systemPrompt + "\n\n" + context,
             Messages = history.Select(m => new ChatTurn { Role = m.Role, Content = m.Content }).ToList(),
             MaxTokens = _options.MaxTokens
         };
         return new PreparedTurn(conversation, provider, request);
+    }
+
+    public const string GraduateSystemPrompt =
+        "You are UniSphere Graduate Coach, a career assistant for university graduates. " +
+        "You know their profile, skills, CV highlights and job matches (provided as context when relevant). " +
+        "Answer in the user's language (Arabic/English/Egyptian dialect). " +
+        "Give concrete, actionable career advice (applications, interviews, skills, CVs). " +
+        "Never invent job postings, employers or deadlines; say when unsure; refuse harmful content.";
+
+    private async Task<string> BuildGraduateContextAsync(User user, string question, CancellationToken ct)
+    {
+        var sb = new StringBuilder();
+        sb.Append("Graduate context: ").Append(user.FullName).Append(", department: ").Append(user.Department);
+        if (user.UniversityId.HasValue)
+        {
+            var uni = await _db.Universities.AsNoTracking()
+                .Where(u => u.Id == user.UniversityId.Value)
+                .Select(u => u.Name).FirstOrDefaultAsync(ct);
+            if (!string.IsNullOrWhiteSpace(uni)) sb.Append(", university: ").Append(uni);
+        }
+        if (!string.IsNullOrWhiteSpace(user.GraduatedFrom)) sb.Append(", graduated from ").Append(user.GraduatedFrom);
+        if (user.GraduationYear.HasValue) sb.Append(" (").Append(user.GraduationYear.Value).Append(')');
+        sb.AppendLine(".");
+
+        var profile = await _db.GraduateProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == user.Id, ct);
+        if (profile is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(profile.Headline)) sb.AppendLine("Headline: " + profile.Headline + ".");
+            if (!string.IsNullOrWhiteSpace(profile.PreferredJobTitles))
+                sb.AppendLine("Target job titles: " + profile.PreferredJobTitles + ".");
+            if (!string.IsNullOrWhiteSpace(profile.PreferredLocations))
+                sb.AppendLine("Preferred locations: " + profile.PreferredLocations + ".");
+            if (!string.IsNullOrWhiteSpace(profile.WorkModes))
+                sb.AppendLine("Work modes: " + profile.WorkModes.Replace(',', ',') + ".");
+            if (!string.IsNullOrWhiteSpace(profile.CareerGoal))
+                sb.AppendLine("Career goal: " + profile.CareerGoal + ".");
+        }
+
+        var skills = await _db.GraduateSkills.AsNoTracking()
+            .Where(s => s.UserId == user.Id).OrderBy(s => s.Name)
+            .Select(s => s.Name).ToListAsync(ct);
+        if (skills.Count > 0)
+            sb.AppendLine("Skills: " + string.Join(", ", skills) + ".");
+
+        var latestCv = await _db.CvDocuments.AsNoTracking()
+            .Where(c => c.UserId == user.Id)
+            .OrderByDescending(c => c.UploadedAtUtc).FirstOrDefaultAsync(ct);
+        var cvText = latestCv is null
+            ? null
+            : latestCv.ManualText is { Length: > 0 } m ? m : latestCv.ExtractedText;
+        if (!string.IsNullOrEmpty(cvText))
+        {
+            var snippet = cvText.Length > 600 ? cvText[..600] : cvText;
+            sb.AppendLine("CV excerpt: " + snippet + "…");
+        }
+
+        var saved = await _db.SavedJobs.AsNoTracking()
+            .Include(s => s.JobListing)
+            .Where(s => s.UserId == user.Id).Take(5).ToListAsync(ct);
+        if (saved.Count > 0)
+            sb.AppendLine("Saved jobs: " + string.Join("; ",
+                saved.Where(s => s.JobListing is not null)
+                    .Select(s => s.JobListing!.Title + " at " + s.JobListing!.CompanyName)) + ".");
+        var applications = await _db.JobApplications.AsNoTracking()
+            .Where(a => a.UserId == user.Id).Take(5).ToListAsync(ct);
+        if (applications.Count > 0)
+            sb.AppendLine("Applications: " + string.Join("; ",
+                applications.Select(a => a.JobTitle + " at " + a.CompanyName + " (" + a.Status + ")")) + ".");
+
+        return sb.ToString();
     }
 
     public async Task CompleteAssistantMessageAsync(

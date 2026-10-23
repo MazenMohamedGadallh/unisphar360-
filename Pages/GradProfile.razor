@@ -1,0 +1,335 @@
+@page "/graduate/profile"
+@inherits UniSphere.Api.Components.GradPageBase
+@using System.Net
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>My Career Profile - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>My Career Profile</h1>
+    <p>Keep your profile current — employers and AI tools use it</p>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+else if (_loading)
+{
+    <div class="loading">Loading profile...</div>
+}
+else if (_profile is not null)
+{
+    <div class="grad-overview-hero">
+        <div class="hero-text">
+            <h2>@_profile.FullName</h2>
+            <p>@(_profile.Headline ?? "No headline yet") &middot; completion @_profile.CompletionPercent%</p>
+        </div>
+    </div>
+
+    <div class="grad-two-col">
+        <div class="card">
+            <div class="card-header"><h3>Profile fields</h3></div>
+            <form @onsubmit="SaveAsync" class="profile-form">
+                <div class="form-group">
+                    <label for="grHeadline">Professional headline</label>
+                    <input id="grHeadline" @bind="_editHeadline" placeholder="Backend Developer | .NET & APIs" />
+                </div>
+                <div class="form-group">
+                    <label for="grSummary">Career summary</label>
+                    <textarea id="grSummary" rows="3" @bind="_editSummary"></textarea>
+                </div>
+                <div class="form-inline">
+                    <div class="form-group">
+                        <label for="grLinkedIn">LinkedIn URL</label>
+                        <input id="grLinkedIn" @bind="_editLinkedIn" placeholder="https://linkedin.com/in/..." />
+                    </div>
+                    <div class="form-group">
+                        <label for="grGitHub">GitHub URL</label>
+                        <input id="grGitHub" @bind="_editGitHub" placeholder="https://github.com/..." />
+                    </div>
+                </div>
+                <div class="form-inline">
+                    <div class="form-group">
+                        <label for="grPortfolio">Portfolio URL</label>
+                        <input id="grPortfolio" @bind="_editPortfolio" placeholder="https://..." />
+                    </div>
+                    <div class="form-group">
+                        <label for="grTitles">Target job titles</label>
+                        <input id="grTitles" @bind="_editTitles" placeholder="Backend Developer, Data Analyst" />
+                    </div>
+                </div>
+                <div class="form-inline">
+                    <div class="form-group">
+                        <label for="grIndustries">Preferred industries</label>
+                        <input id="grIndustries" @bind="_editIndustries" placeholder="Tech, Fintech" />
+                    </div>
+                    <div class="form-group">
+                        <label for="grLocations">Preferred locations</label>
+                        <input id="grLocations" @bind="_editLocations" placeholder="Cairo, Egypt, Remote" />
+                    </div>
+                </div>
+                <div class="form-inline">
+                    <div class="form-group">
+                        <label for="grWorkModes">Work modes</label>
+                        <input id="grWorkModes" @bind="_editWorkModes" placeholder="Remote, Hybrid, Onsite" />
+                    </div>
+                    <div class="form-group">
+                        <label for="grEmployment">Employment type</label>
+                        <input id="grEmployment" @bind="_editEmployment" placeholder="Full-time" />
+                    </div>
+                </div>
+                <div class="form-inline">
+                    <div class="form-group">
+                        <label for="grLevel">Experience level</label>
+                        <input id="grLevel" @bind="_editExperience" placeholder="Entry-level" />
+                    </div>
+                    <div class="form-group">
+                        <label for="grLanguages">Languages</label>
+                        <input id="grLanguages" @bind="_editLanguages" placeholder="Arabic (Native), English (Fluent)" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="grGoal">Career goal</label>
+                    <textarea id="grGoal" rows="2" @bind="_editGoal"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" disabled="@_saving">@(_saving ? "Saving..." : "Save profile")</button>
+                @if (_savedMessage is not null)
+                {
+                    <em class="muted"> @_savedMessage</em>
+                }
+            </form>
+        </div>
+
+        <div>
+            <div class="card" style="margin-bottom:14px;">
+                <div class="card-header"><h3>Skills (@_profile.Skills.Count)</h3></div>
+                @if (_profile.Skills.Count == 0)
+                {
+                    <div class="empty-state">No skills added yet.</div>
+                }
+                else
+                {
+                    <ul class="grad-list">
+                        @foreach (var skill in _profile.Skills)
+                        {
+                            <li>
+                                <strong>@skill.Name</strong> <span class="muted">@(skill.Level ?? "no level set")</span>
+                                <span class="grad-badge">@skill.Source</span>
+                                <button class="btn btn-small btn-danger" @onclick="() => RemoveSkillAsync(skill.Id)">Remove</button>
+                            </li>
+                        }
+                    </ul>
+                }
+                <div class="form-inline" style="margin-top:10px;">
+                    <div class="form-group">
+                        <label for="grSkillName">New skill</label>
+                        <input id="grSkillName" @bind-value="_skillName" @bind-value:event="oninput" placeholder="C#" />
+                    </div>
+                    <div class="form-group">
+                        <label for="grSkillLevel">Level</label>
+                        <input id="grSkillLevel" @bind="_skillLevel" placeholder="Intermediate" />
+                    </div>
+                    <button class="btn btn-primary btn-small" @onclick="AddSkillAsync" disabled="@string.IsNullOrWhiteSpace(_skillName)">Add skill</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h3>Experience &amp; projects</h3></div>
+                @if (_profile.Entries.Count == 0)
+                {
+                    <div class="empty-state">No entries yet. Add your experience, projects, certifications or education.</div>
+                }
+                else
+                {
+                    <ul class="grad-list">
+                        @foreach (var entry in _profile.Entries)
+                        {
+                            <li>
+                                <span class="grad-badge">@entry.Kind</span>
+                                <strong>@entry.Title</strong>
+                                @if (!string.IsNullOrEmpty(entry.Organization))
+                                {
+                                    <span class="muted"> &middot; @entry.Organization</span>
+                                }
+                                @if (!string.IsNullOrEmpty(entry.Period))
+                                {
+                                    <span class="muted"> &middot; @entry.Period</span>
+                                }
+                                @if (!string.IsNullOrEmpty(entry.Description))
+                                {
+                                    <div class="muted">@entry.Description</div>
+                                }
+                                <button class="btn btn-small" @onclick="() => RemoveEntryAsync(entry.Id)">Remove</button>
+                            </li>
+                        }
+                    </ul>
+                }
+                <div class="form-inline" style="margin-top:10px;">
+                    <div class="form-group">
+                        <label for="grEntryKind">Type</label>
+                        <select id="grEntryKind" @bind="_entryKind">
+                            <option>Experience</option>
+                            <option>Project</option>
+                            <option>Certification</option>
+                            <option>Education</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="grEntryTitle">Title</label>
+                        <input id="grEntryTitle" @bind-value="_entryTitle" @bind-value:event="oninput" placeholder="Backend Engineering Intern" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="grEntryOrg">Organization</label>
+                    <input id="grEntryOrg" @bind="_entryOrg" placeholder="Company / university" />
+                </div>
+                <div class="form-group">
+                    <label for="grEntryDesc">Description</label>
+                    <textarea id="grEntryDesc" rows="2" @bind="_entryDesc"></textarea>
+                </div>
+                <div class="form-inline">
+                    <div class="form-group">
+                        <label for="grEntryPeriod">Period</label>
+                        <input id="grEntryPeriod" @bind="_entryPeriod" placeholder="2025 - 2026" />
+                    </div>
+                    <button class="btn btn-primary btn-small" @onclick="AddEntryAsync" disabled="@string.IsNullOrWhiteSpace(_entryTitle)">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private GradProfileModel? _profile;
+    private bool _saving;
+    private string? _savedMessage;
+
+    private string _editHeadline = "";
+    private string _editSummary = "";
+    private string _editLinkedIn = "";
+    private string _editGitHub = "";
+    private string _editPortfolio = "";
+    private string _editTitles = "";
+    private string _editIndustries = "";
+    private string _editLocations = "";
+    private string _editWorkModes = "";
+    private string _editEmployment = "";
+    private string _editExperience = "";
+    private string _editLanguages = "";
+    private string _editGoal = "";
+
+    private string _skillName = "";
+    private string _skillLevel = "";
+    private string _entryKind = "Experience";
+    private string _entryTitle = "";
+    private string _entryOrg = "";
+    private string _entryDesc = "";
+    private string _entryPeriod = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        await LoadAsync();
+    }
+
+    private void FillFromProfile(GradProfileModel profile)
+    {
+        _editHeadline = profile.Headline ?? "";
+        _editSummary = profile.CareerSummary ?? "";
+        _editLinkedIn = profile.LinkedInUrl ?? "";
+        _editGitHub = profile.GitHubUrl ?? "";
+        _editPortfolio = profile.PortfolioUrl ?? "";
+        _editTitles = profile.PreferredJobTitles ?? "";
+        _editIndustries = profile.PreferredIndustries ?? "";
+        _editLocations = profile.PreferredLocations ?? "";
+        _editWorkModes = profile.WorkModes ?? "";
+        _editEmployment = profile.EmploymentType ?? "";
+        _editExperience = profile.ExperienceLevel ?? "";
+        _editLanguages = profile.Languages ?? "";
+        _editGoal = profile.CareerGoal ?? "";
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        var profile = await GetJsonAsync<GradProfileModel>("/api/grad/profile");
+        if (profile is not null)
+        {
+            _profile = profile;
+            FillFromProfile(profile);
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task SaveAsync(EventArgs e)
+    {
+        _saving = true;
+        _savedMessage = null;
+        StateHasChanged();
+        var (value, error) = await PutJsonAsync<GradProfileModel>("/api/grad/profile", new
+        {
+            headline = _editHeadline, careerSummary = _editSummary,
+            linkedInUrl = _editLinkedIn, gitHubUrl = _editGitHub, portfolioUrl = _editPortfolio,
+            preferredJobTitles = _editTitles, preferredIndustries = _editIndustries,
+            preferredLocations = _editLocations,
+            workModes = _editWorkModes, employmentType = _editEmployment,
+            experienceLevel = _editExperience, languages = _editLanguages, careerGoal = _editGoal
+        });
+        _saving = false;
+        if (error is not null) _error = error;
+        else if (value is not null)
+        {
+            _profile = value;
+            _savedMessage = "Saved.";
+        }
+        StateHasChanged();
+        await Task.Delay(2000);
+        _savedMessage = null;
+        StateHasChanged();
+    }
+
+    private async Task AddSkillAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_skillName)) return;
+        var (value, error) = await PostJsonAsync<GradSkillModel>("/api/grad/profile/skills",
+            new { name = _skillName, level = string.IsNullOrWhiteSpace(_skillLevel) ? null : (object?)_skillLevel });
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        _skillName = "";
+        _skillLevel = "";
+        await LoadAsync();
+    }
+
+    private async Task RemoveSkillAsync(int id)
+    {
+        var error = await DeleteAsync($"/api/grad/profile/skills/{id}");
+        if (error is not null) _error = error;
+        await LoadAsync();
+    }
+
+    private async Task AddEntryAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_entryTitle)) return;
+        var (value, error) = await PostJsonAsync<ProfileEntryItemModel>("/api/grad/profile/entries", new
+        {
+            kind = _entryKind, title = _entryTitle,
+            organization = _entryOrg, description = _entryDesc, period = _entryPeriod
+        });
+        if (error is not null) { _error = error; StateHasChanged(); return; }
+        _entryTitle = "";
+        _entryOrg = "";
+        _entryDesc = "";
+        _entryPeriod = "";
+        await LoadAsync();
+    }
+
+    private async Task RemoveEntryAsync(int id)
+    {
+        var error = await DeleteAsync($"/api/grad/profile/entries/{id}");
+        if (error is not null) _error = error;
+        await LoadAsync();
+    }
+}

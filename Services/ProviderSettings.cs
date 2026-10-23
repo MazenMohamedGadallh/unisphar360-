@@ -33,7 +33,11 @@ public static class ProviderSettings
         providerName.ToUpperInvariant() switch
         {
             "ANTHROPIC" => "claude-3-5-haiku-latest",
-            "GEMINI" => "gemini-2.0-flash",
+            // gemini-2.x models stopped being available to new Gemini keys
+            // (Google's own 404 message recommends the newer generations);
+            // 3.5-flash-lite is the stable, high-availability default behind
+            // the current free tier (verified live against a real key).
+            "GEMINI" => "gemini-3.5-flash-lite",
             "OLLAMA" => "llama3.2",
             "OPENROUTER" => "openai/gpt-4o-mini",
             _ => "gpt-4o-mini",

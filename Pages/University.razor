@@ -179,6 +179,13 @@ else
             Nav.NavigateTo("/login", replace: true);
             return;
         }
+        // Graduates use the university page through the alumni
+        // & career-center view instead of student materials.
+        if (user.Role == "Graduate")
+        {
+            Nav.NavigateTo("/graduate/alumni", replace: true);
+            return;
+        }
         await ReloadAsync();
     }
 
