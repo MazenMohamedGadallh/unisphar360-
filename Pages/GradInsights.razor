@@ -38,7 +38,7 @@ else if (_data is not null)
             <div class="card-header"><h3>Top skills in demand</h3></div>
             @if (_data.TopSkills.Count == 0)
             {
-                <div class="empty-state">Not enough data yet. Sync jobs from Find Jobs.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="chart-no-axes-combined" /></div>Not enough data yet. Sync jobs from Find Jobs.</div>
             }
             else
             {
@@ -58,7 +58,7 @@ else if (_data is not null)
             <div class="card-header"><h3>Listings by industry</h3></div>
             @if (_data.JobsByIndustry.Count == 0)
             {
-                <div class="empty-state">No industry data yet.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="chart-no-axes-combined" /></div>No industry data yet.</div>
             }
             else
             {
@@ -90,7 +90,7 @@ else if (_data is not null)
 }
 else
 {
-    <div class="empty-state">Press Refresh.</div>
+    <div class="empty-state"><div class="empty-icon"><UiIcon Name="refresh-cw" /></div>Press Refresh.</div>
 }
 
 @code {

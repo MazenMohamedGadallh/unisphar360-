@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using UniSphere.Api.Dtos;
 using Xunit;
 
 namespace UniSphere.Api.Tests;
@@ -20,20 +21,21 @@ public class UniversityTests : IClassFixture<ApiFactory>
         Assert.NotNull(me);
         Assert.Equal("El Shorouk Academy", me!.UniversityName);
         Assert.Equal("Computer Engineering", me.Department);
-        Assert.Equal(6, me.CoursesCount);
+        Assert.Equal(11, me.CoursesCount);
         Assert.True(me.MaterialsCount >= 19);
     }
 
     [Fact]
-    public async Task Courses_MatchSeededSix()
+    public async Task Courses_MatchSeededCatalog()
     {
         var response = await _factory.StudentClient.GetAsync("/api/university/me/courses");
 
         response.EnsureSuccessStatusCode();
         var courses = await response.Content.ReadFromJsonAsync<List<UniCourse>>();
         Assert.NotNull(courses);
-        Assert.Equal(6, courses!.Count);
+        Assert.Equal(11, courses!.Count);
         Assert.Contains(courses, c => c.Title == "Machine Learning" && c.MaterialsCount >= 3);
+        Assert.Contains(courses, c => c.Code == "CS420" && c.Title == "Cloud Computing");
     }
 
     [Fact]
@@ -51,8 +53,15 @@ public class UniversityTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task Materials_OutOfScopeCourse_NotFound()
     {
-        // Course 11 (Cloud Computing) belongs to no university scope.
-        var response = await _factory.StudentClient.GetAsync("/api/university/me/materials?courseId=11");
+        var helwan = _factory.AuthedClient(
+            await _factory.LoginAsync("helwan.student@unisphere.edu", "Password123!"));
+        var helwanCourses = await helwan.GetFromJsonAsync<List<UniCourse>>("/api/university/me/courses");
+        Assert.NotNull(helwanCourses);
+        Assert.NotEmpty(helwanCourses!);
+
+        // El Shorouk's student must not read a Helwan course's materials.
+        var response = await _factory.StudentClient.GetAsync(
+            $"/api/university/me/materials?courseId={helwanCourses![0].Id}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -71,10 +80,15 @@ public class UniversityTests : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Isolation_OtherUniversity_SeesNothing()
+    public async Task Isolation_OtherUniversity_DoesNotSeeElShoroukCourses()
     {
+        var anonymous = _factory.CreateClient();
+        var universities = await anonymous.GetFromJsonAsync<List<UniversityDto>>("/api/auth/universities");
+        Assert.NotNull(universities);
+        var cairoId = universities!.Single(u => u.Name == "Cairo University").Id;
+
         var email = $"cairo-{Guid.NewGuid():N}@example.com";
-        var reg = await _factory.CreateClient().PostAsJsonAsync("/api/auth/register", new Dictionary<string, object?>
+        var reg = await anonymous.PostAsJsonAsync("/api/auth/register", new Dictionary<string, object?>
         {
             ["firstName"] = "Laila",
             ["lastName"] = "Hassan",
@@ -87,16 +101,75 @@ public class UniversityTests : IClassFixture<ApiFactory>
             ["confirmPassword"] = "Password123!",
             ["academicYear"] = 2,
             ["department"] = "Engineering",
-            ["universityId"] = 2
+            ["universityId"] = cairoId
         });
         reg.EnsureSuccessStatusCode();
+
+        var elShoroukCourses = await _factory.StudentClient.GetFromJsonAsync<List<UniCourse>>(
+            "/api/university/me/courses");
+        Assert.NotNull(elShoroukCourses);
+        var elShoroukIds = elShoroukCourses!.Select(c => c.Id).ToHashSet();
 
         var client = _factory.AuthedClient(await _factory.LoginAsync(email, "Password123!"));
         var courses = await client.GetAsync("/api/university/me/courses");
         courses.EnsureSuccessStatusCode();
         var list = await courses.Content.ReadFromJsonAsync<List<UniCourse>>();
         Assert.NotNull(list);
-        Assert.Empty(list!);
+        Assert.NotEmpty(list!);
+        Assert.DoesNotContain(list!, c => elShoroukIds.Contains(c.Id));
+    }
+
+    [Fact]
+    public async Task MaterialDetail_OwnUniversity_ReturnsFullMaterial()
+    {
+        var list = await _factory.StudentClient.GetFromJsonAsync<MaterialPage>(
+            "/api/university/me/materials?page=1&pageSize=10");
+        Assert.NotNull(list);
+        Assert.NotEmpty(list!.Items);
+        var expected = list.Items[0];
+
+        var response = await _factory.StudentClient.GetAsync($"/api/university/me/materials/{expected.Id}");
+        response.EnsureSuccessStatusCode();
+        var detail = await response.Content.ReadFromJsonAsync<MaterialDto>();
+
+        Assert.NotNull(detail);
+        Assert.Equal(expected.Id, detail!.Id);
+        Assert.Equal(expected.Title, detail.Title);
+        Assert.Equal(expected.Type, detail.Type);
+        Assert.NotEmpty(detail.CourseName);
+        Assert.Contains(detail.Type,
+            new[] { "Summary", "Lecture", "Assignment", "Exam", "Announcement" });
+    }
+
+    [Fact]
+    public async Task MaterialDetail_MaterialOfOtherUniversity_NotFound()
+    {
+        var elShorouk = await _factory.StudentClient.GetFromJsonAsync<MaterialPage>(
+            "/api/university/me/materials?page=1&pageSize=10");
+        Assert.NotNull(elShorouk);
+        Assert.NotEmpty(elShorouk!.Items);
+
+        // A Helwan student must not open an El Shorouk material by id.
+        var client = _factory.AuthedClient(
+            await _factory.LoginAsync("helwan.student@unisphere.edu", "Password123!"));
+        var response = await client.GetAsync($"/api/university/me/materials/{elShorouk.Items[0].Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Materials_Pagination_SecondPage_KeepsTotal_UniqueItems()
+    {
+        var page1 = await _factory.StudentClient.GetFromJsonAsync<MaterialPage>(
+            "/api/university/me/materials?page=1&pageSize=10");
+        Assert.NotNull(page1);
+        Assert.Equal(10, page1!.Items.Count);
+
+        var page2 = await _factory.StudentClient.GetFromJsonAsync<MaterialPage>(
+            "/api/university/me/materials?page=2&pageSize=10");
+        Assert.NotNull(page2);
+        Assert.Equal(page1.Total, page2!.Total);
+        Assert.NotEmpty(page2.Items);
+        Assert.DoesNotContain(page2!.Items, m => page1.Items.Any(p => p.Id == m.Id));
     }
 
     private record MyUni(string UniversityName, string Department, int? AcademicYear, int CoursesCount, int MaterialsCount);

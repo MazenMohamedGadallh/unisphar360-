@@ -1,0 +1,780 @@
+@page "/doctor/exam-assistant"
+@attribute [Authorize(Roles = "Doctor")]
+@using System.Net
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>@T("ExamAssistant") - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Doctor">
+    <div class="page-header" dir="@LangDir">
+        <h1>@T("ExamAssistant")</h1>
+        <p>@T("GenerateExamsFromMaterials")</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_toast))
+    {
+        <div class="alert @(_toastIsError ? "alert-error" : "alert-success")" dir="@LangDir">
+            @_toast
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error" dir="@LangDir">
+            @_error
+            <button class="btn btn-small btn-outline" @onclick="ClearError">@T("Dismiss")</button>
+        </div>
+    }
+
+    <div class="view-tabs" dir="@LangDir">
+        <button class="tab-btn @(_activeView == "setup" ? "active" : "")" @onclick='() => SetView("setup")'>
+            <span class="nav-icon"><UiIcon Name="book-open" /></span> @T("GenerateExam")
+        </button>
+        <button class="tab-btn @(_activeView == "drafts" ? "active" : "")" @onclick="LoadDraftsAsync">
+            <span class="nav-icon"><UiIcon Name="calendar-days" /></span> @T("MyDrafts")
+        </button>
+        <button class="tab-btn lang-toggle" @onclick="SwitchLanguage" title='@T("SwitchLanguage")'>
+            @(_lang == "en" ? "\u0627\u0644\u0639\u0631\u0628\u064a\u0629" : "English")
+        </button>
+    </div>
+
+    @if (_activeView == "setup")
+    {
+        <div class="setup-card">
+            <div class="form-section">
+                <h3>@T("SetupExam")</h3>
+
+                <div class="form-row">
+                    <label class="form-label">@T("SelectCourse")</label>
+                    <select class="form-select" value="@(_selectedCourseId ?? -1)" @onchange="OnCourseChanged">
+                        <option value="-1">@T("SelectCoursePlaceholder")</option>
+                        @foreach (var c in _courses)
+                        {
+                            <option value="@c.Id">@c.Code — @c.Title</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">@T("SelectMaterials")</label>
+                    <div class="material-checklist">
+                        @foreach (var m in _materials)
+                        {
+                            <label class="material-check">
+                                <input type="checkbox"
+                                       id="mat_@m.Id"
+                                       checked="@_selectedMaterialIds.Contains(m.Id)"
+                                       @onchange="(e) => ToggleMaterial(m.Id)" />
+                                <span>@m.Title</span>
+                                <span class="material-meta">@m.Type</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">@T("QuestionCount")</label>
+                    <input class="form-input" type="number" min="1" max="30" @bind="_questionCount" />
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">@T("Difficulty")</label>
+                    <select class="form-select" @bind="_difficulty">
+                        @foreach (var d in DifficultyOptions)
+                        {
+                            <option value="@d">@GetDifficultyLabel(d)</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">@T("Language")</label>
+                    <select class="form-select" @bind="_materialLang">
+                        @foreach (var (value, label) in LanguageOptions)
+                        {
+                            <option value="@value">@label</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn btn-primary" @onclick="GenerateAsync"
+                            disabled="@_generating || !_selectedCourseId.HasValue || _selectedMaterialIds.Count == 0">
+                        @(_generating ? T("Generating") : T("GenerateQuestions"))
+                    </button>
+                    @if (_selectedCourseId.HasValue && _selectedMaterialIds.Count == 0)
+                    {
+                        <span class="form-hint" dir="@LangDir">
+                            @(_lang == "ar" ? T("SelectAtLeastOneMaterialHintAr") : T("SelectAtLeastOneMaterialHint"))
+                        </span>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_activeView == "review")
+    {
+        <div class="review-card">
+            <h3>@T("ReviewQuestions") (@_generatedQuestions.Count)</h3>
+
+            @if (!string.IsNullOrWhiteSpace(_ragWarning))
+            {
+                <div class="alert alert-warning" dir="@LangDir">@_ragWarning</div>
+            }
+
+            <div class="review-controls">
+                <label class="checkbox-label">
+                    <input type="checkbox" @bind="_showAnswers" /> @T("ShowAnswers")
+                </label>
+                <button class="btn btn-outline" @onclick="SaveDraftAsync"
+                        disabled="@(_generatedQuestions.Count == 0)">
+                    @T("SaveDraft")
+                </button>
+            </div>
+
+            <div class="questions-list">
+                @for (int i = 0; i < _generatedQuestions.Count; i++)
+                {
+                    var q = _generatedQuestions[i];
+                    var isEditing = _editingQuestionIndex == i;
+
+                    <div class="question-card @(isEditing ? "editing" : "")">
+                        <div class="question-header">
+                            <span class="question-number">@(i + 1)</span>
+                            <span class="question-type-badge">@q.QuestionType</span>
+                            @if (!isEditing)
+                            {
+                                <div class="question-actions">
+                                    <button class="btn btn-sm btn-outline" @onclick="() => StartEditQuestion(i)">@T("Edit")</button>
+                                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveQuestion(i)">@T("Remove")</button>
+                                </div>
+                            }
+                        </div>
+
+                        @if (isEditing)
+                        {
+                            <div class="edit-form">
+                                <div class="form-row">
+                                    <label class="form-label">@T("QuestionText")</label>
+                                    <textarea class="form-input" rows="3" @bind="_editQuestionText"></textarea>
+                                </div>
+                                <div class="form-row">
+                                    <label class="form-label">@T("CorrectAnswer")</label>
+                                    <input class="form-input" @bind="_editCorrectAnswer" />
+                                </div>
+                                <div class="form-row">
+                                    <label class="form-label">@T("Explanation")</label>
+                                    <input class="form-input" @bind="_editExplanation" />
+                                </div>
+                                <div class="form-row">
+                                    <label class="form-label">@T("SourceMaterial")</label>
+                                    <input class="form-input" @bind="_editSourceMaterial" />
+                                </div>
+                                @if (q.QuestionType == "MCQ")
+                                {
+                                    <div class="form-row">
+                                        <label class="form-label">@T("OptionsJson")</label>
+                                        <textarea class="form-input" rows="3" @bind="_editOptionsJson">["Option A", "Option B", "Option C", "Option D"]</textarea>
+                                    </div>
+                                }
+                                <div class="form-actions" style="margin-top: 12px;">
+                                    <button class="btn btn-sm btn-primary" @onclick="SaveEditQuestionAsync">@T("Save")</button>
+                                    <button class="btn btn-sm btn-outline" @onclick="CancelEditQuestion">@T("Cancel")</button>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="question-text">@q.QuestionText</div>
+
+                            @if (q.QuestionType == "MCQ" && !string.IsNullOrEmpty(q.OptionsJson))
+                            {
+                                <div class="mcq-options">
+                                    @foreach (var opt in GetMcqOptions(q.OptionsJson))
+                                    {
+                                        <div class="mcq-option">@opt</div>
+                                    }
+                                </div>
+                            }
+
+                            <div class="answer-block" style="display:@(_showAnswers ? "block" : "none")">
+                                <p><strong>@T("Answer"):</strong> @q.CorrectAnswer</p>
+                                @if (!string.IsNullOrEmpty(q.Explanation))
+                                {
+                                    <p><strong>@T("ExplanationLabel"):</strong> @q.Explanation</p>
+                                }
+                                @if (!string.IsNullOrEmpty(q.SourceMaterial))
+                                {
+                                    <p><strong>@T("SourceMaterialLabel"):</strong> @q.SourceMaterial</p>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_activeView == "drafts")
+    {
+        <div class="drafts-card">
+            <h3>@T("MyDrafts")</h3>
+
+            @if (_loadingDrafts)
+            {
+                <div class="spinner">@T("Loading")...</div>
+            }
+            else if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="alert alert-error">@_error</div>
+            }
+            else if (_drafts.Count == 0)
+            {
+                <div class="alert">@T("NoDrafts")</div>
+            }
+            else
+            {
+                <div class="draft-list">
+                    @foreach (var d in _drafts.OrderByDescending(d => d.CreatedAtUtc))
+                    {
+                        <div class="draft-item">
+                            <div class="draft-info">
+                                <div class="draft-title">@d.Title</div>
+                                <div class="draft-meta">
+                                    <span>@d.CourseTitle</span>
+                                    <span>@d.QuestionCount @T("QuestionsShort")</span>
+                                    <span>@d.Status</span>
+                                </div>
+                            </div>
+                            <div class="draft-actions">
+                                <button class="btn btn-sm btn-outline" @onclick="() => OpenDraftAsync(d.Id)">@T("Open")</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteDraftAsync(d.Id)"
+                                        disabled="@(_draftDeletingId == d.Id)">
+                                    @(_draftDeletingId == d.Id ? "Deleting..." : T("Delete"))
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @if (_activeView == "publish")
+    {
+        <div class="publish-card">
+            <h3>@T("PublishExam")</h3>
+
+            <div class="form-section">
+                <div class="form-row">
+                    <label class="form-label">@T("ExamTitle")</label>
+                    <input class="form-input" @bind="_publishTitle" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">@T("TotalMarks")</label>
+                    <input class="form-input" type="number" min="0" @bind="_publishMarks" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">@T("QuestionsCount")</label>
+                    <span>@_generatedQuestions.Count</span>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">@T("EligibleStudents")</label>
+                    <span>@T("EligibleStudentsDesc")</span>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn btn-outline" @onclick='() => SetView("drafts")'>@T("Back")</button>
+                    <button class="btn btn-primary" @onclick="PublishExamAsync" disabled="@_publishing">
+                        @(_publishing ? T("Publishing") : T("PublishExam"))
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</RoleGate>
+
+@code {
+    private string _activeView = "setup";
+    private string _toast = "";
+    private bool _toastIsError;
+    private string _error = "";
+    private string _ragWarning = "";
+
+    private string _lang = "en";
+    private string LangDir => _lang == "ar" ? "rtl" : "ltr";
+
+    private Dictionary<string, string> _strings = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["ExamAssistant"] = "Exam Assistant",
+        ["GenerateExamsFromMaterials"] = "Generate exams from your own course materials.",
+        ["GenerateExam"] = "Generate Exam",
+        ["MyDrafts"] = "My Drafts",
+        ["Dismiss"] = "Dismiss",
+        ["SelectCourse"] = "Select Course",
+        ["SelectCoursePlaceholder"] = "-- Select a course --",
+        ["SelectMaterials"] = "Select Materials",
+        ["SelectAtLeastOneMaterialHint"] = "Select at least one material to enable generation.",
+        ["SelectAtLeastOneMaterialHintAr"] = "اختر مادة واحدة على الأقل لتفعيل إنشاء الأسئلة.",
+        ["QuestionCount"] = "Number of Questions",
+        ["Difficulty"] = "Difficulty",
+        ["Language"] = "Language",
+        ["English"] = "English",
+        ["Arabic"] = "\u0627\u0644\u0639\u0631\u0628\u064a\u0629",
+        ["SwitchLanguage"] = "Switch Language",
+        ["SetupExam"] = "Setup Exam",
+        ["GenerateQuestions"] = "Generate Questions",
+        ["Generating"] = "Generating...",
+        ["ReviewQuestions"] = "Review Questions",
+        ["ShowAnswers"] = "Show answers",
+        ["SaveDraft"] = "Save Draft",
+        ["PublishExam"] = "Publish Exam",
+        ["Publishing"] = "Publishing...",
+        ["ExamTitle"] = "Exam Title",
+        ["TotalMarks"] = "Total Marks",
+        ["QuestionsCount"] = "Questions",
+        ["QuestionText"] = "Question",
+        ["CorrectAnswer"] = "Correct Answer",
+        ["Explanation"] = "Explanation",
+        ["SourceMaterial"] = "Source Material",
+        ["OptionsJson"] = "Options (JSON)",
+        ["Save"] = "Save",
+        ["Cancel"] = "Cancel",
+        ["Edit"] = "Edit",
+        ["Remove"] = "Remove",
+        ["Answer"] = "Answer",
+        ["ExplanationLabel"] = "Explanation",
+        ["SourceMaterialLabel"] = "Source",
+        ["Loading"] = "Loading",
+        ["Open"] = "Open",
+        ["Back"] = "Back",
+        ["Delete"] = "Delete",
+        ["NoDrafts"] = "No saved drafts yet.",
+        ["QuestionsShort"] = "questions",
+        ["EligibleStudents"] = "Eligible Students",
+        ["EligibleStudentsDesc"] = "Students registered in this course (Current semester, not passed)",
+    };
+
+    string T(string key) =>
+        _strings.TryGetValue(key, out var v) ? v : key;
+
+    void SwitchLanguage()
+    {
+        _lang = _lang == "en" ? "ar" : "en";
+    }
+
+    void ClearError() => _error = "";
+
+    void ShowToast(string message, bool isError = false)
+    {
+        _toast = message;
+        _toastIsError = isError;
+    }
+
+    void SetView(string view) => _activeView = view;
+
+    // ------------------------------------------------------------------
+    // Setup state
+    // ------------------------------------------------------------------
+
+    private List<ExamCatalogCourseDto> _courses = new();
+    private int? _selectedCourseId;
+    private List<MaterialDto> _materials = new();
+    private HashSet<int> _selectedMaterialIds = new();
+    private int _questionCount = 10;
+    private string _difficulty = "mixed";
+    private string _materialLang = "en";
+    private bool _generating;
+    private List<GeneratedExamQuestionDto> _generatedQuestions = new();
+    private bool _showAnswers;
+    private int? _editingQuestionIndex;
+    private string _editQuestionText = "";
+    private string _editCorrectAnswer = "";
+    private string _editExplanation = "";
+    private string _editSourceMaterial = "";
+    private string _editOptionsJson = "";
+
+    private static readonly string[] DifficultyOptions = { "easy", "medium", "hard", "mixed" };
+    private static readonly (string Value, string Label)[] LanguageOptions =
+        { ("en", "English"), ("ar", "\u0627\u0644\u0639\u0631\u0628\u064a\u0629") };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (AuthService.IsInitialized)
+            await LoadCoursesAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !AuthService.IsInitialized)
+        {
+            await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await LoadCoursesAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    async Task LoadCoursesAsync()
+    {
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<List<ExamCatalogCourseDto>>("/api/doctor/exam-assistant/courses");
+            _courses = resp ?? new();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    async Task LoadMaterialsAsync()
+    {
+        if (!_selectedCourseId.HasValue) return;
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<List<MaterialDto>>($"/api/doctor/exam-assistant/courses/{_selectedCourseId.Value}/materials");
+            _materials = resp ?? new();
+            _selectedMaterialIds = new();
+            // The fetch completes outside the event's render cycle — without
+            // an explicit render here the material checklist never appears
+            // (it was previously populated into _materials but never shown,
+            // leaving the Generate button disabled with no visible way out).
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            StateHasChanged();
+        }
+    }
+
+    async Task OnCourseChanged(ChangeEventArgs e)
+    {
+        _selectedCourseId = int.TryParse(e.Value?.ToString(), out var id) ? (int?)id : null;
+        // Reset immediately so switching courses cannot carry over a
+        // selection from the previous checklist.
+        _selectedMaterialIds = new();
+        if (_selectedCourseId.HasValue)
+            await LoadMaterialsAsync(); // completes → the checklist re-renders
+    }
+
+    async Task GenerateAsync()
+    {
+        if (!_selectedCourseId.HasValue)
+        {
+            ShowToast("Please select a course.", true);
+            return;
+        }
+        if (_selectedMaterialIds.Count == 0)
+        {
+            ShowToast("Please select at least one material.", true);
+            return;
+        }
+
+        _generating = true;
+        _error = "";
+        _ragWarning = "";
+        _generatedQuestions = new();
+
+        try
+        {
+            var req = new ExamAssistantGenerationRequest(
+                _selectedCourseId.Value,
+                _selectedMaterialIds.ToArray(),
+                _questionCount,
+                _difficulty,
+                _materialLang);
+
+            var resp = await Http.PostAsJsonAsync("/api/doctor/exam-assistant/generate", req);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                _error = resp.StatusCode == System.Net.HttpStatusCode.NotFound
+                    ? "You are not assigned to teach this course."
+                    : $"Generation failed: {resp.StatusCode} {body}";
+                return;
+            }
+
+            var result = await resp.Content.ReadFromJsonAsync<ExamGenerationResponse>();
+            if (result is not null)
+            {
+                _generatedQuestions = result.Questions.ToList();
+                _ragWarning = result.RagWarning ?? "";
+                _showAnswers = false;
+                _activeView = "review";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _generating = false;
+        }
+    }
+
+    void ToggleMaterial(int materialId)
+    {
+        if (_selectedMaterialIds.Contains(materialId))
+            _selectedMaterialIds.Remove(materialId);
+        else
+            _selectedMaterialIds.Add(materialId);
+    }
+
+    void RemoveQuestion(int index)
+    {
+        _generatedQuestions.RemoveAt(index);
+        if (_editingQuestionIndex == index)
+            _editingQuestionIndex = null;
+        else if (_editingQuestionIndex.HasValue && _editingQuestionIndex > index)
+            _editingQuestionIndex--;
+    }
+
+    void StartEditQuestion(int index)
+    {
+        var q = _generatedQuestions[index];
+        _editingQuestionIndex = index;
+        _editQuestionText = q.QuestionText;
+        _editCorrectAnswer = q.CorrectAnswer ?? "";
+        _editExplanation = q.Explanation ?? "";
+        _editSourceMaterial = q.SourceMaterial ?? "";
+        _editOptionsJson = q.OptionsJson ?? "";
+    }
+
+    void CancelEditQuestion()
+    {
+        _editingQuestionIndex = null;
+        _editQuestionText = "";
+        _editCorrectAnswer = "";
+        _editExplanation = "";
+        _editSourceMaterial = "";
+        _editOptionsJson = "";
+    }
+
+    async Task SaveEditQuestionAsync()
+    {
+        if (!_editingQuestionIndex.HasValue) return;
+        var index = _editingQuestionIndex.Value;
+        var q = _generatedQuestions[index];
+        _generatedQuestions[index] = new GeneratedExamQuestionDto(
+            _editQuestionText, q.QuestionType, _editCorrectAnswer,
+            _editExplanation, _editSourceMaterial, _editOptionsJson);
+        _editingQuestionIndex = null;
+    }
+
+    async Task SaveDraftAsync()
+    {
+        if (_generatedQuestions.Count == 0)
+        {
+            ShowToast("No questions to save.", true);
+            return;
+        }
+
+        var title = $"Exam - {DateTime.UtcNow:yyyy-MM-dd HH:mm}";
+        var questions = _generatedQuestions.Select((q, i) => new ExamQuestionDto(
+            0, 0, q.QuestionText, q.QuestionType,
+            q.CorrectAnswer, q.Explanation, q.SourceMaterial,
+            q.OptionsJson, i, null)).ToList();
+        var req = new UpdateExamRequest(
+            _selectedCourseId ?? 0,
+            title,
+            _generatedQuestions.Count,
+            "MCQ",
+            _difficulty,
+            _materialLang,
+            null,
+            questions);
+
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("/api/doctor/exam-assistant/exams", req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                _error = $"Save failed: {resp.StatusCode} {body}";
+                return;
+            }
+            var saved = await resp.Content.ReadFromJsonAsync<ExamDto>();
+            if (saved is not null)
+            {
+                ShowToast("Draft saved.");
+                _generatedQuestions = new();
+                _activeView = "drafts";
+                await LoadDraftsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    string GetDifficultyLabel(string d) => d switch
+    {
+        "easy" => "Easy",
+        "medium" => "Medium",
+        "hard" => "Hard",
+        _ => "Mixed"
+    };
+
+    private List<string> GetMcqOptions(string? optionsJson)
+    {
+        if (string.IsNullOrEmpty(optionsJson)) return new();
+        try
+        {
+            var opts = System.Text.Json.JsonSerializer.Deserialize<List<string>>(optionsJson) ?? new();
+            var result = new List<string>();
+            for (int o = 0; o < opts.Count; o++)
+                result.Add($"{(char)('A' + o)}. {opts[o]}");
+            return result;
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Drafts state
+    // ------------------------------------------------------------------
+
+    private List<ExamListDto> _drafts = new();
+    private bool _loadingDrafts;
+    private int? _draftDeletingId;
+
+    async Task LoadDraftsAsync()
+    {
+        _loadingDrafts = true;
+        _error = "";
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<List<ExamListDto>>("/api/doctor/exam-assistant/exams");
+            _drafts = resp ?? new();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loadingDrafts = false;
+        }
+    }
+
+    async Task OpenDraftAsync(int examId)
+    {
+        _loadingDrafts = true;
+        _error = "";
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<ExamDto>($"/api/doctor/exam-assistant/exams/{examId}");
+            if (resp is not null)
+            {
+                _generatedQuestions = resp.Questions.Select(q => new GeneratedExamQuestionDto(
+                    q.QuestionText, q.QuestionType, q.CorrectAnswer,
+                    q.Explanation, q.SourceMaterial, q.OptionsJson)).ToList();
+                _selectedCourseId = resp.CourseId;
+                _difficulty = resp.Difficulty;
+                _materialLang = resp.Language;
+                _questionCount = resp.QuestionCount;
+                _publishExamId = resp.Id;
+                _publishTitle = resp.Title;
+                _publishMarks = resp.Marks;
+                _activeView = "publish";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loadingDrafts = false;
+        }
+    }
+
+    async Task DeleteDraftAsync(int examId)
+    {
+        _draftDeletingId = examId;
+        try
+        {
+            var resp = await Http.DeleteAsync($"/api/doctor/exam-assistant/exams/{examId}");
+            if (resp.IsSuccessStatusCode)
+            {
+                ShowToast("Draft deleted.");
+                await LoadDraftsAsync();
+            }
+            else
+            {
+                ShowToast("Failed to delete draft.", true);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowToast(ex.Message, true);
+        }
+        finally
+        {
+            _draftDeletingId = null;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Publish state
+    // ------------------------------------------------------------------
+
+    private int? _publishExamId;
+    private string _publishTitle = "";
+    private int? _publishMarks;
+    private bool _publishing;
+
+    async Task PublishExamAsync()
+    {
+        if (!_publishExamId.HasValue) return;
+
+        _publishing = true;
+        _error = "";
+        try
+        {
+            var req = new ExamAssistantPublishRequest(
+                _publishExamId.Value,
+                _publishTitle,
+                _publishMarks);
+
+            var resp = await Http.PostAsJsonAsync($"/api/doctor/exam-assistant/exams/{_publishExamId.Value}/publish", req);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                _error = $"Publish failed: {resp.StatusCode} {body}";
+                return;
+            }
+
+            ShowToast("Exam published and students notified.");
+            _activeView = "drafts";
+            await LoadDraftsAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _publishing = false;
+        }
+    }
+}

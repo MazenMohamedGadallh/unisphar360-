@@ -45,7 +45,7 @@ else if (_data is not null)
             <div class="card-header"><h3>Career events</h3></div>
             @if (_data.CareerEvents.Count == 0)
             {
-                <div class="empty-state">No career events scheduled right now.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="calendar-days" /></div>No career events scheduled right now.</div>
             }
             else
             {
@@ -73,7 +73,7 @@ else if (_data is not null)
             <div class="card-header"><h3>University announcements</h3></div>
             @if (_data.Announcements.Count == 0)
             {
-                <div class="empty-state">No announcements in the last 90 days.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="megaphone" /></div>No announcements in the last 90 days.</div>
             }
             else
             {
@@ -97,7 +97,7 @@ else if (_data is not null)
 }
 else
 {
-    <div class="empty-state">Press Retry to load again.</div>
+    <div class="empty-state"><div class="empty-icon"><UiIcon Name="refresh-cw" /></div>Press Retry to load again.</div>
 }
 
 @code {

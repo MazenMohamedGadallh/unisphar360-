@@ -50,40 +50,40 @@ else
             <div class="card">
                 <div class="card-header">
                     <h3>Personal Information</h3>
-                    <span class="status-badge good">&#128274; Locked</span>
+                    <span class="status-badge good"><UiIcon Name="lock" /> Locked</span>
                 </div>
-                <div class="locked-hint">&#9995; Contact an administrator to change this.</div>
+                <div class="locked-hint"><UiIcon Name="info" /> Contact an administrator to change this.</div>
                 <div class="locked-fields">
                     <div class="locked-field">
-                        <span class="locked-label">First Name <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-label">First Name <span class="lock-icon" title="Locked"><UiIcon Name="lock" /></span></span>
                         <span class="locked-value">@_profile.FirstName</span>
                     </div>
                     <div class="locked-field">
-                        <span class="locked-label">Middle Name <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-label">Middle Name <span class="lock-icon" title="Locked"><UiIcon Name="lock" /></span></span>
                         <span class="locked-value">@(string.IsNullOrWhiteSpace(_profile.MiddleName) ? "—" : _profile.MiddleName)</span>
                     </div>
                     <div class="locked-field">
-                        <span class="locked-label">Last Name <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-label">Last Name <span class="lock-icon" title="Locked"><UiIcon Name="lock" /></span></span>
                         <span class="locked-value">@_profile.LastName</span>
                     </div>
                     <div class="locked-field">
-                        <span class="locked-label">Email <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-label">Email <span class="lock-icon" title="Locked"><UiIcon Name="lock" /></span></span>
                         <span class="locked-value">@_profile.Email</span>
                     </div>
                     <div class="locked-field">
-                        <span class="locked-label">Address <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-label">Address <span class="lock-icon" title="Locked"><UiIcon Name="lock" /></span></span>
                         <span class="locked-value">@(string.IsNullOrWhiteSpace(_profile.Address) ? "—" : _profile.Address)</span>
                     </div>
                     <div class="locked-field">
-                        <span class="locked-label">Phone Number <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-label">Phone Number <span class="lock-icon" title="Locked"><UiIcon Name="lock" /></span></span>
                         <span class="locked-value">@_profile.PhoneNumber</span>
                     </div>
                     <div class="locked-field">
-                        <span class="locked-label">University Name <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-label">University Name <span class="lock-icon" title="Locked"><UiIcon Name="lock" /></span></span>
                         <span class="locked-value">@(string.IsNullOrWhiteSpace(_profile.UniversityName) ? "—" : _profile.UniversityName)</span>
                     </div>
                     <div class="locked-field">
-                        <span class="locked-label">Department <span class="lock-icon" title="Locked">&#128274;</span></span>
+                        <span class="locked-label">Department <span class="lock-icon" title="Locked"><UiIcon Name="lock" /></span></span>
                         <span class="locked-value">@(string.IsNullOrWhiteSpace(_profile.Department) ? "—" : _profile.Department)</span>
                     </div>
                 </div>
@@ -94,7 +94,7 @@ else
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header">
                         <h3>Avatar</h3>
-                        <span class="status-badge excellent">&#9998; Editable</span>
+                        <span class="status-badge excellent"><UiIcon Name="pencil" /> Editable</span>
                     </div>
                     <div>
                         <div class="avatar-preview-wrap">
@@ -125,7 +125,7 @@ else
                 <div class="card">
                     <div class="card-header">
                         <h3>Change Password</h3>
-                        <span class="status-badge excellent">&#9998; Editable</span>
+                        <span class="status-badge excellent"><UiIcon Name="pencil" /> Editable</span>
                     </div>
                     <div>
                         <div class="form-group">
@@ -153,14 +153,14 @@ else
         <div class="card">
             <div class="card-header">
                 <h3>My Course Display Titles</h3>
-                <span class="status-badge excellent">&#9998; Editable</span>
+                <span class="status-badge excellent"><UiIcon Name="pencil" /> Editable</span>
             </div>
             <p class="locked-hint" style="padding: 0 20px;">
                 The name students see for your courses. The official course code and catalog title stay unchanged.
             </p>
             @if (_profile.Courses.Count == 0)
             {
-                <div class="empty-state">You are not assigned to any course yet. Contact an administrator.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="book-open" /></div>You are not assigned to any course yet. Contact an administrator.</div>
             }
             else
             {

@@ -65,7 +65,7 @@ else if (_overview is not null)
             <div class="card-header"><h3>Next actions</h3></div>
             @if (_overview.NextActions.Count == 0)
             {
-                <div class="empty-state">No pending actions.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="circle-check" /></div>No pending actions.</div>
             }
             else
             {
@@ -107,7 +107,7 @@ else if (_overview is not null)
             <div class="card-header"><h3>Top skill gaps</h3></div>
             @if (_overview.TopSkillGaps.Count == 0)
             {
-                <div class="empty-state">No gaps for your target role right now.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="target" /></div>No gaps for your target role right now.</div>
             }
             else
             {
@@ -126,7 +126,7 @@ else if (_overview is not null)
             <div class="card-header"><h3>Upcoming events</h3></div>
             @if (_overview.UpcomingEvents.Count == 0)
             {
-                <div class="empty-state">No upcoming events.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="calendar-days" /></div>No upcoming events.</div>
             }
             else
             {
@@ -146,7 +146,7 @@ else if (_overview is not null)
         <div class="card-header"><h3>Recent activity</h3></div>
         @if (_overview.RecentActivity.Count == 0)
         {
-            <div class="empty-state">No recent activity yet.</div>
+            <div class="empty-state"><div class="empty-icon"><UiIcon Name="history" /></div>No recent activity yet.</div>
         }
         else
         {
@@ -166,7 +166,7 @@ else if (_overview is not null)
         </div>
         @if (_notifications is null || _notifications.Count == 0)
         {
-            <div class="empty-state">No notifications yet. Strong new matches, follow-up reminders and career announcements appear here.</div>
+            <div class="empty-state"><div class="empty-icon"><UiIcon Name="bell" /></div>No notifications yet. Strong new matches, follow-up reminders and career announcements appear here.</div>
         }
         else
         {

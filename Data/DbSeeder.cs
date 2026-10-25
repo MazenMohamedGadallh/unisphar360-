@@ -57,16 +57,6 @@ public static class DbSeeder
             }
         }
 
-        if (db.Users.Any())
-        {
-            // Demo jobs are idempotent (Source == "Demo" guard), so also run
-            // them for databases created before the career platform existed.
-            SeedDemoJobs(db);
-            if (legacyGraduate is not null)
-                SeedGraduateCareerDemo(db, legacyGraduate.Id);
-            return;
-        }
-
         // Roles (AppDbContext.OnModelCreating seeds these via HasData on
         // EnsureCreated, so only insert when the table is still empty —
         // otherwise a fresh database crashes with UNIQUE constraint on Roles.Id).
@@ -85,6 +75,7 @@ public static class DbSeeder
         {
             db.Universities.AddRange(
                 new University { Name = "El Shorouk Academy" },
+                new University { Name = "Helwan University" },
                 new University { Name = "Cairo University" },
                 new University { Name = "Ain Shams University" },
                 new University { Name = "Other" }
@@ -92,7 +83,20 @@ public static class DbSeeder
             db.SaveChanges();
         }
         var universities = db.Universities.ToDictionary(u => u.Name);
-        var elShorouk = universities["El Shorouk Academy"];
+        var elShorouk = EnsureUniversity(db, "El Shorouk Academy");
+        var helwan = EnsureUniversity(db, "Helwan University");
+        db.SaveChanges();
+
+        if (db.Users.Any())
+        {
+            EnsureExistingInstallation(db, elShorouk, helwan);
+            // Demo jobs are idempotent (Source == "Demo" guard), so also run
+            // them for databases created before the career platform existed.
+            SeedDemoJobs(db);
+            if (legacyGraduate is not null)
+                SeedGraduateCareerDemo(db, legacyGraduate.Id);
+            return;
+        }
 
         // Demo accounts
         var user = new User
@@ -149,6 +153,7 @@ public static class DbSeeder
             FullName = "Dr. Khaled Mansour",
             PhoneNumber = "01212345678",
             Email = "doctor@unisphere.edu",
+            Address = "12 Faculty Road, El Shorouk, Cairo",
             Gender = "Male",
             Age = 45,
             Major = "Computer Engineering",
@@ -158,7 +163,23 @@ public static class DbSeeder
             Role = UserRole.Doctor,
             PasswordHash = PasswordService.Hash("Doctor123!")
         };
-        db.Users.AddRange(user, admin, graduate, doctor);
+        var helwanStudent = new User
+        {
+            FirstName = "Salma",
+            LastName = "Adel",
+            FullName = "Salma Adel",
+            PhoneNumber = "01098765432",
+            Email = "helwan.student@unisphere.edu",
+            Gender = "Female",
+            Age = 20,
+            Major = "Computer Science",
+            Department = "Computer Science",
+            AcademicYear = 3,
+            UniversityId = helwan.Id,
+            Role = UserRole.Student,
+            PasswordHash = PasswordService.Hash("Password123!")
+        };
+        db.Users.AddRange(user, admin, graduate, doctor, helwanStudent);
 
         // Modules
         db.Modules.AddRange(
@@ -172,10 +193,11 @@ public static class DbSeeder
         // Events
         var now = DateTime.UtcNow.Date;
         db.Events.AddRange(
-            new EventItem { Title = "AI Workshop", Location = "Faculty of Engineering", StartsAtUtc = now.AddDays(3).AddHours(10), Description = "Hands-on workshop on machine learning basics." },
-            new EventItem { Title = "Tech Club Meeting", Location = "Student Activities Center", StartsAtUtc = now.AddDays(5).AddHours(16), Description = "Weekly meeting of the Tech Club." },
-            new EventItem { Title = "Career Fair", Location = "Main Campus", StartsAtUtc = now.AddDays(10).AddHours(9), Description = "Meet employers and apply for internships." },
-            new EventItem { Title = "Graduation Ceremony 2026", Location = "Grand Hall, Main Campus", StartsAtUtc = now.AddDays(180).AddHours(9), Description = "Annual graduation ceremony for approved graduates. Seats are limited." }
+            new EventItem { Title = "AI Workshop", Location = "Faculty of Engineering", StartsAtUtc = now.AddDays(3).AddHours(10), Description = "Hands-on workshop on machine learning basics.", UniversityId = elShorouk.Id },
+            new EventItem { Title = "Tech Club Meeting", Location = "Student Activities Center", StartsAtUtc = now.AddDays(5).AddHours(16), Description = "Weekly meeting of the Tech Club.", UniversityId = elShorouk.Id },
+            new EventItem { Title = "Career Fair", Location = "Main Campus", StartsAtUtc = now.AddDays(10).AddHours(9), Description = "Meet employers and apply for internships.", UniversityId = elShorouk.Id },
+            new EventItem { Title = "Graduation Ceremony 2026", Location = "Grand Hall, Main Campus", StartsAtUtc = now.AddDays(180).AddHours(9), Description = "Annual graduation ceremony for approved graduates. Seats are limited." },
+            new EventItem { Title = "Helwan Tech Day", Location = "Faculty of Computers and Artificial Intelligence", StartsAtUtc = now.AddDays(7).AddHours(11), Description = "Student projects, research demos and employer talks.", UniversityId = helwan.Id }
         );
 
         // Courses
@@ -196,11 +218,13 @@ public static class DbSeeder
         db.SaveChanges();
         var c = db.Courses.ToDictionary(x => x.Code);
 
-        // University scope for Mazen's 6 courses (El Shorouk Academy,
-        // Computer Engineering department, year 3).
+        // University scope: every seeded catalog course belongs to El Shorouk.
+        foreach (var course in c.Values)
+            course.UniversityId = elShorouk.Id;
+
+        // Mazen's six current courses are Computer Engineering, year 3.
         foreach (var code in new[] { "CS350", "CS210", "CS330", "CS320", "CS240", "CS120" })
         {
-            c[code].UniversityId = elShorouk.Id;
             c[code].Department = "Computer Engineering";
             c[code].AcademicYear = 3;
             c[code].Semester = "Fall 2025";
@@ -271,9 +295,10 @@ public static class DbSeeder
 
         // Announcements
         db.Announcements.AddRange(
-            new Announcement { Title = "Welcome to UniSphere 360+", Body = "Your academic journey starts here. Explore your dashboard and connect with your advisors.", Category = "general", CreatedByUserId = admin.Id },
-            new Announcement { Title = "Midterm Exam Schedule", Body = "Midterm exams will begin next month. Check your schedule for exact dates and times.", Category = "academic", CreatedByUserId = admin.Id },
-            new Announcement { Title = "Career Fair Registration Open", Body = "Register now for the annual career fair. Meet top employers and explore internship opportunities.", Category = "career", CreatedByUserId = admin.Id }
+            new Announcement { Title = "Welcome to UniSphere 360+", Body = "Your academic journey starts here. Explore your dashboard and connect with your advisors.", Category = "general", CreatedByUserId = admin.Id, UniversityId = elShorouk.Id },
+            new Announcement { Title = "Midterm Exam Schedule", Body = "Midterm exams will begin next month. Check your schedule for exact dates and times.", Category = "academic", CreatedByUserId = admin.Id, UniversityId = elShorouk.Id },
+            new Announcement { Title = "Career Fair Registration Open", Body = "Register now for the annual career fair. Meet top employers and explore internship opportunities.", Category = "career", CreatedByUserId = admin.Id, UniversityId = elShorouk.Id },
+            new Announcement { Title = "Helwan CS Welcome", Body = "Welcome to the Helwan University Computer Science workspace. Course materials and announcements will appear here.", Category = "general", CreatedByUserId = admin.Id, UniversityId = helwan.Id }
         );
 
         // Research papers
@@ -539,5 +564,303 @@ public static class DbSeeder
         }
         // Self-committing: called from the legacy early-return path too.
         db.SaveChanges();
+    }
+
+    /// <summary>Adds missing foundation data to an existing database without
+    /// deleting or recreating anything (safe to run on every startup).</summary>
+    private static void EnsureExistingInstallation(
+        AppDbContext db, University elShorouk, University helwan)
+    {
+        var admin = db.Users.FirstOrDefault(u => u.Email == "admin@unisphere.edu");
+
+        // Phase 1: give the demo doctor a locked profile address on older
+        // installations so the read-only profile page has something to show.
+        var demoDoctor = db.Users.FirstOrDefault(u => u.Email == "doctor@unisphere.edu");
+        if (demoDoctor is not null && string.IsNullOrWhiteSpace(demoDoctor.Address))
+            demoDoctor.Address = "12 Faculty Road, El Shorouk, Cairo";
+
+        var helwanStudent = db.Users.FirstOrDefault(u => u.Email == "helwan.student@unisphere.edu");
+        if (helwanStudent is null)
+        {
+            helwanStudent = new User
+            {
+                FirstName = "Salma",
+                LastName = "Adel",
+                FullName = "Salma Adel",
+                PhoneNumber = "01098765432",
+                Email = "helwan.student@unisphere.edu",
+                Gender = "Female",
+                Age = 20,
+                Major = "Computer Science",
+                Department = "Computer Science",
+                AcademicYear = 3,
+                UniversityId = helwan.Id,
+                Role = UserRole.Student,
+                PasswordHash = PasswordService.Hash("Password123!")
+            };
+            db.Users.Add(helwanStudent);
+        }
+
+        var graduate = db.Users.FirstOrDefault(u => u.Email == "graduate@unisphere.edu");
+        if (graduate is not null)
+        {
+            graduate.UniversityId ??= helwan.Id;
+            if (string.IsNullOrWhiteSpace(graduate.GraduatedFrom))
+                graduate.GraduatedFrom = "Helwan University, Faculty of Computers and Artificial Intelligence";
+        }
+
+        // Backfill legacy rows so scoped queries never expose unowned data.
+        // Skip a code that already exists in El Shorouk to protect the
+        // (UniversityId, Code) unique index on older installations.
+        var elShoroukCodes = db.Courses
+            .Where(c => c.UniversityId == elShorouk.Id)
+            .Select(c => c.Code)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var course in db.Courses.Where(c => c.UniversityId == null).ToList())
+        {
+            if (elShoroukCodes.Add(course.Code))
+                course.UniversityId = elShorouk.Id;
+        }
+        foreach (var evt in db.Events.Where(e => e.UniversityId == null))
+            evt.UniversityId = elShorouk.Id;
+        foreach (var announcement in db.Announcements.Where(a => a.UniversityId == null))
+            announcement.UniversityId = elShorouk.Id;
+
+        if (!db.Events.Any(e => e.UniversityId == helwan.Id))
+        {
+            db.Events.Add(new EventItem
+            {
+                Title = "Helwan Tech Day",
+                Location = "Faculty of Computers and Artificial Intelligence",
+                StartsAtUtc = DateTime.UtcNow.Date.AddDays(7).AddHours(11),
+                Description = "Student projects, research demos and employer talks.",
+                UniversityId = helwan.Id
+            });
+        }
+
+        if (admin is not null && !db.Announcements.Any(a => a.UniversityId == helwan.Id))
+        {
+            db.Announcements.Add(new Announcement
+            {
+                Title = "Helwan CS Welcome",
+                Body = "Welcome to the Helwan University Computer Science workspace. Course materials and announcements will appear here.",
+                Category = "general",
+                CreatedByUserId = admin.Id,
+                UniversityId = helwan.Id
+            });
+        }
+
+        // Existing databases that predate the demo catalog block in the
+        // fresh-seed path have users but no El Shorouk courses, leaving the
+        // demo student/doctor/exam workspaces empty. Restore them additively.
+        EnsureDemoCatalogCourses(db, elShorouk);
+
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// Additive repair for older databases: recreate the demo catalog that
+    /// only the fresh-seed path used to insert. Missing rows are added,
+    /// existing rows are never overwritten or removed.
+    /// </summary>
+    private static void EnsureDemoCatalogCourses(AppDbContext db, University elShorouk)
+    {
+        var demoCatalog = new (string Code, string Title, string Description, string Track)[]
+        {
+            ("CS350", "Machine Learning", "Supervised and unsupervised learning.", "AI"),
+            ("CS351", "Deep Learning", "Neural networks, CNNs and transformers.", "AI"),
+            ("CS362", "Natural Language Processing", "Text processing, LLMs and RAG.", "AI"),
+            ("CS340", "Mobile App Development", "Building apps with Flutter.", "Software"),
+            ("CS240", "Web Development", "HTML, CSS, JavaScript and backend basics.", "Software"),
+            ("CS330", "Database Systems", "SQL, PostgreSQL and data modeling.", "CS"),
+            ("CS430", "Advanced Databases", "Query optimization, NoSQL and distributed data.", "CS"),
+            ("CS210", "Data Structures & Algorithms", "Lists, trees, graphs and complexity.", "CS"),
+            ("CS120", "Discrete Mathematics", "Logic, sets, combinatorics and graphs.", "CS"),
+            ("CS320", "Computer Networks", "TCP/IP, routing and network design.", "IT"),
+            ("CS420", "Cloud Computing", "Virtualization, containers and cloud services.", "IT")
+        };
+
+        var existing = db.Courses
+            .Where(c => c.UniversityId == elShorouk.Id)
+            .ToList()
+            .GroupBy(c => c.Code, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (code, title, description, track) in demoCatalog)
+        {
+            if (existing.ContainsKey(code)) continue;
+            var course = new Course
+            {
+                Code = code,
+                Title = title,
+                Description = description,
+                Track = track,
+                Credits = 3,
+                UniversityId = elShorouk.Id
+            };
+            db.Courses.Add(course);
+            existing[code] = course;
+        }
+
+        // The demo student's current courses are Computer Engineering, year 3.
+        foreach (var code in new[] { "CS350", "CS210", "CS330", "CS320", "CS240", "CS120" })
+        {
+            if (!existing.TryGetValue(code, out var course)) continue;
+            if (string.IsNullOrWhiteSpace(course.Department))
+                course.Department = "Computer Engineering";
+            course.AcademicYear ??= 3;
+            if (string.IsNullOrWhiteSpace(course.Semester))
+                course.Semester = "Fall 2025";
+        }
+
+        db.SaveChanges();
+    }
+
+    /// <summary>Demo enrollments that can only be created after the CSV
+    /// catalog importer has inserted the Helwan courses.</summary>
+    public static void EnsurePostCatalog(AppDbContext db)
+    {
+        // Part 1: assign the El Shorouk demo doctor to the courses he already
+        // publishes materials for. Idempotent: only missing assignments are
+        // added, keyed by (course, doctor, term).
+        var doctor = db.Users.FirstOrDefault(u => u.Email == "doctor@unisphere.edu");
+        if (doctor is not null && doctor.UniversityId.HasValue)
+        {
+            var doctorCourseCodes = new[] { "CS350", "CS210", "CS330", "CS320", "CS240", "CS120" };
+            var doctorCourses = db.Courses
+                .Where(c => c.UniversityId == doctor.UniversityId)
+                .Where(c => doctorCourseCodes.Contains(c.Code))
+                .Select(c => new { c.Id, c.Semester })
+                .ToList();
+            var existingAssignments = db.CourseInstructors
+                .Where(ci => ci.DoctorUserId == doctor.Id)
+                .Select(ci => new { ci.CourseId, ci.Term })
+                .ToList();
+
+            // The doctor module reads CourseAssignments; keep the legacy
+            // CourseInstructors rows mirrored there (idempotent on reruns).
+            var existingAssignmentCourseIds = db.CourseAssignments
+                .Where(a => a.DoctorUserId == doctor.Id)
+                .Select(a => a.CourseId)
+                .ToHashSet();
+
+            foreach (var course in doctorCourses)
+            {
+                var term = string.IsNullOrWhiteSpace(course.Semester) ? "Fall 2025" : course.Semester;
+                if (!existingAssignments.Any(a => a.CourseId == course.Id && a.Term == term))
+                    db.CourseInstructors.Add(new CourseInstructor
+                    {
+                        CourseId = course.Id,
+                        DoctorUserId = doctor.Id,
+                        Term = term
+                    });
+
+                if (existingAssignmentCourseIds.Add(course.Id))
+                {
+                    db.CourseAssignments.Add(new CourseAssignment
+                    {
+                        CourseId = course.Id,
+                        DoctorUserId = doctor.Id,
+                        AssignedByUserId = doctor.Id,
+                        AssignedAtUtc = DateTime.UtcNow
+                    });
+                }
+            }
+        }
+
+        // The demo student's six current-course enrollments also belong to the
+        // post-catalog phase: older databases have the student but never got
+        // these rows. Additive only - existing enrollments keep their grades.
+        var demoStudent = db.Users.FirstOrDefault(u => u.Email == DemoStudentEmail);
+        if (demoStudent is not null && demoStudent.UniversityId.HasValue)
+        {
+            var demoGrades = new Dictionary<string, (string Letter, double Points, int Attendance, string Status)>
+            {
+                ["CS350"] = ("B+", 3.3, 95, "Good"),
+                ["CS210"] = ("B", 3.0, 88, "Needs Attention"),
+                ["CS330"] = ("A-", 3.7, 96, "Excellent"),
+                ["CS320"] = ("C+", 2.3, 78, "Needs Attention"),
+                ["CS240"] = ("B+", 3.4, 90, "Good"),
+                ["CS120"] = ("B", 3.0, 85, "Needs Attention")
+            };
+            var demoCodes = demoGrades.Keys.ToArray();
+            var demoCourses = db.Courses
+                .Where(c => c.UniversityId == demoStudent.UniversityId)
+                .Where(c => demoCodes.Contains(c.Code))
+                .Select(c => new { c.Id, c.Code })
+                .ToList();
+            var demoEnrolled = db.Enrollments
+                .Where(e => e.UserId == demoStudent.Id)
+                .Select(e => e.CourseId)
+                .ToHashSet();
+
+            foreach (var course in demoCourses.Where(c => !demoEnrolled.Contains(c.Id)))
+            {
+                var grade = demoGrades[course.Code];
+                db.Enrollments.Add(new Enrollment
+                {
+                    UserId = demoStudent.Id,
+                    CourseId = course.Id,
+                    Semester = "Current",
+                    GradeLetter = grade.Letter,
+                    GradePoints = grade.Points,
+                    AttendancePercent = grade.Attendance,
+                    Status = grade.Status
+                });
+            }
+        }
+
+        var student = db.Users.FirstOrDefault(u => u.Email == "helwan.student@unisphere.edu");
+        if (student is null) return;
+
+        var courseIds = db.Courses
+            .Where(c => c.UniversityId == student.UniversityId)
+            .Where(c => c.Code == "CS 111" || c.Code == "CS 112")
+            .Select(c => c.Id)
+            .ToList();
+
+        var existing = db.Enrollments
+            .Where(e => e.UserId == student.Id)
+            .Select(e => e.CourseId)
+            .ToHashSet();
+
+        foreach (var courseId in courseIds.Where(id => !existing.Contains(id)))
+        {
+            db.Enrollments.Add(new Enrollment
+            {
+                UserId = student.Id,
+                CourseId = courseId,
+                Semester = "Current",
+                GradeLetter = "",
+                GradePoints = 0,
+                AttendancePercent = 100,
+                Status = "Good"
+            });
+        }
+
+        if (!db.SemesterRecords.Any(r => r.UserId == student.Id))
+        {
+            db.SemesterRecords.Add(new SemesterRecord
+            {
+                UserId = student.Id,
+                Label = "Current semester",
+                IsCurrent = true,
+                Gpa = 0,
+                AttendanceRate = 100,
+                CompletedCourses = 0,
+                TotalCourses = courseIds.Count
+            });
+        }
+
+        db.SaveChanges();
+    }
+
+    private static University EnsureUniversity(AppDbContext db, string name)
+    {
+        var university = db.Universities.FirstOrDefault(u => u.Name == name);
+        if (university is not null) return university;
+        university = new University { Name = name };
+        db.Universities.Add(university);
+        return university;
     }
 }

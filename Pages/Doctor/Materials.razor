@@ -1,0 +1,710 @@
+@page "/doctor/materials"
+@attribute [Authorize(Roles = "Doctor")]
+@*
+[Authorize] removed on purpose (see Dashboard.razor): access is enforced by
+RoleGate client-side and by [Authorize(Roles="Doctor")] on every /api endpoint.
+*@
+@using System.Net
+@using System.Net.Http.Headers
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.Extensions.Configuration
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+@inject IConfiguration Config
+
+<PageTitle>Materials - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Doctor">
+    <div class="page-header">
+        <h1>Materials</h1>
+        <p>Publish summaries, lectures, assignments and exams for your own courses.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_toast))
+    {
+        <div class="alert @(_toastIsError ? "alert-error" : "alert-success")">@_toast</div>
+    }
+
+    @if (_deleteCandidate is not null)
+    {
+        <div class="alert alert-error">
+            Delete &quot;@_deleteCandidate.Title&quot;? This cannot be undone.
+            <button class="btn btn-sm btn-danger" @onclick="ConfirmDeleteAsync" disabled="@_deleting">Delete</button>
+            <button class="btn btn-sm btn-secondary" @onclick="() => _deleteCandidate = null">Cancel</button>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="ReloadAsync">Retry</button></div>
+    }
+    else if (_courses is null)
+    {
+        <div class="loading">Loading your courses...</div>
+    }
+    else if (!_courses.Any())
+    {
+        <div class="card">
+            <div class="empty-state">
+                <h3>No courses assigned</h3>
+                <p>Material management becomes available when the administrator assigns you to a course.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="card-header">
+                <h3>Course materials</h3>
+                <button class="btn btn-primary btn-sm" @onclick="OpenCreateEditor"><UiIcon Name="plus" /> New material</button>
+            </div>
+            <div class="form-inline">
+                <div class="form-group">
+                    <label for="materialCourseFilter">Course</label>
+                    <select id="materialCourseFilter" value="@_courseId" @onchange="(e) => ChangeCourseFilterAsync(e.Value?.ToString())">
+                        <option value="">All my courses</option>
+                        @foreach (var c in _courses)
+                        {
+                            <option value="@c.Id">@c.Code &mdash; @c.Title (@c.MaterialsCount)</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="materialTypeFilter">Type</label>
+                    <select id="materialTypeFilter" value="@_type" @onchange="(e) => ChangeTypeFilterAsync(e.Value?.ToString())">
+                        <option value="">All types</option>
+                        @foreach (var t in MaterialTypes)
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="materialSearch">Search</label>
+                    <input id="materialSearch" @bind="_search" @bind:event="oninput" @onkeyup="SearchKeyUpAsync" placeholder="Title or description..." />
+                </div>
+            </div>
+
+            @if (_materials is null)
+            {
+                <div class="loading">Loading materials...</div>
+            }
+            else if (!_materials.Any())
+            {
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="file-text" /></div>No materials match the current filters.</div>
+            }
+            else
+            {
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Title</th>
+                                <th>Course</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var m in _materials)
+                            {
+                                <tr>
+                                    <td>@m.Type</td>
+                                    <td>
+                                        <strong>@m.Title</strong>
+                                        @if (!string.IsNullOrWhiteSpace(m.Description))
+                                        {
+                                            <div class="course-meta">@m.Description</div>
+                                        }
+                                        @if (m.HasUploadedFile)
+                                        {
+                                            <div class="course-meta" dir="auto">
+                                                Attachment: @m.UploadedFileName
+                                                @if (m.UploadedFileSizeBytes.HasValue)
+                                                {
+                                                    <text>(@FormatSize(m.UploadedFileSizeBytes.Value))</text>
+                                                }
+                                            </div>
+                                        }
+                                    </td>
+                                    <td>@m.CourseName</td>
+                                    <td>@m.CreatedAt.ToString("MMM d, yyyy")</td>
+                                    <td class="row-actions">
+                                        <button class="btn btn-sm btn-secondary" @onclick="() => OpenEditEditor(m)">Edit</button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => _deleteCandidate = m">Delete</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination">
+                    <button class="btn btn-sm btn-secondary" disabled="@(_page <= 1)" @onclick="() => ChangePageAsync(-1)">Prev</button>
+                    <span>Page @_page of @TotalPages (@_total total)</span>
+                    <button class="btn btn-sm btn-secondary" disabled="@(_page >= TotalPages)" @onclick="() => ChangePageAsync(1)">Next</button>
+                </div>
+            }
+        </div>
+
+        @if (_editorOpen)
+        {
+            <div class="card" style="margin-top: 24px;">
+                <div class="card-header">
+                    <h3>@(_editingId.HasValue ? "Edit material" : "New material")</h3>
+                    <button class="btn btn-sm btn-secondary" @onclick="CloseEditor">Close</button>
+                </div>
+                <div class="form-inline">
+                    <div class="form-group">
+                        <label for="materialCourse">Course</label>
+                        <select id="materialCourse" value="@_formCourseId" @onchange="(e) => _formCourseId = e.Value?.ToString() ?? string.Empty" disabled="@_editingId.HasValue">
+                            @foreach (var c in _courses)
+                            {
+                                <option value="@c.Id">@c.Code &mdash; @c.Title</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="materialType">Type</label>
+                        <select id="materialType" @bind="_formType">
+                            @foreach (var t in MaterialTypes)
+                            {
+                                <option value="@t">@t</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="materialFile">File URL (optional)</label>
+                        <input id="materialFile" @bind="_formFileUrl" maxlength="500" placeholder="https://..." />
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 12px;">
+                    <label for="materialAttachment">Attachment (optional)</label>
+                    <InputFile id="materialAttachment" OnChange="OnFileSelected"
+                               accept=".pdf,.doc,.docx,.ppt,.pptx" class="file-input" />
+                    <small class="field-hint">PDF, Word or PowerPoint — up to @MaxFileSizeMb MB.</small>
+                    @if (!string.IsNullOrEmpty(_existingAttachmentName))
+                    {
+                        <div class="course-meta" style="margin-top: 8px;" dir="auto">
+                            Current attachment: @_existingAttachmentName
+                            @if (_existingAttachmentSize.HasValue && _existingAttachmentSize.Value > 0)
+                            {
+                                <text>(@FormatSize(_existingAttachmentSize.Value))</text>
+                            }
+                        </div>
+                        @if (_removeExistingAttachment)
+                        {
+                            <div class="course-meta" style="margin-top: 4px;">
+                                This attachment will be removed when you save.
+                                <button type="button" class="btn btn-sm btn-secondary"
+                                        @onclick="() => _removeExistingAttachment = false">Undo</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-sm btn-secondary" style="margin-top: 6px;"
+                                    @onclick="() => _removeExistingAttachment = true">Remove attachment</button>
+                        }
+                    }
+                    @if (_selectedFile is not null)
+                    {
+                        <div class="course-meta" style="margin-top: 8px;" dir="auto">
+                            Selected: @_selectedFile.Name (@FormatSize(_selectedFile.Size))
+                            <button type="button" class="btn btn-sm btn-secondary" @onclick="ClearSelectedFile">Clear</button>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(_fileError))
+                    {
+                        <div class="alert alert-error" style="margin-top: 8px;">@_fileError</div>
+                    }
+                </div>
+                <div class="form-group" style="margin-top: 12px;">
+                    <label for="materialTitle">Title</label>
+                    <input id="materialTitle" @bind="_formTitle" maxlength="200" placeholder="Material title" />
+                </div>
+                <div class="form-group" style="margin-top: 12px;">
+                    <label for="materialDescription">Description</label>
+                    <textarea id="materialDescription" @bind="_formDescription" rows="2" placeholder="Short description"></textarea>
+                </div>
+                <div class="form-group" style="margin-top: 12px;">
+                    <label for="materialContent">Content</label>
+                    <textarea id="materialContent" @bind="_formContent" rows="5" placeholder="Material content (optional)"></textarea>
+                </div>
+                <div style="margin-top: 12px;">
+                    <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
+                        @(_saving ? "Saving..." : "Save material")
+                    </button>
+                </div>
+            </div>
+        }
+    }
+</RoleGate>
+
+@code {
+    [Microsoft.AspNetCore.Components.SupplyParameterFromQuery] public int? CourseId { get; set; }
+
+    private static readonly string[] MaterialTypes = { "Summary", "Lecture", "Assignment", "Exam", "Announcement" };
+    private static readonly HashSet<string> AllowedFileExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".pdf", ".doc", ".docx", ".ppt", ".pptx"
+    };
+
+    private int MaxFileSizeMb
+    {
+        get
+        {
+            if (int.TryParse(Config["Uploads:MaxFileSizeMb"], out var value) && value > 0)
+                return Math.Min(value, 25);
+            return 20;
+        }
+    }
+
+    private long MaxFileBytes => MaxFileSizeMb * 1024L * 1024L;
+
+    private List<DoctorCourseDto>? _courses;
+    private List<MaterialDto>? _materials;
+    private string _courseId = "";
+    private string _type = "";
+    private string _search = "";
+    private int _page = 1;
+    private const int PageSize = 10;
+    private int _total;
+    private int TotalPages => Math.Max(1, (_total + PageSize - 1) / PageSize);
+
+    private string? _error;
+    private string? _toast;
+    private bool _toastIsError;
+    private bool _started;
+
+    private bool _editorOpen;
+    private int? _editingId;
+    private string _formCourseId = "";
+    private string _formTitle = "";
+    private string _formType = "Summary";
+    private string _formDescription = "";
+    private string _formContent = "";
+    private string _formFileUrl = "";
+    private IBrowserFile? _selectedFile;
+    private string? _existingAttachmentName;
+    private long? _existingAttachmentSize;
+    private bool _removeExistingAttachment;
+    private string? _fileError;
+    private bool _saving;
+
+    private MaterialDto? _deleteCandidate;
+    private bool _deleting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _error = null;
+        _courses = null;
+        _materials = null;
+        try
+        {
+            _courses = await Http.GetFromJsonAsync<List<DoctorCourseDto>>("/api/doctor/courses") ?? new();
+
+            // Deep link /doctor/materials?courseId=... only when assigned to me.
+            if (CourseId.HasValue && _courses.Any(c => c.Id == CourseId.Value))
+                _courseId = CourseId.Value.ToString();
+
+            _page = 1;
+            await LoadMaterialsAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            if (!AuthService.IsInitialized)
+            {
+                _error = "Could not load materials. Check your connection and try again.";
+            }
+            else
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+        }
+        catch
+        {
+            _error = "Could not load materials. Please try again.";
+        }
+    }
+
+    private async Task LoadMaterialsAsync()
+    {
+        _materials = null;
+        try
+        {
+            var query = $"/api/doctor/materials?page={_page}&pageSize={PageSize}" +
+                $"&type={Uri.EscapeDataString(_type)}&search={Uri.EscapeDataString(_search)}";
+            if (int.TryParse(_courseId, out var courseId))
+                query += $"&courseId={courseId}";
+
+            var page = await Http.GetFromJsonAsync<PagedResultDto<MaterialDto>>(query);
+            _materials = page?.Items.ToList() ?? new();
+            _total = page?.Total ?? 0;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _materials = new();
+            _total = 0;
+            Toast("That course is not assigned to you.", true);
+        }
+        catch
+        {
+            _materials = new();
+            _total = 0;
+            _error = "Could not load materials. Please try again.";
+        }
+    }
+
+    private async Task ChangeCourseFilterAsync(string? value)
+    {
+        _courseId = value ?? "";
+        _page = 1;
+        await LoadMaterialsAsync();
+    }
+
+    private async Task ChangeTypeFilterAsync(string? value)
+    {
+        _type = value ?? "";
+        _page = 1;
+        await LoadMaterialsAsync();
+    }
+
+    private async Task SearchKeyUpAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            _page = 1;
+            await LoadMaterialsAsync();
+        }
+    }
+
+    private async Task ChangePageAsync(int delta)
+    {
+        _page = Math.Max(1, _page + delta);
+        await LoadMaterialsAsync();
+    }
+
+    private void OpenCreateEditor()
+    {
+        _editingId = null;
+        _formCourseId = int.TryParse(_courseId, out var id)
+            ? id.ToString()
+            : _courses?.FirstOrDefault()?.Id.ToString() ?? "";
+        _formTitle = "";
+        _formType = "Summary";
+        _formDescription = "";
+        _formContent = "";
+        _formFileUrl = "";
+        _selectedFile = null;
+        _existingAttachmentName = null;
+        _existingAttachmentSize = null;
+        _removeExistingAttachment = false;
+        _fileError = null;
+        _editorOpen = true;
+    }
+
+    private void OpenEditEditor(MaterialDto m)
+    {
+        _editingId = m.Id;
+        _formCourseId = m.CourseId.ToString();
+        _formTitle = m.Title;
+        _formType = m.Type;
+        _formDescription = m.Description;
+        _formContent = m.Content;
+        _formFileUrl = m.FileUrl ?? "";
+        _selectedFile = null;
+        _existingAttachmentName = m.HasUploadedFile ? m.UploadedFileName : null;
+        _existingAttachmentSize = m.UploadedFileSizeBytes;
+        _removeExistingAttachment = false;
+        _fileError = null;
+        _editorOpen = true;
+    }
+
+    private void CloseEditor()
+    {
+        _editorOpen = false;
+        _editingId = null;
+        _selectedFile = null;
+        _fileError = null;
+        _removeExistingAttachment = false;
+    }
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _fileError = null;
+        _selectedFile = null;
+        if (e.FileCount == 0) return;
+
+        var file = e.File;
+        if (file is null) return;
+
+        var extension = Path.GetExtension(file.Name);
+        if (string.IsNullOrWhiteSpace(extension) || !AllowedFileExtensions.Contains(extension))
+        {
+            _fileError = "Choose a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file.";
+            return;
+        }
+        if (file.Size <= 0)
+        {
+            _fileError = "The selected file is empty.";
+            return;
+        }
+        if (file.Size > MaxFileBytes)
+        {
+            _fileError = $"The selected file is larger than {MaxFileSizeMb} MB.";
+            return;
+        }
+
+        _selectedFile = file;
+        _removeExistingAttachment = false;
+    }
+
+    private void ClearSelectedFile()
+    {
+        _selectedFile = null;
+        _fileError = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving) return;
+        if (!int.TryParse(_formCourseId, out var courseId))
+        {
+            Toast("Choose a course for this material.", true);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_formTitle))
+        {
+            Toast("Title is required.", true);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var body = new
+            {
+                courseId,
+                title = _formTitle.Trim(),
+                type = _formType,
+                description = _formDescription,
+                content = _formContent,
+                fileUrl = _formFileUrl
+            };
+
+            var response = _editingId.HasValue
+                ? await Http.PutAsJsonAsync($"/api/doctor/materials/{_editingId.Value}", body)
+                : await Http.PostAsJsonAsync("/api/doctor/materials", body);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Toast($"Could not save the material: {await ErrorTextAsync(response)}", true);
+                return;
+            }
+
+            var wasEditing = _editingId.HasValue;
+            var saved = await response.Content.ReadFromJsonAsync<SavedMaterialId>();
+            if (saved is null || saved.Id <= 0)
+            {
+                Toast("The material was saved, but the server response could not be read.", true);
+                return;
+            }
+
+            // Keep the new id in the editor: if the attachment step fails, the
+            // next Save updates the same row instead of creating a duplicate.
+            _editingId = saved.Id;
+
+            if (_selectedFile is not null)
+            {
+                if (!await UploadSelectedFileAsync(saved.Id, _selectedFile))
+                {
+                    Toast($"Material saved, but the attachment could not be uploaded: {_fileError}", true);
+                    await LoadMaterialsAsync();
+                    return;
+                }
+            }
+            else if (_removeExistingAttachment && wasEditing)
+            {
+                if (!await DeleteAttachmentAsync(saved.Id))
+                {
+                    Toast($"Material saved, but the attachment could not be removed: {_fileError}", true);
+                    await LoadMaterialsAsync();
+                    return;
+                }
+            }
+
+            Toast(wasEditing ? "Material updated." : "Material published.");
+            CloseEditor();
+            await LoadMaterialsAsync();
+        }
+        catch
+        {
+            Toast("Could not save the material. Check your connection and try again.", true);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task<bool> UploadSelectedFileAsync(int materialId, IBrowserFile file)
+    {
+        _fileError = null;
+        try
+        {
+            using var form = new MultipartFormDataContent();
+            await using var stream = file.OpenReadStream(MaxFileBytes);
+            var fileContent = new StreamContent(stream);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue(ContentTypeFor(file.Name));
+            form.Add(fileContent, "file", file.Name);
+
+            var response = await Http.PostAsync($"/api/doctor/materials/{materialId}/file", form);
+            if (response.IsSuccessStatusCode)
+            {
+                _selectedFile = null;
+                return true;
+            }
+
+            _fileError = await ErrorTextAsync(response);
+            return false;
+        }
+        catch
+        {
+            _fileError = "Could not upload the selected file. Check its size and try again.";
+            return false;
+        }
+    }
+
+    private async Task<bool> DeleteAttachmentAsync(int materialId)
+    {
+        _fileError = null;
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/doctor/materials/{materialId}/file");
+            if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotFound)
+                return true;
+
+            _fileError = await ErrorTextAsync(response);
+            return false;
+        }
+        catch
+        {
+            _fileError = "Could not remove the attachment. Check your connection and try again.";
+            return false;
+        }
+    }
+
+    private static string ContentTypeFor(string fileName) =>
+        Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".pdf" => "application/pdf",
+            ".doc" => "application/msword",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".ppt" => "application/vnd.ms-powerpoint",
+            ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            _ => "application/octet-stream"
+        };
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        >= 1024L * 1024L => $"{bytes / (1024.0 * 1024.0):0.#} MB",
+        >= 1024L => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes} B"
+    };
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_deleteCandidate is null || _deleting) return;
+        _deleting = true;
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/doctor/materials/{_deleteCandidate.Id}");
+            if (response.IsSuccessStatusCode)
+            {
+                Toast($"Deleted \"{_deleteCandidate.Title}\".");
+                _deleteCandidate = null;
+                await LoadMaterialsAsync();
+            }
+            else if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                Toast("That material is no longer available.", true);
+                _deleteCandidate = null;
+                await LoadMaterialsAsync();
+            }
+            else
+            {
+                Toast($"Could not delete the material: {await ErrorTextAsync(response)}", true);
+            }
+        }
+        catch
+        {
+            Toast("Could not delete the material. Check your connection and try again.", true);
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+
+    private void Toast(string message, bool isError = false)
+    {
+        _toast = message;
+        _toastIsError = isError;
+    }
+
+    private static async Task<string> ErrorTextAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var text = await response.Content.ReadAsStringAsync();
+            return string.IsNullOrWhiteSpace(text) ? $"Request failed ({(int)response.StatusCode})." : text;
+        }
+        catch
+        {
+            return $"Request failed ({(int)response.StatusCode}).";
+        }
+    }
+
+    private sealed record SavedMaterialId(int Id);
+}

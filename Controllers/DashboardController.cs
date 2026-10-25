@@ -7,7 +7,7 @@ namespace UniSphere.Api.Controllers;
 
 /// <summary>Everything the student Home dashboard needs, split per card.
 /// All endpoints use the user id from the JWT claims, never from the client.</summary>
-[Authorize]
+[Authorize(Roles = "Student")]
 [ApiController]
 [Route("api/dashboard")]
 public class DashboardController : ControllerBase

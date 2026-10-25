@@ -1,0 +1,73 @@
+@page "/graduate/events"
+@attribute [Authorize(Roles = "Graduate")]
+
+@using System.Net
+@inject HttpClient Http
+
+<PageTitle>Graduated Events - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Graduate">
+    <div class="page-header">
+        <h1>Graduated Events</h1>
+        <p>Reconnect with your university community.</p>
+    </div>
+
+    <div class="card">
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+        }
+        else if (_events is null)
+        {
+            <div class="loading">Loading events...</div>
+        }
+        else if (_events.Count == 0)
+        {
+            <div class="empty-state"><div class="empty-icon"><UiIcon Name="calendar-days" /></div>No upcoming graduate events right now.</div>
+        }
+        else
+        {
+            <div class="event-list">
+                @foreach (var evt in _events)
+                {
+                    <div class="event-item">
+                        <div class="event-date">
+                            <span class="event-day">@evt.StartsAtUtc.Day</span>
+                            <span class="event-month">@evt.StartsAtUtc.ToString("MMM")</span>
+                        </div>
+                        <div class="event-info">
+                            <h4>@evt.Title</h4>
+                            <p><UiIcon Name="map-pin" /> @evt.Location</p>
+                            <p><UiIcon Name="clock-3" /> @evt.StartsAtUtc.ToString("hh:mm tt")</p>
+                            @if (!string.IsNullOrWhiteSpace(evt.Description))
+                            {
+                                <p>@evt.Description</p>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</RoleGate>
+
+@code {
+    private List<EventDto>? _events;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _events = null;
+        try
+        {
+            _events = await Http.GetFromJsonAsync<List<EventDto>>("/api/events?upcoming=true") ?? new();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            _error = "Could not load events. Please try again.";
+        }
+    }
+}

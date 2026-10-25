@@ -14,7 +14,13 @@ namespace UniSphere.Api.Controllers;
 public class HomeController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public HomeController(AppDbContext db) => _db = db;
+    private readonly IUniversityScope _scope;
+
+    public HomeController(AppDbContext db, IUniversityScope scope)
+    {
+        _db = db;
+        _scope = scope;
+    }
 
     /// <summary>Everything the Flutter home screen needs in one call.</summary>
     [HttpGet]
@@ -23,6 +29,7 @@ public class HomeController : ControllerBase
         var userId = User.GetUserId();
         var user = await _db.Users.FindAsync(userId);
         if (user is null) return NotFound();
+        var scope = await _scope.GetAsync();
 
         var modules = await _db.Modules.AsNoTracking()
             .OrderBy(m => m.SortOrder)
@@ -31,6 +38,7 @@ public class HomeController : ControllerBase
 
         var now = DateTime.UtcNow;
         var events = await _db.Events.AsNoTracking()
+            .VisibleToCurrentUser(scope)
             .Where(e => e.StartsAtUtc >= now)
             .OrderBy(e => e.StartsAtUtc)
             .Take(3)
@@ -49,7 +57,10 @@ public class HomeController : ControllerBase
 
     private async Task<RecommendationDto> BuildRecommendationAsync(User user)
     {
-        var courses = await _db.Courses.AsNoTracking().ToListAsync();
+        var scope = await _scope.GetAsync(user.Id);
+        var courses = await _db.Courses.AsNoTracking()
+            .VisibleToCurrentUser(scope)
+            .ToListAsync();
         var top = Recommender.Rank(courses, user).FirstOrDefault();
 
         return top is null

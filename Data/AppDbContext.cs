@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using UniSphere.Api.Models;
+using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Data;
 
@@ -22,11 +23,16 @@ public class AppDbContext : DbContext
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<University> Universities => Set<University>();
     public DbSet<CourseMaterial> CourseMaterials => Set<CourseMaterial>();
+    // Legacy per-term assignments (managed by /api/admin/instructor-assignments
+    // and the people importer) plus the doctor-module assignment table.
+    public DbSet<CourseInstructor> CourseInstructors => Set<CourseInstructor>();
+    public DbSet<CourseAssignment> CourseAssignments => Set<CourseAssignment>();
     public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<ChatUsage> ChatUsages => Set<ChatUsage>();
     public DbSet<CareerRecommendation> CareerRecommendations => Set<CareerRecommendation>();
     public DbSet<ResearchPaper> ResearchPapers => Set<ResearchPaper>();
+    public DbSet<DoctorResearch> DoctorResearches => Set<DoctorResearch>();
     public DbSet<GraduationApplication> GraduationApplications => Set<GraduationApplication>();
     public DbSet<GraduateProfile> GraduateProfiles => Set<GraduateProfile>();
     public DbSet<ProfileEntry> ProfileEntries => Set<ProfileEntry>();
@@ -42,10 +48,36 @@ public class AppDbContext : DbContext
     public DbSet<GraduateSettings> GraduateSettings => Set<GraduateSettings>();
     public DbSet<JobSyncState> JobSyncStates => Set<JobSyncState>();
 
+    // Exam Generator: exams and their questions created by doctors from their
+    // assigned course materials.
+    public DbSet<Exam> Exams => Set<Exam>();
+    public DbSet<ExamQuestion> ExamQuestions => Set<ExamQuestion>();
+
+    // User notification preferences (On / MuteUntil / Off).
+    public DbSet<UserNotificationSetting> UserNotificationSettings => Set<UserNotificationSetting>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // User indexes
         modelBuilder.Entity<User>().HasIndex(u => u.Email).IsUnique();
+
+        // One notification preference row per user. The table already uses
+        // UserId as its primary key (see DbSchemaUpgrade); EF needs the key
+        // and cascade relationship configured explicitly because the property
+        // name does not follow the <Entity>Id convention.
+        modelBuilder.Entity<UserNotificationSetting>()
+            .HasKey(s => s.UserId);
+        modelBuilder.Entity<UserNotificationSetting>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(s => s.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Course catalog is isolated per university and course codes are
+        // unique only inside their own university.
+        modelBuilder.Entity<Course>()
+            .HasIndex(c => new { c.UniversityId, c.Code })
+            .IsUnique();
 
         // Enrollment indexes + unique constraint
         modelBuilder.Entity<Enrollment>()
@@ -82,16 +114,57 @@ public class AppDbContext : DbContext
         // Event indexes
         modelBuilder.Entity<EventItem>()
             .HasIndex(e => e.StartsAtUtc);
+        modelBuilder.Entity<EventItem>()
+            .HasIndex(e => e.UniversityId);
+
+        // Announcement indexes
+        modelBuilder.Entity<Announcement>()
+            .HasIndex(a => a.CreatedAtUtc);
+        modelBuilder.Entity<Announcement>()
+            .HasIndex(a => a.UniversityId);
+        modelBuilder.Entity<Announcement>()
+            .HasIndex(a => a.CourseId);
+        // Course-specific announcements (doctor module): deleting the course
+        // removes its announcements, same cascade rule as materials.
+        modelBuilder.Entity<Announcement>()
+            .HasOne(a => a.Course)
+            .WithMany()
+            .HasForeignKey(a => a.CourseId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Course instructor assignments: a doctor can be assigned to the
+        // same course only once per term.
+        modelBuilder.Entity<CourseInstructor>()
+            .HasIndex(ci => new { ci.CourseId, ci.DoctorUserId, ci.Term })
+            .IsUnique();
+        modelBuilder.Entity<CourseInstructor>()
+            .HasIndex(ci => ci.DoctorUserId);
+        modelBuilder.Entity<CourseInstructor>()
+            .HasOne(ci => ci.Course)
+            .WithMany()
+            .HasForeignKey(ci => ci.CourseId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Doctor-module course assignments (no term): a doctor teaches a
+        // course at most once; DisplayTitle is the per-instructor override.
+        modelBuilder.Entity<CourseAssignment>()
+            .HasIndex(ca => ca.DoctorUserId);
+        modelBuilder.Entity<CourseAssignment>()
+            .HasIndex(ca => ca.CourseId);
+        modelBuilder.Entity<CourseAssignment>()
+            .HasIndex(ca => new { ca.DoctorUserId, ca.CourseId })
+            .IsUnique();
+        modelBuilder.Entity<CourseAssignment>()
+            .HasOne(ca => ca.Course)
+            .WithMany()
+            .HasForeignKey(ca => ca.CourseId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // Audit log indexes
         modelBuilder.Entity<AuditLog>()
             .HasIndex(a => a.UserId);
         modelBuilder.Entity<AuditLog>()
             .HasIndex(a => a.Timestamp);
-
-        // Announcement indexes
-        modelBuilder.Entity<Announcement>()
-            .HasIndex(a => a.CreatedAtUtc);
 
         // Career recommendation indexes
         modelBuilder.Entity<CareerRecommendation>()
@@ -100,6 +173,27 @@ public class AppDbContext : DbContext
         // Research paper indexes
         modelBuilder.Entity<ResearchPaper>()
             .HasIndex(r => r.Title);
+
+        // Doctor research indexes: browse filters by university/year and search
+        // by title; ownership lookups use the doctor id.
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.UniversityId);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.Year);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.Title);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.DoctorUserId);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.IsPublished);
+
+        // Doctor research relationship: keep the paper when the user row is
+        // removed (Restrict) so publication history is never silently lost.
+        modelBuilder.Entity<DoctorResearch>()
+            .HasOne(r => r.DoctorUser)
+            .WithMany()
+            .HasForeignKey(r => r.DoctorUserId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Graduation application indexes + "one active application per student" guard
         modelBuilder.Entity<GraduationApplication>()

@@ -4,21 +4,30 @@ using Microsoft.EntityFrameworkCore;
 using UniSphere.Api.Data;
 using UniSphere.Api.Dtos;
 using UniSphere.Api.Models;
+using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class EventsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public EventsController(AppDbContext db) => _db = db;
+    private readonly IUniversityScope _scope;
 
-    /// <summary>List events. Use ?upcoming=true to hide past events.</summary>
+    public EventsController(AppDbContext db, IUniversityScope scope)
+    {
+        _db = db;
+        _scope = scope;
+    }
+
+    /// <summary>List events visible to the caller's university. Use ?upcoming=true to hide past events.</summary>
     [HttpGet]
     public async Task<IReadOnlyList<EventDto>> GetAll([FromQuery] bool upcoming = false)
     {
-        var query = _db.Events.AsNoTracking().AsQueryable();
+        var scope = await _scope.GetAsync();
+        var query = _db.Events.AsNoTracking().VisibleToCurrentUser(scope);
         if (upcoming) query = query.Where(e => e.StartsAtUtc >= DateTime.UtcNow);
 
         return await query
@@ -30,7 +39,10 @@ public class EventsController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<EventDto>> GetById(int id)
     {
-        var e = await _db.Events.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+        var scope = await _scope.GetAsync();
+        var e = await _db.Events.AsNoTracking()
+            .VisibleToCurrentUser(scope)
+            .FirstOrDefaultAsync(x => x.Id == id);
         if (e is null) return NotFound();
         return new EventDto(e.Id, e.Title, e.Location, e.StartsAtUtc, e.ImageUrl, e.Description);
     }
@@ -41,6 +53,10 @@ public class EventsController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(req.Title) || string.IsNullOrWhiteSpace(req.Location))
             return BadRequest("Title and Location are required.");
+        if (!req.UniversityId.HasValue)
+            return BadRequest("UniversityId is required.");
+        if (!await _db.Universities.AnyAsync(u => u.Id == req.UniversityId.Value))
+            return BadRequest("University does not exist.");
 
         var e = new EventItem
         {
@@ -48,7 +64,8 @@ public class EventsController : ControllerBase
             Location = req.Location,
             StartsAtUtc = req.StartsAtUtc,
             ImageUrl = req.ImageUrl,
-            Description = req.Description
+            Description = req.Description,
+            UniversityId = req.UniversityId.Value
         };
         _db.Events.Add(e);
         await _db.SaveChangesAsync();
@@ -63,6 +80,10 @@ public class EventsController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(req.Title) || string.IsNullOrWhiteSpace(req.Location))
             return BadRequest("Title and Location are required.");
+        if (!req.UniversityId.HasValue)
+            return BadRequest("UniversityId is required.");
+        if (!await _db.Universities.AnyAsync(u => u.Id == req.UniversityId.Value))
+            return BadRequest("University does not exist.");
 
         var e = await _db.Events.FindAsync(id);
         if (e is null) return NotFound();
@@ -72,6 +93,7 @@ public class EventsController : ControllerBase
         e.StartsAtUtc = req.StartsAtUtc;
         e.ImageUrl = req.ImageUrl;
         e.Description = req.Description;
+        e.UniversityId = req.UniversityId.Value;
         await _db.SaveChangesAsync();
         return new EventDto(e.Id, e.Title, e.Location, e.StartsAtUtc, e.ImageUrl, e.Description);
     }
@@ -88,4 +110,6 @@ public class EventsController : ControllerBase
     }
 }
 
-public record CreateEventRequest(string Title, string Location, DateTime StartsAtUtc, string? ImageUrl, string? Description);
+public record CreateEventRequest(
+    string Title, string Location, DateTime StartsAtUtc,
+    string? ImageUrl, string? Description, int? UniversityId = null);

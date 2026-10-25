@@ -105,6 +105,8 @@ public class AnnouncementDto
     public string Body { get; set; } = "";
     public string? Category { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+    public int? CourseId { get; set; }
+    public string? CourseName { get; set; }
 }
 
 // ---- Graduate career platform (api/grad/*) ----

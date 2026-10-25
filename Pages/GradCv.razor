@@ -40,7 +40,7 @@ else
             <div class="card-header"><h3>Your CVs (@_cvs.Count)</h3></div>
             @if (_cvs.Count == 0)
             {
-                <div class="empty-state">No CVs uploaded yet.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="file-text" /></div>No CVs uploaded yet.</div>
             }
             else
             {
@@ -93,7 +93,7 @@ else
                     {
                         <div class="loading">Analyzing with AI... this can take up to a minute.</div>
                     }
-                    <button class="btn btn-primary" @onclick="AnalyzeAsync" disabled="@_busyAnalyze">Analyze with AI</button>
+                    <button class="btn btn-primary" @onclick="AnalyzeAsync" disabled="@_busyAnalyze"><UiIcon Name="sparkles" /> Analyze with AI</button>
                     @if (_analysis is not null)
                     {
                         <div style="margin-top:12px;">
@@ -107,17 +107,17 @@ else
                             @if (_analysis.Strengths.Count > 0)
                             {
                                 <h4>Strengths</h4>
-                                <ul class="grad-list">@foreach (var s in _analysis.Strengths) { <li>&#9989; @s</li> }</ul>
+                                <ul class="grad-list">@foreach (var s in _analysis.Strengths) { <li><UiIcon Name="circle-check" Class="success" /> @s</li> }</ul>
                             }
                             @if (_analysis.Weaknesses.Count > 0)
                             {
                                 <h4>Weaknesses</h4>
-                                <ul class="grad-list">@foreach (var s in _analysis.Weaknesses) { <li>&#10060; @s</li> }</ul>
+                                <ul class="grad-list">@foreach (var s in _analysis.Weaknesses) { <li><UiIcon Name="circle-x" Class="danger" /> @s</li> }</ul>
                             }
                             @if (_analysis.Suggestions.Count > 0)
                             {
                                 <h4>Suggestions</h4>
-                                <ul class="grad-list">@foreach (var s in _analysis.Suggestions) { <li>&#128161; @s</li> }</ul>
+                                <ul class="grad-list">@foreach (var s in _analysis.Suggestions) { <li><UiIcon Name="lightbulb" Class="info" /> @s</li> }</ul>
                             }
                             @if (_analysis.Keywords.Count > 0)
                             {
@@ -219,7 +219,7 @@ else
     private async Task SaveManualTextAsync()
     {
         if (_selected is null || string.IsNullOrWhiteSpace(_manualText)) return;
-        var (value, error) = await PutJsonAsync<GradCvModel>($"/api/grad/profile/cv/{_selected.Id}/manual-text", new { manualText = _manualText });
+        var (value, error) = await PutJsonAsync<GradCvModel>($"/api/grad/profile/cv/{_selected.Id}/manual-text", new { text = _manualText });
         if (error is not null) { _error = error; StateHasChanged(); return; }
         if (value is not null) _selected = value;
         _successMessage = "Text saved. You can now run the analysis.";

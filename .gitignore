@@ -481,4 +481,32 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
+# UniSphere runtime uploads (research PDFs must never be committed)
+App_Data/
+uploads/
+
+# People import CSVs (personal data - never commit)
+Data/students-*.csv
+Data/doctors-*.csv
+
+eddit/
 secret.json
+
+# Local AI provider keys / endpoints (OPENAI_API_KEY, Chat:Providers:*:ApiKey...).
+# Holds real secrets — never commit. See appsettings.Local.example.json for the shape.
+appsettings.Local.json
+
+# Local SQLite databases, backups, and journals (never commit;
+# the app creates/updates unisphere-v6.db at runtime).
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.db.bak
+*.db.bak-*
+
+.claude/
+
+.claude/*settings.local.json

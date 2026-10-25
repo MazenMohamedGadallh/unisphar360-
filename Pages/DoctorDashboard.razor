@@ -36,21 +36,21 @@ else
     {
         <div class="summary-cards">
             <div class="card">
-                <div class="card-icon">&#128218;</div>
+                <div class="card-icon"><UiIcon Name="book-open" /></div>
                 <div class="card-info">
                     <span class="card-label">My Courses</span>
                     <span class="card-value">@_data.CourseCount</span>
                 </div>
             </div>
             <div class="card">
-                <div class="card-icon">&#128101;</div>
+                <div class="card-icon"><UiIcon Name="users" /></div>
                 <div class="card-info">
                     <span class="card-label">Enrolled Students</span>
                     <span class="card-value">@_data.StudentCount</span>
                 </div>
             </div>
             <div class="card">
-                <div class="card-icon">&#127942;</div>
+                <div class="card-icon"><UiIcon Name="award" /></div>
                 <div class="card-info">
                     <span class="card-label">Average Grade</span>
                     <span class="card-value">@(_data.AverageGradePoints?.ToString("0.00") ?? "—")</span>
@@ -58,14 +58,14 @@ else
                 </div>
             </div>
             <div class="card">
-                <div class="card-icon">&#128197;</div>
+                <div class="card-icon"><UiIcon Name="calendar-days" /></div>
                 <div class="card-info">
                     <span class="card-label">Average Attendance</span>
                     <span class="card-value">@(_data.AverageAttendance.HasValue ? $"{_data.AverageAttendance:0.#}%" : "—")</span>
                 </div>
             </div>
             <div class="card">
-                <div class="card-icon">&#9888;</div>
+                <div class="card-icon"><UiIcon Name="triangle-alert" /></div>
                 <div class="card-info">
                     <span class="card-label">Academic Alerts</span>
                     <span class="card-value">@_data.Alerts.Count</span>
@@ -78,11 +78,11 @@ else
             <div class="card">
                 <div class="card-header">
                     <h3>My Courses</h3>
-                    <NavLink href="/doctor/courses" class="view-all">Manage &rarr;</NavLink>
+                    <NavLink href="/doctor/courses" class="view-all">Manage <UiIcon Name="arrow-right" /></NavLink>
                 </div>
                 @if (_data.Courses.Count == 0)
                 {
-                    <div class="empty-state">You are not assigned to any course yet. Contact an administrator.</div>
+                    <div class="empty-state"><div class="empty-icon"><UiIcon Name="book-open" /></div>You are not assigned to any course yet. Contact an administrator.</div>
                 }
                 else
                 {
@@ -118,7 +118,7 @@ else
                 <div class="card-header"><h3>Recent Course Announcements</h3></div>
                 @if (_data.RecentAnnouncements.Count == 0)
                 {
-                    <div class="empty-state">No course announcements yet.</div>
+                    <div class="empty-state"><div class="empty-icon"><UiIcon Name="megaphone" /></div>No course announcements yet.</div>
                 }
                 else
                 {
@@ -141,7 +141,7 @@ else
             <div class="card-header"><h3>Academic Alerts</h3></div>
             @if (_data.Alerts.Count == 0)
             {
-                <div class="empty-state">No students currently need additional support.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="users" /></div>No students currently need additional support.</div>
             }
             else
             {

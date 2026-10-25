@@ -7,7 +7,7 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-[Authorize]
+[Authorize(Roles = "Student,Graduate")]
 [ApiController]
 [Route("api/[controller]")]
 public class ResearchController : ControllerBase

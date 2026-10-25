@@ -1,4 +1,5 @@
 @page "/admin"
+@attribute [Authorize(Roles = "Admin")]
 @*
 [Authorize(Roles = "Admin")] removed on purpose (see Dashboard.razor):
 the server challenges every F5 to /login because the browser never
@@ -155,6 +156,7 @@ else if (_tab == "users")
                                 <td class="row-actions">
                                     @if (!u.IsDeleted)
                                     {
+                                        <button class="btn btn-sm btn-secondary" @onclick="() => OpenEditUserAsync(u)">Edit details</button>
                                         <button class="btn btn-sm @(u.IsActive ? "btn-secondary" : "btn-primary")" @onclick="() => AskStatusChangeAsync(u)">
                                             @(u.IsActive ? "Deactivate" : "Activate")
                                         </button>
@@ -170,6 +172,103 @@ else if (_tab == "users")
                 <button class="btn btn-sm btn-secondary" disabled="@(_userPage <= 1)" @onclick="() => ChangeUserPageAsync(-1)">Prev</button>
                 <span>Page @_userPage of @TotalUserPages (@_users.Total total)</span>
                 <button class="btn btn-sm btn-secondary" disabled="@(_userPage >= TotalUserPages)" @onclick="() => ChangeUserPageAsync(1)">Next</button>
+            </div>
+        }
+    </div>
+}
+else if (_tab == "instructors")
+{
+    <div class="card">
+        <div class="card-header"><h3>Assign a doctor to a course</h3></div>
+        <p class="course-meta">Doctors can only be assigned to courses of their own university.</p>
+        <div class="form-inline">
+            <div class="form-group">
+                <label for="assignUniversity">University</label>
+                <select id="assignUniversity" value="@_assignUniversityId" @onchange="(e) => SelectAssignUniversityAsync(e.Value?.ToString())">
+                    <option value="">All universities</option>
+                    @if (_universities is not null)
+                    {
+                        @foreach (var u in _universities)
+                        {
+                            <option value="@u.Id">@u.Name</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="assignCourse">Course</label>
+                <select id="assignCourse" value="@_assignCourseId" @onchange="(e) => _assignCourseId = e.Value?.ToString() ?? string.Empty" disabled="@(!HasAssignmentOptions)">
+                    <option value="">Select course...</option>
+                    @if (_assignCourses is not null)
+                    {
+                        @foreach (var c in _assignCourses)
+                        {
+                            <option value="@c.Id">@c.Code &mdash; @c.Title</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="assignDoctor">Doctor</label>
+                <select id="assignDoctor" value="@_assignDoctorId" @onchange="(e) => _assignDoctorId = e.Value?.ToString() ?? string.Empty" disabled="@(!HasAssignmentOptions)">
+                    <option value="">Select doctor...</option>
+                    @if (_assignDoctors is not null)
+                    {
+                        @foreach (var d in _assignDoctors)
+                        {
+                            <option value="@d.Id">@d.FullName</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="assignTerm">Term</label>
+                <input id="assignTerm" @bind="_assignTerm" placeholder="e.g. Fall 2025" />
+            </div>
+            <button class="btn btn-primary" @onclick="AssignDoctorAsync" disabled="@_assigning">
+                @(_assigning ? "Assigning..." : "Assign")
+            </button>
+        </div>
+        @if (string.IsNullOrEmpty(_assignUniversityId))
+        {
+            <div class="empty-state">Choose a university to see its courses and doctors.</div>
+        }
+        else if (_assignDoctors is not null && _assignDoctors.Count == 0)
+        {
+            <div class="empty-state">This university has no doctors yet.</div>
+        }
+    </div>
+
+    <div class="card" style="margin-top: 24px;">
+        <div class="card-header"><h3>Current assignments</h3></div>
+        @if (_assignments is null)
+        {
+            <div class="loading">Loading assignments...</div>
+        }
+        else if (!_assignments.Any())
+        {
+            <div class="empty-state">No doctor is assigned to a course yet.</div>
+        }
+        else
+        {
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th>Course</th><th>Doctor</th><th>Term</th><th>University</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in _assignments)
+                        {
+                            <tr>
+                                <td>@a.CourseCode &mdash; @a.CourseTitle</td>
+                                <td>@a.DoctorName</td>
+                                <td>@(string.IsNullOrWhiteSpace(a.Term) ? "-" : a.Term)</td>
+                                <td>@a.UniversityName</td>
+                                <td class="row-actions">
+                                    <button class="btn btn-sm btn-danger" @onclick="() => AskRemoveAssignmentAsync(a)">Remove</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
             </div>
         }
     </div>
@@ -298,6 +397,78 @@ else if (_tab == "system")
     }
 }
 
+@if (_editUser is not null)
+{
+    <div class="modal-overlay" @onclick="CloseEditUser">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="admin-edit-title" @onclick:stopPropagation="true" @onkeydown="OnEditKeyDown">
+            <div class="modal-header">
+                <h3 id="admin-edit-title">Edit @_editUser.Role account</h3>
+                <button class="modal-close" @onclick="CloseEditUser" aria-label="Close"><UiIcon Name="x" /></button>
+            </div>
+            <div class="modal-body">
+                @if (!string.IsNullOrEmpty(_editUserError))
+                {
+                    <div class="alert alert-error">@_editUserError</div>
+                }
+                <p class="course-meta">Locked identity fields for this account. Every change is audit-logged; role and password are managed separately.</p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editFirstName">First name</label>
+                        <input id="editFirstName" @bind="_editUser.FirstName" maxlength="100" />
+                    </div>
+                    <div class="form-group">
+                        <label for="editMiddleName">Middle name (optional)</label>
+                        <input id="editMiddleName" @bind="_editUser.MiddleName" maxlength="100" />
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editLastName">Last name</label>
+                        <input id="editLastName" @bind="_editUser.LastName" maxlength="100" />
+                    </div>
+                    <div class="form-group">
+                        <label for="editEmail">Email</label>
+                        <input id="editEmail" type="email" @bind="_editUser.Email" maxlength="200" />
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editPhone">Phone number</label>
+                        <input id="editPhone" @bind="_editUser.PhoneNumber" maxlength="20" />
+                    </div>
+                    <div class="form-group">
+                        <label for="editDepartment">Department</label>
+                        <input id="editDepartment" @bind="_editUser.Department" maxlength="200" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="editAddress">Address</label>
+                    <input id="editAddress" @bind="_editUser.Address" maxlength="300" />
+                </div>
+                <div class="form-group">
+                    <label for="editUniversity">University</label>
+                    <select id="editUniversity" @bind="_editUser.UniversityId">
+                        <option value="">No university assigned</option>
+                        @if (_editUniversities is not null)
+                        {
+                            @foreach (var uni in _editUniversities)
+                            {
+                                <option value="@uni.Id">@uni.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" @onclick="CloseEditUser" disabled="@_savingUser">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveUserAsync" disabled="@_savingUser">
+                    @(_savingUser ? "Saving..." : "Save changes")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (_confirmMessage is not null)
 {
     <div class="modal-overlay" @onclick="CancelConfirm">
@@ -317,6 +488,7 @@ else if (_tab == "system")
     {
         ["overview"] = "Overview",
         ["users"] = "Users",
+        ["instructors"] = "Instructors",
         ["risk"] = "Student Risk",
         ["departments"] = "Departments",
         ["audit"] = "Audit Log",
@@ -343,11 +515,29 @@ else if (_tab == "system")
     private const int AuditPageSize = 50;
     private int TotalAuditPages => _audit is null ? 1 : Math.Max(1, (_audit.Total + AuditPageSize - 1) / AuditPageSize);
 
+    // Instructor assignments tab
+    private List<UniversityDto>? _universities;
+    private List<AdminCourseDto>? _assignCourses;
+    private List<AdminDoctorDto>? _assignDoctors;
+    private List<InstructorAssignmentDto>? _assignments;
+    private string _assignUniversityId = "";
+    private string _assignCourseId = "";
+    private string _assignDoctorId = "";
+    private string _assignTerm = "Fall 2025";
+    private bool _assigning;
+    private bool HasAssignmentOptions => !string.IsNullOrEmpty(_assignUniversityId);
+
     private SystemHealthDto? _health;
 
     private string? _confirmTitle;
     private string? _confirmMessage;
     private Func<Task>? _confirmAction;
+
+    // Locked account fields edit dialog
+    private AdminUserEditForm? _editUser;
+    private List<UniversityDto>? _editUniversities;
+    private bool _savingUser;
+    private string? _editUserError;
     // Deferred first-run guard: prerender / pre-restore passes must not
     // redirect or 401-logout a signed-in user (see OnAfterRenderAsync).
     private bool _started;
@@ -391,7 +581,7 @@ else if (_tab == "system")
         }
         if (!string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase))
         {
-            Nav.NavigateTo("/dashboard?denied=1", replace: true);
+            Nav.NavigateTo(UniSphere.Api.Services.RoleRoutes.HomeFor(user.Role), replace: true);
             return;
         }
         await LoadTabAsync();
@@ -406,6 +596,7 @@ else if (_tab == "system")
     private Task LoadTabAsync() => _tab switch
     {
         "users" => LoadUsersAsync(),
+        "instructors" => LoadInstructorsAsync(),
         "risk" => LoadRiskAsync(),
         "departments" => LoadDepartmentsAsync(),
         "audit" => LoadAuditAsync(),
@@ -478,6 +669,111 @@ else if (_tab == "system")
                 $"/api/admin/audit-log?page={_auditPage}&pageSize={AuditPageSize}"));
     }
 
+    // ---- Instructor assignments tab ----
+
+    private async Task LoadInstructorsAsync()
+    {
+        await GuardedLoadAsync(async () =>
+        {
+            if (_universities is null)
+                _universities = await Http.GetFromJsonAsync<List<UniversityDto>>("/api/auth/universities") ?? new();
+        });
+        await LoadAssignmentOptionsAsync();
+        await LoadAssignmentsAsync();
+    }
+
+    private async Task LoadAssignmentOptionsAsync()
+    {
+        if (!HasAssignmentOptions)
+        {
+            _assignCourses = new();
+            _assignDoctors = new();
+            return;
+        }
+
+        var universityId = _assignUniversityId;
+        await GuardedLoadAsync(async () =>
+        {
+            _assignCourses = await Http.GetFromJsonAsync<List<AdminCourseDto>>(
+                $"/api/admin/courses?universityId={universityId}") ?? new();
+            _assignDoctors = await Http.GetFromJsonAsync<List<AdminDoctorDto>>(
+                $"/api/admin/doctors?universityId={universityId}") ?? new();
+        });
+    }
+
+    private Task LoadAssignmentsAsync()
+    {
+        var query = "/api/admin/instructor-assignments";
+        if (!string.IsNullOrEmpty(_assignUniversityId))
+            query += $"?universityId={_assignUniversityId}";
+        return GuardedLoadAsync(async () =>
+            _assignments = await Http.GetFromJsonAsync<List<InstructorAssignmentDto>>(query) ?? new());
+    }
+
+    private async Task SelectAssignUniversityAsync(string? value)
+    {
+        _assignUniversityId = value ?? "";
+        _assignCourseId = "";
+        _assignDoctorId = "";
+        await LoadAssignmentOptionsAsync();
+        await LoadAssignmentsAsync();
+    }
+
+    private async Task AssignDoctorAsync()
+    {
+        if (_assigning) return;
+        if (!int.TryParse(_assignCourseId, out var courseId)
+            || !int.TryParse(_assignDoctorId, out var doctorId)
+            || string.IsNullOrWhiteSpace(_assignTerm))
+        {
+            Toast("Choose a course, a doctor and a term first.", true);
+            return;
+        }
+
+        _assigning = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("/api/admin/instructor-assignments",
+                new { courseId, doctorUserId = doctorId, term = _assignTerm.Trim() });
+            if (response.IsSuccessStatusCode)
+            {
+                Toast("Doctor assigned to the course.");
+                _assignCourseId = "";
+                _assignDoctorId = "";
+                await LoadAssignmentsAsync();
+            }
+            else
+            {
+                Toast($"Could not assign the doctor: {await response.Content.ReadAsStringAsync()}", true);
+            }
+        }
+        catch
+        {
+            Toast("Could not assign the doctor. Check your connection and try again.", true);
+        }
+        finally
+        {
+            _assigning = false;
+        }
+    }
+
+    private void AskRemoveAssignmentAsync(InstructorAssignmentDto a) => Ask(
+        "Remove assignment",
+        $"Remove {a.DoctorName} from {a.CourseCode} \u2014 {a.CourseTitle} ({a.Term})?",
+        async () =>
+        {
+            var response = await Http.DeleteAsync($"/api/admin/instructor-assignments/{a.Id}");
+            if (response.IsSuccessStatusCode)
+            {
+                Toast($"{a.DoctorName} removed from {a.CourseCode}.");
+                await LoadAssignmentsAsync();
+            }
+            else
+            {
+                Toast($"Could not remove the assignment: {await response.Content.ReadAsStringAsync()}", true);
+            }
+        });
+
     private async Task SearchUsersKeyUpAsync(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
@@ -529,6 +825,131 @@ else if (_tab == "system")
         var action = _confirmAction;
         CancelConfirm();
         if (action is not null) await action();
+    }
+
+    // ---- Locked account fields edit dialog ----
+
+    private async Task OpenEditUserAsync(AdminUserDto u)
+    {
+        _editUserError = null;
+        try
+        {
+            if (_editUniversities is null)
+                _editUniversities = await Http.GetFromJsonAsync<List<UniversityDto>>("/api/auth/universities") ?? new();
+
+            var detail = await Http.GetFromJsonAsync<AdminUserDetailDto>($"/api/admin/users/{u.Id}");
+            if (detail is null)
+            {
+                Toast("Could not load that account.", true);
+                return;
+            }
+            _editUser = new AdminUserEditForm
+            {
+                Id = detail.Id,
+                Role = detail.Role,
+                FirstName = detail.FirstName,
+                MiddleName = detail.MiddleName ?? "",
+                LastName = detail.LastName,
+                Email = detail.Email,
+                PhoneNumber = detail.PhoneNumber,
+                Address = detail.Address,
+                Department = detail.Department,
+                UniversityId = detail.UniversityId?.ToString() ?? ""
+            };
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            await AuthService.LogoutAsync();
+            Nav.NavigateTo("/login?expired=1");
+        }
+        catch
+        {
+            Toast("Could not load that account. Please try again.", true);
+        }
+    }
+
+    private void CloseEditUser()
+    {
+        _editUser = null;
+        _editUserError = null;
+    }
+
+    private void OnEditKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseEditUser();
+    }
+
+    private async Task SaveUserAsync()
+    {
+        if (_editUser is null || _savingUser) return;
+        _editUserError = null;
+
+        if (string.IsNullOrWhiteSpace(_editUser.FirstName)
+            || string.IsNullOrWhiteSpace(_editUser.LastName)
+            || string.IsNullOrWhiteSpace(_editUser.Email)
+            || string.IsNullOrWhiteSpace(_editUser.PhoneNumber))
+        {
+            _editUserError = "First name, last name, email and phone number are required.";
+            return;
+        }
+
+        _savingUser = true;
+        try
+        {
+            int? universityId = int.TryParse(_editUser.UniversityId, out var uid) ? uid : null;
+            var response = await Http.PutAsJsonAsync($"/api/admin/users/{_editUser.Id}", new
+            {
+                firstName = _editUser.FirstName.Trim(),
+                middleName = string.IsNullOrWhiteSpace(_editUser.MiddleName) ? null : _editUser.MiddleName.Trim(),
+                lastName = _editUser.LastName.Trim(),
+                email = _editUser.Email.Trim(),
+                phoneNumber = _editUser.PhoneNumber.Trim(),
+                address = string.IsNullOrWhiteSpace(_editUser.Address) ? null : _editUser.Address.Trim(),
+                department = string.IsNullOrWhiteSpace(_editUser.Department) ? null : _editUser.Department.Trim(),
+                universityId
+            });
+
+            if (response.IsSuccessStatusCode)
+            {
+                Toast("Account details updated.");
+                CloseEditUser();
+                await LoadUsersAsync();
+            }
+            else if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+            else
+            {
+                var text = await response.Content.ReadAsStringAsync();
+                _editUserError = string.IsNullOrWhiteSpace(text)
+                    ? $"Could not update the account ({(int)response.StatusCode})."
+                    : text;
+            }
+        }
+        catch
+        {
+            _editUserError = "Could not update the account. Check your connection and try again.";
+        }
+        finally
+        {
+            _savingUser = false;
+        }
+    }
+
+    public class AdminUserEditForm
+    {
+        public int Id { get; set; }
+        public string Role { get; set; } = "";
+        public string FirstName { get; set; } = "";
+        public string MiddleName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string PhoneNumber { get; set; } = "";
+        public string Address { get; set; } = "";
+        public string Department { get; set; } = "";
+        public string UniversityId { get; set; } = "";
     }
 
     private void AskStatusChangeAsync(AdminUserDto u) => Ask(

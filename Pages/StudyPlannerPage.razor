@@ -1,4 +1,5 @@
 @page "/study-planner"
+@attribute [Authorize(Roles = "Student")]
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -19,9 +20,9 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     <div class="card-header">
         <h3>Weekly Study Plan</h3>
         <div class="planner-nav">
-            <button class="btn btn-sm" @onclick="PreviousWeek">&larr; Prev</button>
+            <button class="btn btn-sm" @onclick="PreviousWeek"><UiIcon Name="arrow-left" /> Prev</button>
             <span class="week-label">@(_planner?.WeekLabel ?? "Loading...")</span>
-            <button class="btn btn-sm" @onclick="NextWeek">Next &rarr;</button>
+            <button class="btn btn-sm" @onclick="NextWeek">Next <UiIcon Name="arrow-right" /></button>
         </div>
     </div>
 
@@ -50,11 +51,11 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                     <div class="day-status">
                         @if (item.IsDone)
                         {
-                            <span class="status-icon completed">&#10003;</span>
+                            <span class="status-icon completed"><UiIcon Name="check" /></span>
                         }
                         else
                         {
-                            <span class="status-icon">&#9675;</span>
+                            <span class="status-icon"><UiIcon Name="circle" /></span>
                         }
                     </div>
                 </div>

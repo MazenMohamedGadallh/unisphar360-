@@ -1,5 +1,6 @@
 @page "/courses"
 @page "/courses/{Id:int}"
+@attribute [Authorize(Roles = "Student")]
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -15,7 +16,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 {
     <!-- Course Detail View -->
     <div class="page-header">
-        <NavLink href="/courses" class="back-link">&larr; Back to Courses</NavLink>
+        <NavLink href="/courses" class="back-link"><UiIcon Name="arrow-left" /> Back to Courses</NavLink>
     </div>
 
     @if (_course is null)
@@ -29,8 +30,12 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                 <div>
                     <h2>@_course.Code - @_course.Title</h2>
                     <p class="course-meta">@_course.Track | @_course.Credits Credits</p>
+                    @if (!string.IsNullOrWhiteSpace(_course.Instructors))
+                    {
+                        <p class="course-meta">Instructor: @_course.Instructors</p>
+                    }
                 </div>
-                <button class="btn btn-primary" @onclick="Enroll">Enroll</button>
+                <button class="btn btn-primary" @onclick="Enroll"><UiIcon Name="plus" /> Enroll</button>
             </div>
             <div class="card-body">
                 <h4>Description</h4>
@@ -49,7 +54,7 @@ else
 
     <div class="search-section">
         <div class="search-box-large">
-            <span class="search-icon">&#128269;</span>
+            <span class="search-icon"><UiIcon Name="search" /></span>
             <input type="text" placeholder="Search courses..." @bind="_searchQuery" @bind:event="oninput" @onkeyup="HandleSearch" />
         </div>
     </div>
@@ -64,7 +69,7 @@ else
         }
         else if (!_courses.Any())
         {
-            <div class="empty-state">No courses found.</div>
+            <div class="empty-state"><div class="empty-icon"><UiIcon Name="book-open" /></div>No courses found.</div>
         }
         else
         {
@@ -78,9 +83,13 @@ else
                         </div>
                         <h4>@course.Title</h4>
                         <p>@course.Description</p>
+                        @if (!string.IsNullOrWhiteSpace(course.Instructors))
+                        {
+                            <p class="course-meta">Instructor: @course.Instructors</p>
+                        }
                         <div class="course-footer">
                             <span>@course.Credits credits</span>
-                            <span class="view-link">View &rarr;</span>
+                            <span class="view-link">View <UiIcon Name="arrow-right" /></span>
                         </div>
                     </div>
                 }
@@ -141,4 +150,4 @@ else
     }
 }
 
-public record CourseDto(int Id, string Code, string Title, string Description, string Track, int Credits);
+public record CourseDto(int Id, string Code, string Title, string Description, string Track, int Credits, string Instructors = "");

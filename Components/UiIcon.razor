@@ -1,0 +1,24 @@
+@namespace UniSphere.Api.Components
+
+<svg class="ui-icon @Class"
+     xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 24 24"
+     width="1em"
+     height="1em"
+     fill="none"
+     stroke="currentColor"
+     stroke-width="1.75"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     aria-hidden="true"
+     focusable="false">
+    @((MarkupString)UiIconPaths.Resolve(Name))
+</svg>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Name { get; set; } = "circle";
+
+    [Parameter]
+    public string? Class { get; set; }
+}

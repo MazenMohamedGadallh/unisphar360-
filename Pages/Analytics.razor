@@ -1,4 +1,5 @@
 @page "/analytics"
+@attribute [Authorize(Roles = "Student")]
 @*
 [Authorize(Roles = "Student,Graduate")] removed on purpose (see
 Dashboard.razor): the server challenges every F5 to /login because
@@ -154,7 +155,7 @@ else
                     <ul class="plain-list">
                         @foreach (var s in _analysis.Strengths)
                         {
-                            <li>&#9989; @s</li>
+                            <li><UiIcon Name="circle-check" Class="success" /> @s</li>
                         }
                     </ul>
                 }
@@ -168,7 +169,7 @@ else
                     <ul class="plain-list">
                         @foreach (var w in _analysis.Weaknesses)
                         {
-                            <li>&#9888;&#65039; @w</li>
+                            <li><UiIcon Name="triangle-alert" Class="warning" /> @w</li>
                         }
                     </ul>
                 }
@@ -186,7 +187,7 @@ else
                     <ul class="plain-list">
                         @foreach (var r in _analysis.Recommendations)
                         {
-                            <li>&#128161; @r</li>
+                            <li><UiIcon Name="lightbulb" Class="info" /> @r</li>
                         }
                     </ul>
                 }
@@ -242,9 +243,9 @@ else
             Nav.NavigateTo("/login", replace: true);
             return;
         }
-        if (user.Role is not ("Student" or "Graduate"))
+        if (user.Role != "Student")
         {
-            Nav.NavigateTo("/dashboard?denied=1", replace: true);
+            Nav.NavigateTo(UniSphere.Api.Services.RoleRoutes.HomeFor(user.Role), replace: true);
             return;
         }
         await LoadAsync();
