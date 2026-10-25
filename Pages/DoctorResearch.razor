@@ -39,7 +39,7 @@ else
                 aria-selected="@(_tab == "browse")" @onclick="@(() => SwitchTab("browse"))">Browse Research</button>
         @if (_tab == "mine")
         {
-            <button class="btn btn-primary btn-sm research-new" @onclick="OpenCreateModal">+ New paper</button>
+            <button class="btn btn-primary btn-sm research-new" @onclick="OpenCreateModal"><UiIcon Name="plus" /> New paper</button>
         }
     </div>
 
@@ -56,7 +56,7 @@ else
             {
                 <div class="empty-state">
                     <p>You haven't uploaded any research yet.</p>
-                    <button class="btn btn-primary btn-sm" @onclick="OpenCreateModal">Upload your first paper</button>
+                    <button class="btn btn-primary btn-sm" @onclick="OpenCreateModal"><UiIcon Name="upload" /> Upload your first paper</button>
                 </div>
             }
             else
@@ -143,7 +143,7 @@ else
             }
             else if (_browse is not null && _browse.Count == 0 && _browseTotal == 0)
             {
-                <div class="empty-state">No published research matches your filters yet.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="microscope" /></div>No published research matches your filters yet.</div>
             }
             else
             {
@@ -189,10 +189,10 @@ else
                     }
                     <div class="rh-pagination">
                         <button class="btn btn-sm btn-secondary" disabled="@(_browsePage <= 1)"
-                                @onclick="@(() => ChangePage(_browsePage - 1))">&larr; Previous</button>
+                                @onclick="@(() => ChangePage(_browsePage - 1))"><UiIcon Name="arrow-left" /> Previous</button>
                         <span>Page @_browsePage of @TotalPages &middot; @_browseTotal paper@(_browseTotal == 1 ? "" : "s")</span>
                         <button class="btn btn-sm btn-secondary" disabled="@(_browsePage >= TotalPages)"
-                                @onclick="@(() => ChangePage(_browsePage + 1))">Next &rarr;</button>
+                                @onclick="@(() => ChangePage(_browsePage + 1))">Next <UiIcon Name="arrow-right" /></button>
                     </div>
                 </div>
             }
@@ -206,7 +206,7 @@ else
             <div class="modal" @onclick:stopPropagation="true">
                 <div class="modal-header">
                     <h3>@(_editId is null ? "Upload a paper" : "Edit paper")</h3>
-                    <button class="modal-close" @onclick="CloseForm">&times;</button>
+                    <button class="modal-close" @onclick="CloseForm" aria-label="Close"><UiIcon Name="x" /></button>
                 </div>
                 <div class="modal-body upload-modal-body">
                     <div class="form-group">

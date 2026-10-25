@@ -395,7 +395,7 @@ public record RegisterPayload(
     string Role, string Password, string ConfirmPassword,
     int? AcademicYear, string? Department,
     string? Specialization, string? GraduatedFrom, int? GraduationYear,
-    int? UniversityId);
+    int? UniversityId, string? Address = null);
 
 public record RegisterResult(
     bool Succeeded, string? Token, AuthUserDto? User,

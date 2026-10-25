@@ -106,7 +106,7 @@ else if (_profile is not null)
                 <div class="card-header"><h3>Skills (@_profile.Skills.Count)</h3></div>
                 @if (_profile.Skills.Count == 0)
                 {
-                    <div class="empty-state">No skills added yet.</div>
+                    <div class="empty-state"><div class="empty-icon"><UiIcon Name="sparkles" /></div>No skills added yet.</div>
                 }
                 else
                 {
@@ -138,7 +138,7 @@ else if (_profile is not null)
                 <div class="card-header"><h3>Experience &amp; projects</h3></div>
                 @if (_profile.Entries.Count == 0)
                 {
-                    <div class="empty-state">No entries yet. Add your experience, projects, certifications or education.</div>
+                    <div class="empty-state"><div class="empty-icon"><UiIcon Name="file-text" /></div>No entries yet. Add your experience, projects, certifications or education.</div>
                 }
                 else
                 {

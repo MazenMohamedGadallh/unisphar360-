@@ -1,0 +1,19 @@
+@page "/graduate/cv-analysis"
+@attribute [Authorize(Roles = "Graduate")]
+
+<PageTitle>CV Analysis - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Graduate">
+    <div class="page-header">
+        <h1>CV Analysis</h1>
+        <p>Review your CV against the skills employers ask for.</p>
+    </div>
+
+    <div class="card">
+        <div class="empty-state">
+            <h3>No CV added yet</h3>
+            <p>CV upload and feedback will appear here. For now, you can ask the AI Assistant for general CV advice.</p>
+            <NavLink href="/chat" class="btn btn-primary">Ask AI Assistant</NavLink>
+        </div>
+    </div>
+</RoleGate>

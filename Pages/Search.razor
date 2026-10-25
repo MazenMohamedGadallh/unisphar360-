@@ -1,4 +1,5 @@
 @page "/search"
+@attribute [Authorize]
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -22,7 +23,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 
 <div class="search-section">
     <div class="search-box-large">
-        <span class="search-icon">&#128269;</span>
+        <span class="search-icon"><UiIcon Name="search" /></span>
         <input type="text" placeholder="Type to search..." @bind="_query" @bind:event="oninput" @bind:after="SearchChangedAsync" autofocus aria-label="Search" />
     </div>
 </div>
@@ -43,7 +44,7 @@ else if (!string.IsNullOrWhiteSpace(_query))
         }
         else if (_groups is null || !_groups.Any())
         {
-            <div class="empty-state">No results found for "@_query".</div>
+            <div class="empty-state"><div class="empty-icon"><UiIcon Name="search" /></div>No results found for "@_query".</div>
         }
         else
         {
@@ -54,7 +55,7 @@ else if (!string.IsNullOrWhiteSpace(_query))
                     @foreach (var result in group.Items)
                     {
                         <div class="search-result-item" @onclick="() => NavigateToResult(result)">
-                            <span class="result-type">@result.Icon @group.Type</span>
+                            <span class="result-type"><UiIcon Name="@result.Icon" /> @group.Type</span>
                             <div class="result-info">
                                 <h4>@Highlight(result.Title)</h4>
                                 <p>@result.Subtitle</p>

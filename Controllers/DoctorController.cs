@@ -5,6 +5,7 @@ using UniSphere.Api.Data;
 using UniSphere.Api.Dtos;
 using UniSphere.Api.Models;
 using UniSphere.Api.Services;
+using UniSphere.Api.Validators;
 
 namespace UniSphere.Api.Controllers;
 
@@ -30,15 +31,18 @@ public class DoctorController : ControllerBase
     private readonly DoctorAccessService _access;
     private readonly DoctorService _doctor;
     private readonly IWebHostEnvironment _env;
+    private readonly CourseMaterialFileStorage _materialFiles;
     private readonly FluentValidation.IValidator<UpdateDoctorProfileRequest> _profileValidator;
 
     public DoctorController(AppDbContext db, DoctorAccessService access, DoctorService doctor, IWebHostEnvironment env,
+        CourseMaterialFileStorage materialFiles,
         FluentValidation.IValidator<UpdateDoctorProfileRequest> profileValidator)
     {
         _db = db;
         _access = access;
         _doctor = doctor;
         _env = env;
+        _materialFiles = materialFiles;
         _profileValidator = profileValidator;
     }
 
@@ -52,6 +56,17 @@ public class DoctorController : ControllerBase
         if (result.IsUnauthenticated) return (null, Unauthorized());
         if (result.IsNotFound) return (null, NotFound());
         if (!result.IsAllowed) return (null, Forbid());
+        return (result.User, null);
+    }
+
+    /// <summary>Material writes are intentionally stricter than reads: a
+    /// course the caller is not assigned to is reported as 404 (not 403) so
+    /// foreign and unassigned course ids are indistinguishable.</summary>
+    private async Task<(User? User, ActionResult? Failure)> AuthorizeMaterialWriteAsync(int courseId)
+    {
+        var result = await _access.AuthorizeCourseAsync(MeId, courseId);
+        if (result.IsUnauthenticated) return (null, Unauthorized());
+        if (!result.IsAllowed) return (null, NotFound());
         return (result.User, null);
     }
 
@@ -79,8 +94,10 @@ public class DoctorController : ControllerBase
 
         return new DoctorProfileDto(
             me.Id, me.FirstName, me.MiddleName, me.LastName,
+            me.FullName, me.UniversityId,
             me.Email, me.Address, me.PhoneNumber,
             universityName, me.Department,
+            me.Specialization,
             me.AvatarUrl,
             courses);
     }
@@ -143,8 +160,10 @@ public class DoctorController : ControllerBase
         }
         return Ok(new DoctorProfileDto(
             me.Id, me.FirstName, me.MiddleName, me.LastName,
+            me.FullName, me.UniversityId,
             me.Email, me.Address, me.PhoneNumber,
             universityName, me.Department,
+            me.Specialization,
             me.AvatarUrl,
             courses));
     }
@@ -235,13 +254,21 @@ public class DoctorController : ControllerBase
         var me = await _access.GetUserAsync(MeId);
         if (me is null || me.IsDeleted) return Unauthorized();
 
+        // The doctor may be linked through either assignment table. Update
+        // every existing row for this doctor+course so both the legacy and
+        // doctor-module views stay in sync.
         var assignment = await _db.CourseAssignments
             .FirstOrDefaultAsync(a => a.DoctorUserId == me.Id && a.CourseId == courseId);
-        if (assignment is null) return NotFound(); // not his course (or unknown course)
+        var legacyRows = await _db.CourseInstructors
+            .Where(ci => ci.DoctorUserId == me.Id && ci.CourseId == courseId)
+            .ToListAsync();
+        if (assignment is null && legacyRows.Count == 0) return NotFound(); // not his course (or unknown course)
 
-        assignment.DisplayTitle = string.IsNullOrWhiteSpace(req!.DisplayTitle)
+        var displayTitle = string.IsNullOrWhiteSpace(req!.DisplayTitle)
             ? null // cleared: students fall back to the catalog title
             : req.DisplayTitle.Trim();
+        if (assignment is not null) assignment.DisplayTitle = displayTitle;
+        foreach (var row in legacyRows) row.DisplayTitle = displayTitle;
         await _db.SaveChangesAsync();
 
         var course = await _db.Courses.AsNoTracking()
@@ -251,26 +278,47 @@ public class DoctorController : ControllerBase
 
         var enrolledCount = await CountEnrolledAsync(me, courseId);
         return Ok(new DoctorProfileCourseDto(
-            courseId, course.Code, course.Title, assignment.DisplayTitle, course.Semester, enrolledCount));
+            courseId, course.Code, course.Title, displayTitle, course.Semester, enrolledCount));
     }
 
     /// <summary>Course rows used by both the profile and my-courses endpoints.
-    /// Enrolled counts are computed on the server with AsNoTracking.</summary>
+    /// Assignments are read from both the legacy CourseInstructors rows and
+    /// the doctor-module CourseAssignments rows; enrolled counts are computed
+    /// on the server with AsNoTracking.</summary>
     private async Task<List<DoctorProfileCourseDto>> GetMyCourseRowsAsync(User me)
     {
-        var assignments = await _db.CourseAssignments.AsNoTracking()
-            .Where(a => a.DoctorUserId == me.Id)
-            .Join(_db.Courses.AsNoTracking(), a => a.CourseId, c => c.Id,
-                (a, c) => new { a.CourseId, a.DisplayTitle, c.Code, CatalogTitle = c.Title, c.Semester })
-            .OrderBy(x => x.Code)
+        var courseIds = await _access.GetAssignedCourseIdsAsync(me.Id);
+        if (courseIds.Count == 0) return new List<DoctorProfileCourseDto>();
+
+        var courses = await _db.Courses.AsNoTracking()
+            .Where(c => courseIds.Contains(c.Id))
+            .OrderBy(c => c.Code)
+            .Select(c => new { c.Id, c.Code, c.Title, c.Semester })
             .ToListAsync();
 
-        var courseIds = assignments.Select(x => x.CourseId).ToList();
+        var moduleRows = await _db.CourseAssignments.AsNoTracking()
+            .Where(a => a.DoctorUserId == me.Id && courseIds.Contains(a.CourseId))
+            .OrderByDescending(a => a.AssignedAtUtc)
+            .Select(a => new { a.CourseId, a.DisplayTitle })
+            .ToListAsync();
+        var legacyRows = await _db.CourseInstructors.AsNoTracking()
+            .Where(ci => ci.DoctorUserId == me.Id && courseIds.Contains(ci.CourseId))
+            .OrderBy(ci => ci.Id)
+            .Select(ci => new { ci.CourseId, ci.DisplayTitle })
+            .ToListAsync();
+
+        // Doctor-module titles take precedence over legacy per-term ones.
+        var titles = new Dictionary<int, string?>();
+        foreach (var row in legacyRows)
+            if (!string.IsNullOrWhiteSpace(row.DisplayTitle)) titles.TryAdd(row.CourseId, row.DisplayTitle.Trim());
+        foreach (var row in moduleRows)
+            if (!string.IsNullOrWhiteSpace(row.DisplayTitle)) titles[row.CourseId] = row.DisplayTitle.Trim();
+
         var counts = await CountEnrolledAsync(me, courseIds);
 
-        return assignments.Select(x => new DoctorProfileCourseDto(
-            x.CourseId, x.Code, x.CatalogTitle, x.DisplayTitle, x.Semester,
-            counts.TryGetValue(x.CourseId, out var n) ? n : 0)).ToList();
+        return courses.Select(x => new DoctorProfileCourseDto(
+            x.Id, x.Code, x.Title, titles.GetValueOrDefault(x.Id), x.Semester,
+            counts.TryGetValue(x.Id, out var n) ? n : 0)).ToList();
     }
 
     /// <summary>Counts enrollments per course among non-deleted students of
@@ -335,10 +383,70 @@ public class DoctorController : ControllerBase
         return await _doctor.GetDashboardAsync(me);
     }
 
+    /// <summary>GET /api/doctor/summary — compact workspace counters used by
+    /// the legacy Doctor Home page. Course ids come from both assignment
+    /// tables; student counts and content are always real database rows.</summary>
+    [HttpGet("summary")]
+    public async Task<ActionResult<DoctorSummaryDto>> Summary()
+    {
+        var me = await _access.GetUserAsync(MeId);
+        if (me is null || me.IsDeleted) return Unauthorized();
+
+        var courseIds = await _access.GetAssignedCourseIdsAsync(me.Id);
+
+        var materials = courseIds.Count == 0
+            ? new List<CourseMaterial>()
+            : await _db.CourseMaterials.AsNoTracking()
+                .Where(m => courseIds.Contains(m.CourseId))
+                .OrderByDescending(m => m.CreatedAtUtc)
+                .ToListAsync();
+
+        var announcements = courseIds.Count == 0
+            ? new List<DoctorAnnouncementDto>()
+            : await _db.Announcements.AsNoTracking()
+                .Where(a => a.CourseId != null && courseIds.Contains(a.CourseId.Value))
+                .OrderByDescending(a => a.CreatedAtUtc)
+                .Select(a => new DoctorAnnouncementDto(
+                    a.Id, a.CourseId, a.Course != null ? a.Course.Title : null,
+                    a.Title, a.Body, a.Category, a.CreatedAtUtc,
+                    a.CreatedByUserId == me.Id))
+                .ToListAsync();
+
+        var studentsCount = courseIds.Count == 0
+            ? 0
+            : await _db.Enrollments.AsNoTracking()
+                .Where(e => courseIds.Contains(e.CourseId))
+                .Select(e => e.UserId)
+                .Distinct()
+                .CountAsync();
+
+        var now = DateTime.UtcNow;
+        var latest = materials.Take(5).ToList();
+        var upcoming = materials
+            .Where(m => (m.Type == "Exam" || m.Type == "Assignment")
+                && (!m.DeadlineUtc.HasValue || m.DeadlineUtc.Value >= now))
+            .OrderBy(m => m.DeadlineUtc ?? m.CreatedAtUtc)
+            .Take(5)
+            .ToList();
+
+        var combined = latest.Concat(upcoming).DistinctBy(m => m.Id).ToList();
+        var materialDtos = (await ToMaterialDtosAsync(combined)).ToDictionary(m => m.Id);
+
+        return new DoctorSummaryDto(
+            courseIds.Count,
+            studentsCount,
+            materials.Count,
+            announcements.Count,
+            latest.Select(m => materialDtos[m.Id]).ToList(),
+            announcements.Take(5).ToList(),
+            announcements.Where(a => a.IsMine).Take(5).ToList(),
+            upcoming.Select(m => materialDtos[m.Id]).ToList());
+    }
+
     // ---- Courses ----
 
     [HttpGet("courses")]
-    public async Task<ActionResult<IReadOnlyList<DoctorCourseSummaryDto>>> Courses()
+    public async Task<ActionResult<IReadOnlyList<DoctorCourseDto>>> Courses()
     {
         var me = await _access.GetUserAsync(MeId);
         if (me is null || me.IsDeleted) return Unauthorized();
@@ -352,17 +460,44 @@ public class DoctorController : ControllerBase
         var enrollments = await _db.Enrollments.AsNoTracking()
             .Where(e => courseIds.Contains(e.CourseId))
             .ToListAsync();
+        var materialCounts = await _db.CourseMaterials.AsNoTracking()
+            .Where(m => courseIds.Contains(m.CourseId))
+            .GroupBy(m => m.CourseId)
+            .Select(g => new { CourseId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.CourseId, x => x.Count);
 
-        var list = courses.Select(c =>
-        {
-            var rows = enrollments.Where(e => e.CourseId == c.Id).ToList();
-            var graded = rows.Where(e => !string.IsNullOrWhiteSpace(e.GradeLetter)).ToList();
-            return new DoctorCourseSummaryDto(
-                c.Id, c.Code, c.Title, c.Track, c.Credits, c.Semester,
-                rows.Select(e => e.UserId).Distinct().Count(),
-                graded.Count == 0 ? null : Math.Round(graded.Average(e => e.GradePoints), 2),
-                rows.Count == 0 ? null : Math.Round(rows.Average(e => (double)e.AttendancePercent), 1));
-        }).ToList();
+        var moduleRows = await _db.CourseAssignments.AsNoTracking()
+            .Where(a => a.DoctorUserId == me.Id && courseIds.Contains(a.CourseId))
+            .OrderByDescending(a => a.AssignedAtUtc)
+            .Select(a => new { a.CourseId, a.DisplayTitle })
+            .ToListAsync();
+        var legacyRows = await _db.CourseInstructors.AsNoTracking()
+            .Where(ci => ci.DoctorUserId == me.Id && courseIds.Contains(ci.CourseId))
+            .OrderBy(ci => ci.Id)
+            .Select(ci => new { ci.CourseId, ci.DisplayTitle, ci.Term })
+            .ToListAsync();
+
+        var titles = new Dictionary<int, string?>();
+        foreach (var row in legacyRows)
+            if (!string.IsNullOrWhiteSpace(row.DisplayTitle)) titles.TryAdd(row.CourseId, row.DisplayTitle.Trim());
+        foreach (var row in moduleRows)
+            if (!string.IsNullOrWhiteSpace(row.DisplayTitle)) titles[row.CourseId] = row.DisplayTitle.Trim();
+
+        var terms = legacyRows
+            .GroupBy(r => r.CourseId)
+            .ToDictionary(
+                g => g.Key,
+                g => string.Join(", ", g.Select(r => r.Term)
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)));
+
+        var list = courses.Select(c => new DoctorCourseDto(
+            c.Id, c.Code, c.Title, c.Department, c.AcademicYear, c.Semester, c.Credits,
+            c.Prerequisites,
+            enrollments.Where(e => e.CourseId == c.Id).Select(e => e.UserId).Distinct().Count(),
+            materialCounts.GetValueOrDefault(c.Id),
+            terms.GetValueOrDefault(c.Id, ""),
+            titles.GetValueOrDefault(c.Id))).ToList();
 
         return list;
     }
@@ -402,8 +537,93 @@ public class DoctorController : ControllerBase
 
     // ---- Materials ----
 
+    /// <summary>Legacy list used by /doctor/materials: all materials of the
+    /// caller's assigned courses, with the same filters and paging as the
+    /// student view. A courseId that is not assigned returns 404.</summary>
+    [HttpGet("materials")]
+    public async Task<ActionResult<PagedResultDto<MaterialDto>>> MyMaterials(
+        [FromQuery] int? courseId = null,
+        [FromQuery] string? type = null,
+        [FromQuery] string? search = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var me = await _access.GetUserAsync(MeId);
+        if (me is null || me.IsDeleted) return Unauthorized();
+
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var courseIds = await _access.GetAssignedCourseIdsAsync(me.Id);
+        if (courseId.HasValue && !courseIds.Contains(courseId.Value))
+            return NotFound();
+
+        if (!string.IsNullOrWhiteSpace(type)
+            && !DoctorMaterialValidator.AllowedTypes.Contains(type.Trim(), StringComparer.OrdinalIgnoreCase))
+            return BadRequest("Type must be Summary, Lecture, Assignment, Exam or Announcement.");
+
+        var query = _db.CourseMaterials.AsNoTracking()
+            .Where(m => courseIds.Contains(m.CourseId));
+
+        if (courseId.HasValue) query = query.Where(m => m.CourseId == courseId.Value);
+        if (!string.IsNullOrWhiteSpace(type)) query = query.Where(m => m.Type == type.Trim());
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(m => m.Title.ToLower().Contains(s) || m.Description.ToLower().Contains(s));
+        }
+
+        var total = await query.CountAsync();
+        var items = await query.OrderByDescending(m => m.CreatedAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var dtos = await ToMaterialDtosAsync(items);
+        return new PagedResultDto<MaterialDto>(dtos, total, page, pageSize);
+    }
+
+    /// <summary>Legacy create used by /doctor/materials. The course id is in
+    /// the body; ownership is re-checked server-side and unassigned courses
+    /// return 404.</summary>
+    [HttpPost("materials")]
+    public async Task<ActionResult<MaterialDto>> CreateMaterialForCourse(
+        [FromBody] CreateDoctorMaterialRequest req,
+        [FromServices] FluentValidation.IValidator<CreateDoctorMaterialRequest> validator)
+    {
+        var validation = await validator.ValidateAsync(req);
+        if (!validation.IsValid)
+            return BadRequest(new ValidationProblemDetails(validation.ToDictionary())
+            {
+                Title = "One or more validation errors occurred.",
+                Status = StatusCodes.Status400BadRequest
+            });
+
+        if (req.CourseId <= 0) return BadRequest("CourseId is required.");
+
+        var (me, failure) = await AuthorizeMaterialWriteAsync(req.CourseId);
+        if (failure is not null) return failure;
+
+        var material = new CourseMaterial
+        {
+            CourseId = req.CourseId,
+            Title = req.Title.Trim(),
+            Type = req.Type.Trim(),
+            Description = req.Description?.Trim() ?? "",
+            Content = req.Content?.Trim() ?? "",
+            FileUrl = string.IsNullOrWhiteSpace(req.FileUrl) ? null : req.FileUrl.Trim(),
+            DeadlineUtc = req.DeadlineUtc,
+            UploadedByUserId = me!.Id
+        };
+        _db.CourseMaterials.Add(material);
+        await _db.SaveChangesAsync();
+
+        var dto = (await ToMaterialDtosAsync(new[] { material })).Single();
+        return StatusCode(StatusCodes.Status201Created, dto);
+    }
+
     [HttpGet("courses/{courseId:int}/materials")]
-    public async Task<ActionResult<IReadOnlyList<DoctorMaterialDto>>> Materials(int courseId)
+    public async Task<ActionResult<IReadOnlyList<DoctorMaterialDto>>> CourseMaterials(int courseId)
     {
         var (_, failure) = await AuthorizeAsync(courseId);
         if (failure is not null) return failure;
@@ -428,7 +648,7 @@ public class DoctorController : ControllerBase
                 Status = StatusCodes.Status400BadRequest
             });
 
-        var (me, failure) = await AuthorizeAsync(courseId);
+        var (me, failure) = await AuthorizeMaterialWriteAsync(courseId);
         if (failure is not null) return failure;
 
         var material = new CourseMaterial
@@ -444,7 +664,7 @@ public class DoctorController : ControllerBase
         };
         _db.CourseMaterials.Add(material);
         await _db.SaveChangesAsync();
-        return CreatedAtAction(nameof(Materials), new { courseId }, ToDto(material));
+        return CreatedAtAction(nameof(CourseMaterials), new { courseId }, ToDto(material));
     }
 
     [HttpPut("materials/{materialId:int}")]
@@ -464,7 +684,7 @@ public class DoctorController : ControllerBase
         if (material is null) return NotFound();
 
         // Ownership: the material must belong to a course the caller teaches.
-        var (me, failure) = await AuthorizeAsync(material.CourseId);
+        var (me, failure) = await AuthorizeMaterialWriteAsync(material.CourseId);
         if (failure is not null) return failure;
 
         material.Title = req.Title.Trim();
@@ -483,11 +703,85 @@ public class DoctorController : ControllerBase
         var material = await _db.CourseMaterials.FirstOrDefaultAsync(m => m.Id == materialId);
         if (material is null) return NotFound();
 
-        var (_, failure) = await AuthorizeAsync(material.CourseId);
+        var (_, failure) = await AuthorizeMaterialWriteAsync(material.CourseId);
         if (failure is not null) return failure;
 
+        var storedFileName = material.StoredFileName;
         _db.CourseMaterials.Remove(material);
         await _db.SaveChangesAsync();
+        _materialFiles.Delete(storedFileName);
+        return NoContent();
+    }
+
+    /// <summary>POST /api/doctor/materials/{id}/file — attach or replace the
+    /// secure PDF/Word/PowerPoint file for one material. The material's course
+    /// is re-authorized server-side; foreign or unassigned courses are 404.
+    /// The old file is removed only after the new row state is saved.</summary>
+    [HttpPost("materials/{materialId:int}/file")]
+    [RequestSizeLimit(CourseMaterialFileStorage.TransportMaxBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = CourseMaterialFileStorage.TransportMaxBytes)]
+    public async Task<ActionResult<DoctorMaterialDto>> UploadMaterialFile(
+        int materialId, IFormFile file)
+    {
+        var material = await _db.CourseMaterials.FirstOrDefaultAsync(m => m.Id == materialId);
+        if (material is null) return NotFound();
+
+        var (_, failure) = await AuthorizeMaterialWriteAsync(material.CourseId);
+        if (failure is not null) return failure;
+
+        if (file is null)
+            return BadRequest("Choose a PDF, Word or PowerPoint file to upload.");
+
+        StoredMaterialFile stored;
+        try
+        {
+            stored = await _materialFiles.SaveAsync(file, HttpContext.RequestAborted);
+        }
+        catch (MaterialFileException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+
+        var oldStoredFileName = material.StoredFileName;
+        material.StoredFileName = stored.StoredFileName;
+        material.OriginalFileName = stored.OriginalFileName;
+        material.FileSizeBytes = stored.SizeBytes;
+        material.FileContentType = stored.ContentType;
+
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch
+        {
+            _materialFiles.Delete(stored.StoredFileName);
+            throw;
+        }
+
+        _materialFiles.Delete(oldStoredFileName);
+        return Ok(ToDto(material));
+    }
+
+    /// <summary>DELETE /api/doctor/materials/{id}/file — removes the attachment
+    /// from the material and deletes the stored file. Same course ownership
+    /// rule as every other material write.</summary>
+    [HttpDelete("materials/{materialId:int}/file")]
+    public async Task<IActionResult> DeleteMaterialFile(int materialId)
+    {
+        var material = await _db.CourseMaterials.FirstOrDefaultAsync(m => m.Id == materialId);
+        if (material is null) return NotFound();
+
+        var (_, failure) = await AuthorizeMaterialWriteAsync(material.CourseId);
+        if (failure is not null) return failure;
+
+        var storedFileName = material.StoredFileName;
+        material.StoredFileName = null;
+        material.OriginalFileName = null;
+        material.FileSizeBytes = null;
+        material.FileContentType = null;
+        await _db.SaveChangesAsync();
+
+        _materialFiles.Delete(storedFileName);
         return NoContent();
     }
 
@@ -530,7 +824,7 @@ public class DoctorController : ControllerBase
     [HttpGet("courses/{courseId:int}/announcements")]
     public async Task<ActionResult<IReadOnlyList<DoctorAnnouncementDto>>> Announcements(int courseId)
     {
-        var (_, failure) = await AuthorizeAsync(courseId);
+        var (me, failure) = await AuthorizeAsync(courseId);
         if (failure is not null) return failure;
 
         return await _db.Announcements.AsNoTracking()
@@ -539,7 +833,8 @@ public class DoctorController : ControllerBase
             .OrderByDescending(a => a.CreatedAtUtc)
             .Select(a => new DoctorAnnouncementDto(
                 a.Id, a.CourseId, a.Course != null ? a.Course.Title : null,
-                a.Title, a.Body, a.Category, a.CreatedAtUtc))
+                a.Title, a.Body, a.Category, a.CreatedAtUtc,
+                a.CreatedByUserId == me!.Id))
             .ToListAsync();
     }
 
@@ -573,7 +868,8 @@ public class DoctorController : ControllerBase
 
         return CreatedAtAction(nameof(Announcements), new { courseId },
             new DoctorAnnouncementDto(announcement.Id, courseId, course?.Title,
-                announcement.Title, announcement.Body, announcement.Category, announcement.CreatedAtUtc));
+                announcement.Title, announcement.Body, announcement.Category, announcement.CreatedAtUtc,
+                IsMine: true));
     }
 
     [HttpPut("announcements/{announcementId:int}")]
@@ -606,7 +902,8 @@ public class DoctorController : ControllerBase
             .Where(c => c.Id == announcement.CourseId)
             .Select(c => c.Title).FirstOrDefaultAsync();
         return new DoctorAnnouncementDto(announcement.Id, announcement.CourseId, courseName,
-            announcement.Title, announcement.Body, announcement.Category, announcement.CreatedAtUtc);
+            announcement.Title, announcement.Body, announcement.Category, announcement.CreatedAtUtc,
+            IsMine: true);
     }
 
     [HttpDelete("announcements/{announcementId:int}")]
@@ -666,5 +963,34 @@ public class DoctorController : ControllerBase
     };
 
     private static DoctorMaterialDto ToDto(CourseMaterial m) =>
-        new(m.Id, m.CourseId, m.Title, m.Type, m.Description, m.Content, m.FileUrl, m.DeadlineUtc, m.CreatedAtUtc);
+        new(m.Id, m.CourseId, m.Title, m.Type, m.Description, m.Content, m.FileUrl, m.DeadlineUtc,
+            m.CreatedAtUtc,
+            !string.IsNullOrWhiteSpace(m.StoredFileName),
+            m.OriginalFileName,
+            m.FileSizeBytes);
+
+    /// <summary>Student-facing material rows always carry the course display
+    /// title and the instructor name(s), resolved server-side from the same
+    /// assignment tables that authorize course access.</summary>
+    private async Task<List<MaterialDto>> ToMaterialDtosAsync(IReadOnlyCollection<CourseMaterial> materials)
+    {
+        if (materials.Count == 0) return new List<MaterialDto>();
+
+        var courseIds = materials.Select(m => m.CourseId).Distinct().ToList();
+        var displayTitles = await InstructorDirectory.DisplayTitlesByCourseAsync(_db, courseIds);
+        var instructors = await InstructorDirectory.NamesByCourseAsync(_db, courseIds);
+        var catalogTitles = await _db.Courses.AsNoTracking()
+            .Where(c => courseIds.Contains(c.Id))
+            .Select(c => new { c.Id, c.Title })
+            .ToDictionaryAsync(c => c.Id, c => c.Title);
+
+        return materials.Select(m => new MaterialDto(
+            m.Id, m.CourseId,
+            displayTitles.GetValueOrDefault(m.CourseId, catalogTitles.GetValueOrDefault(m.CourseId, "")),
+            m.Title, m.Type, m.Description, m.Content, m.FileUrl, m.CreatedAtUtc,
+            instructors.GetValueOrDefault(m.CourseId, ""),
+            !string.IsNullOrWhiteSpace(m.StoredFileName),
+            m.OriginalFileName,
+            m.FileSizeBytes)).ToList();
+    }
 }

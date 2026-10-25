@@ -1,0 +1,51 @@
+@page "/legacy/graduate"
+@attribute [Authorize(Roles = "Graduate")]
+
+<PageTitle>Graduate Home - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Graduate">
+    <div class="page-header">
+        <h1>Graduate Hub</h1>
+        <p>Your next step after graduation: CV feedback, job matches, research and events.</p>
+    </div>
+
+    <div class="summary-cards">
+        <NavLink href="/graduate/cv-analysis" class="card module-card">
+            <span class="module-icon"><UiIcon Name="file-text" /></span>
+            <div class="card-info">
+                <span class="card-label">CV Analysis</span>
+                <span class="card-value card-value-small">Improve your CV</span>
+            </div>
+        </NavLink>
+        <NavLink href="/graduate/jobs" class="card module-card">
+            <span class="module-icon"><UiIcon Name="briefcase" /></span>
+            <div class="card-info">
+                <span class="card-label">Job Matches</span>
+                <span class="card-value card-value-small">Find your next role</span>
+            </div>
+        </NavLink>
+        <NavLink href="/graduate/events" class="card module-card">
+            <span class="module-icon"><UiIcon Name="party-popper" /></span>
+            <div class="card-info">
+                <span class="card-label">Graduated Events</span>
+                <span class="card-value card-value-small">Stay connected</span>
+            </div>
+        </NavLink>
+        <NavLink href="/research-hub" class="card module-card">
+            <span class="module-icon"><UiIcon Name="search" /></span>
+            <div class="card-info">
+                <span class="card-label">Research Hub</span>
+                <span class="card-value card-value-small">Explore papers</span>
+            </div>
+        </NavLink>
+    </div>
+
+    <div class="card" style="margin-top: 24px;">
+        <div class="card-header"><h3>Graduate experience</h3></div>
+        <div class="empty-state">
+            <div class="empty-icon"><UiIcon Name="graduation-cap" /></div>
+            <p>You are in the graduate workspace. Courses, prerequisites, grades and study plans are intentionally not part of this experience.</p>
+            <p>Use <NavLink href="/chat">AI Assistant</NavLink> for career or research guidance.</p>
+        </div>
+    </div>
+</RoleGate>

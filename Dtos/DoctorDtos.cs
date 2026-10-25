@@ -9,8 +9,14 @@ namespace UniSphere.Api.Dtos;
 public record DoctorProfileDto(
     int Id,
     string FirstName, string? MiddleName, string LastName,
+    // Additive fields kept for this project's Phase-1 pages/tests (the legacy
+    // Blazor profile page binds FullName; UniversityId/Specialization let the
+    // client render its own university links without new server round-trips).
+    string FullName,
+    int? UniversityId,
     string Email, string? Address, string PhoneNumber,
     string? UniversityName, string Department,
+    string? Specialization,
     string? AvatarUrl,
     IReadOnlyList<DoctorProfileCourseDto> Courses);
 
@@ -56,7 +62,10 @@ public record DoctorCourseDetailDto(
 public record DoctorStudentDto(
     int EnrollmentId, int StudentId, string FullName, string Email,
     string Department, int? AcademicYear,
-    string GradeLetter, double GradePoints, int AttendancePercent, string Status);
+    string GradeLetter, double GradePoints, int AttendancePercent, string Status,
+    /// <summary>Additive (this project's legacy page binds it): the student's
+    /// major, resolved server-side from the user row.</summary>
+    string Major = "");
 
 // ---- Doctor course analytics (/api/doctor/courses/{id}/analytics)
 
@@ -79,11 +88,20 @@ public record DoctorCourseAnalyticsDto(
 
 public record DoctorMaterialDto(
     int Id, int CourseId, string Title, string Type, string Description,
-    string Content, string? FileUrl, DateTime? DeadlineUtc, DateTime CreatedAtUtc);
+    string Content, string? FileUrl, DateTime? DeadlineUtc, DateTime CreatedAtUtc,
+    bool HasUploadedFile = false,
+    string? UploadedFileName = null,
+    long? UploadedFileSizeBytes = null);
 
 public record CreateDoctorMaterialRequest(
     string Title, string Type, string? Description, string? Content,
-    string? FileUrl, DateTime? DeadlineUtc);
+    string? FileUrl, DateTime? DeadlineUtc)
+{
+    /// <summary>Used only by the legacy top-level POST /api/doctor/materials
+    /// page flow. Course-scoped routes take the course id from the URL and
+    /// ignore this value.</summary>
+    public int CourseId { get; init; }
+}
 
 public record UpdateDoctorMaterialRequest(
     string Title, string Type, string? Description, string? Content,
@@ -95,7 +113,10 @@ public record MaterialUploadResultDto(string FileUrl, string FileName, long Size
 
 public record DoctorAnnouncementDto(
     int Id, int? CourseId, string? CourseName, string Title, string Body,
-    string? Category, DateTime CreatedAtUtc);
+    string? Category, DateTime CreatedAtUtc,
+    /// <summary>Additive (this project's legacy page binds it): true when the
+    /// announcement was authored by the doctor reading it.</summary>
+    bool IsMine = false);
 
 public record CreateCourseAnnouncementRequest(string Title, string Body, string? Category);
 

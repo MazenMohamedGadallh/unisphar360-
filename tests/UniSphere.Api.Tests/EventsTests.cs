@@ -1,9 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
+using UniSphere.Api.Dtos;
 using Xunit;
 
 namespace UniSphere.Api.Tests;
 
+/// <summary>Events follow the university-isolation contract: GETs require
+/// authentication and return only the caller's university's events; admins
+/// must supply an existing UniversityId when creating.</summary>
 public class EventsTests : IClassFixture<ApiFactory>
 {
     private readonly ApiFactory _factory;
@@ -11,22 +15,29 @@ public class EventsTests : IClassFixture<ApiFactory>
     public EventsTests(ApiFactory factory) => _factory = factory;
 
     [Fact]
-    public async Task GetAll_UpcomingOnly_HidesNothingSeeded()
+    public async Task GetAll_Upcoming_ShowsOwnUniversityOnly()
     {
-        var response = await _factory.CreateClient().GetAsync("/api/events?upcoming=true");
+        // The feature contract: anonymous callers are challenged.
+        var anonymous = await _factory.CreateClient().GetAsync("/api/events?upcoming=true");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
 
+        var response = await _factory.StudentClient.GetAsync("/api/events?upcoming=true");
         response.EnsureSuccessStatusCode();
         var events = await response.Content.ReadFromJsonAsync<List<Event>>();
         Assert.NotNull(events);
-        Assert.Equal(4, events!.Count); // AI Workshop, Tech Club, Career Fair, Graduation Ceremony
+        // El Shorouk sees its 3 upcoming events plus the campus-wide
+        // graduation ceremony (UniversityId == null is global); the Helwan
+        // one must not leak.
+        Assert.Equal(4, events!.Count);
         Assert.Contains(events, e => e.Title == "Graduation Ceremony 2026");
         Assert.All(events, e => Assert.True(e.StartsAtUtc >= DateTime.UtcNow.AddMinutes(-1)));
+        Assert.DoesNotContain(events, e => e.Title == "Helwan Tech Day");
     }
 
     [Fact]
-    public async Task GetById_ReturnsEvent()
+    public async Task GetById_ReturnsOwnUniversityEvent()
     {
-        var response = await _factory.CreateClient().GetAsync("/api/events/1");
+        var response = await _factory.StudentClient.GetAsync("/api/events/1");
 
         response.EnsureSuccessStatusCode();
         var e = await response.Content.ReadFromJsonAsync<Event>();
@@ -36,7 +47,7 @@ public class EventsTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task GetById_Missing_NotFound()
     {
-        var response = await _factory.CreateClient().GetAsync("/api/events/9999");
+        var response = await _factory.StudentClient.GetAsync("/api/events/9999");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -45,13 +56,19 @@ public class EventsTests : IClassFixture<ApiFactory>
     public async Task Admin_CanCreateUpdateDelete()
     {
         var admin = _factory.AdminClient;
+        var universities = await _factory.CreateClient()
+            .GetFromJsonAsync<List<UniversityDto>>("/api/auth/universities");
+        Assert.NotNull(universities);
+        var universityId = universities!.Single(u => u.Name == "El Shorouk Academy").Id;
+
         var newEvent = new
         {
             title = "Test Symposium",
             location = "Main Hall",
             startsAtUtc = "2026-12-01T09:00:00Z",
             imageUrl = (string?)null,
-            description = "Created by tests"
+            description = "Created by tests",
+            universityId
         };
 
         var created = await admin.PostAsJsonAsync("/api/events", newEvent);

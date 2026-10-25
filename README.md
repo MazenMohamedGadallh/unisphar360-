@@ -289,6 +289,71 @@ The Graduate account ships with a career-starter bundle: profile + skills, 12 la
 - iOS simulator / Flutter web / desktop: `http://localhost:5080`
 - Real phone: `http://<your-PC-LAN-IP>:5080` (same Wi-Fi, allow port 5080 in the firewall)
 
+## RAG Integration (Student + Doctor Exam only)
+
+The existing RAG project lives in `rag-chatbot/rag-chatbot`. Its Streamlit UI is
+unchanged; `api.py` adds a local FastAPI transport around the existing
+LangChain/Chroma/HuggingFace/Groq stack.
+
+The .NET server uses it only in these two places:
+
+- **Student AI Assistant** (`/chat`, role `Student`): the RAG provider is listed
+  first; when it is selected, the server sends the student's authorised course
+  materials to `/query` and streams the grounded answer plus source references
+  through the existing chat UI. Selecting another provider keeps the existing
+  provider behaviour.
+- **Doctor Exam Assistant** (`/api/doctor/exam-assistant/generate`): the server
+  sends only the doctor-selected, authorised materials to `/retrieve`, adds the
+  retrieved context to the existing exam-generation prompt, and keeps the
+  existing review/save workflow. If retrieval is unavailable, generation falls
+  back to the selected materials and returns a visible warning.
+
+Graduate chat, doctor lecture Q&A, quiz generation, career tools, search and all
+other AI features keep their existing provider paths. RAG documents are
+embedded in an ephemeral collection per request; no persistent vector index is
+modified.
+
+### Configuration
+
+`appsettings.json` contains the non-secret base URL:
+
+```json
+"RagApi": {
+  "Enabled": true,
+  "BaseUrl": "http://127.0.0.1:8000/",
+  "TimeoutSeconds": 120,
+  "TopK": 4,
+  "DisplayName": "UniSphere RAG",
+  "ModelName": "rag-groq"
+}
+```
+
+If the RAG service is protected, set the same secret on both sides without
+committing it:
+
+- RAG `.env`: `RAG_API_KEY=...`
+- .NET user-secret/environment: `RagApi:ApiKey` (for example
+  `dotnet user-secrets set "RagApi:ApiKey" "..."`)
+
+### Run order
+
+1. Start the RAG API from `rag-chatbot/rag-chatbot`:
+   `.\.venv-new\Scripts\python.exe -m uvicorn api:app --host 127.0.0.1 --port 8000`
+2. Start UniSphere with `dotnet run` (development URL `http://localhost:5080`).
+3. Optional: start the original Streamlit assistant separately on port 8501.
+
+`/query` requires a valid `GROQ_API_KEY` in the RAG `.env`. Missing or rejected
+provider credentials are surfaced as safe errors; they never produce a fake
+answer. `/retrieve` works without the LLM key.
+
+### Tests
+
+The RAG tests use mocked HTTP and fake clients and never call a real provider:
+
+```powershell
+dotnet test tests\UniSphere.Api.Tests\UniSphere.Api.Tests.csproj --filter "FullyQualifiedName~Rag"
+```
+
 ## Switching to PostgreSQL Later
 
 Replace the `Microsoft.EntityFrameworkCore.Sqlite` package with `Npgsql.EntityFrameworkCore.PostgreSQL`, change `UseSqlite` to `UseNpgsql` in `Program.cs`, and update the connection string.

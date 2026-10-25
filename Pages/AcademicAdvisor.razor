@@ -1,4 +1,5 @@
 @page "/academic-advisor"
+@attribute [Authorize(Roles = "Student")]
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -103,13 +104,13 @@ and MainLayout bounces anonymous users to /login after auth resolves.
             @foreach (var insight in _insights)
             {
                 <div class="insight-item @insight.Kind">
-                    <div class="insight-icon">@GetInsightIcon(insight.Kind)</div>
+                    <div class="insight-icon"><UiIcon Name="@GetInsightIcon(insight.Kind)" /></div>
                     <div class="insight-content">
                         <span class="insight-title">@insight.Title</span>
                         <span class="insight-message">@insight.Message</span>
                         @if (!string.IsNullOrEmpty(insight.ActionLabel))
                         {
-                            <NavLink href="@insight.ActionRoute" class="insight-action">@insight.ActionLabel} &rarr;</NavLink>
+                            <NavLink href="@insight.ActionRoute" class="insight-action">@insight.ActionLabel <UiIcon Name="arrow-right" /></NavLink>
                         }
                     </div>
                 </div>
@@ -139,10 +140,10 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 
     private static string GetInsightIcon(string kind) => kind switch
     {
-        "focus" => "\U0001F3AF",
-        "progress" => "\U0001F4C8",
-        "recommendation" => "\U0001F4A1",
-        _ => "\U0001F4A1"
+        "focus" => "target",
+        "progress" => "trending-up",
+        "recommendation" => "lightbulb",
+        _ => "lightbulb"
     };
 }
 

@@ -1,4 +1,5 @@
 @page "/dashboard"
+@attribute [Authorize(Roles = "Student")]
 @*
 Page-level [Authorize] removed on purpose: the server enforces it
 during prerendering against the HTTP Authorization header, but browsers
@@ -24,7 +25,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             <h1>@_greeting, @_firstName!</h1>
             <p>Your academic journey matters. Let's make it better together.</p>
         </div>
-        <div class="welcome-decoration">&#127891;</div>
+        <div class="welcome-decoration"><UiIcon Name="graduation-cap" /></div>
     </div>
 
     @if (!string.IsNullOrEmpty(_summaryError))
@@ -40,7 +41,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
     <!-- Academic Summary Cards -->
     <div class="summary-cards">
         <div class="card gpa-card">
-            <div class="card-icon">&#127942;</div>
+            <div class="card-icon"><UiIcon Name="award" /></div>
             <div class="card-info">
                 <span class="card-label">Current GPA</span>
                 <span class="card-value">@(_summary?.CurrentGpa.ToString("0.00") ?? "--")</span>
@@ -53,7 +54,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card courses-card">
-            <div class="card-icon">&#128218;</div>
+            <div class="card-icon"><UiIcon Name="book-open" /></div>
             <div class="card-info">
                 <span class="card-label">Completed Courses</span>
                 <span class="card-value">@(_summary?.CompletedCourses ?? 0)/@(_summary?.TotalCourses ?? 0)</span>
@@ -61,7 +62,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card attendance-card">
-            <div class="card-icon">&#128197;</div>
+            <div class="card-icon"><UiIcon Name="calendar-days" /></div>
             <div class="card-info">
                 <span class="card-label">Attendance Rate</span>
                 <span class="card-value">@(_summary?.AttendanceRate ?? 0)%</span>
@@ -74,7 +75,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card improve-card">
-            <div class="card-icon">&#128161;</div>
+            <div class="card-icon"><UiIcon Name="lightbulb" /></div>
             <div class="card-info">
                 <span class="card-label">Subjects to Improve</span>
                 <span class="card-value">@(_summary?.SubjectsToImprove ?? 0)</span>
@@ -82,7 +83,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card recommended-card">
-            <div class="card-icon">&#127891;</div>
+            <div class="card-icon"><UiIcon Name="graduation-cap" /></div>
             <div class="card-info">
                 <span class="card-label">Recommended Courses</span>
                 <span class="card-value">@(_summary?.RecommendedCoursesCount ?? 0)</span>
@@ -95,7 +96,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
     <div class="card performance-card">
         <div class="card-header">
             <h3>Academic Performance</h3>
-            <NavLink href="/academic-advisor" class="view-all">View All &rarr;</NavLink>
+            <NavLink href="/academic-advisor" class="view-all">View All <UiIcon Name="arrow-right" /></NavLink>
         </div>
         @if (!string.IsNullOrEmpty(_performanceError))
         {
@@ -107,7 +108,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         }
         else if (!_performance.Any())
         {
-            <div class="empty-state">No academic records found. Enroll in courses to see your performance.</div>
+            <div class="empty-state"><div class="empty-icon"><UiIcon Name="chart-no-axes-combined" /></div>No academic records found. Enroll in courses to see your performance.</div>
         }
         else
         {
@@ -143,7 +144,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         <div class="card planner-card">
             <div class="card-header">
                 <h3>Study Planner</h3>
-                <NavLink href="/study-planner" class="view-all">Edit &rarr;</NavLink>
+                <NavLink href="/study-planner" class="view-all">Edit <UiIcon Name="arrow-right" /></NavLink>
             </div>
             @if (!string.IsNullOrEmpty(_plannerError))
             {
@@ -174,11 +175,11 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
                                     <button class="check-btn" title="Toggle done" @onclick="() => ToggleDayAsync(item)">
                                         @if (item.IsCompleted)
                                         {
-                                            <span class="check-icon">&#10003;</span>
+                                            <span class="check-icon"><UiIcon Name="check" /></span>
                                         }
                                         else
                                         {
-                                            <span class="check-empty">&#9711;</span>
+                                            <span class="check-empty"><UiIcon Name="circle" /></span>
                                         }
                                     </button>
                                 }
@@ -193,7 +194,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         <div class="card recommendations-card">
             <div class="card-header">
                 <h3>Recommended Courses</h3>
-                <NavLink href="/courses" class="view-all">View All &rarr;</NavLink>
+                <NavLink href="/courses" class="view-all">View All <UiIcon Name="arrow-right" /></NavLink>
             </div>
             @if (!string.IsNullOrEmpty(_recommendedError))
             {
@@ -205,7 +206,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             }
             else if (!_recommended.Any())
             {
-                <div class="empty-state">No recommendations available at this time.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="lightbulb" /></div>No recommendations available at this time.</div>
             }
             else
             {
@@ -230,7 +231,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
     <div class="card university-card">
         <div class="card-header">
             <h3>My University</h3>
-            <NavLink href="/university" class="view-all">View all &rarr;</NavLink>
+            <NavLink href="/university" class="view-all">View all <UiIcon Name="arrow-right" /></NavLink>
         </div>
         @if (!string.IsNullOrEmpty(_universityError))
         {
@@ -242,7 +243,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         }
         else if (string.IsNullOrEmpty(_university.UniversityName))
         {
-            <div class="empty-state">No university assigned to your account yet.</div>
+            <div class="empty-state"><div class="empty-icon"><UiIcon Name="landmark" /></div>No university assigned to your account yet.</div>
         }
         else
         {
@@ -253,7 +254,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             }
             else if (!_uniCourses.Any())
             {
-                <div class="empty-state">No courses found for your department and year.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="book-open" /></div>No courses found for your university.</div>
             }
             else
             {
@@ -274,7 +275,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             }
             else if (!_uniMaterials.Any())
             {
-                <div class="empty-state">No materials yet.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="file-text" /></div>No materials yet.</div>
             }
             else
             {
@@ -284,7 +285,14 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
                         <div class="activity-item">
                             <div class="activity-content">
                                 <span class="activity-message">@m.Title</span>
-                                <span class="activity-time">@m.CourseName · @m.Type · @m.CreatedAt.ToString("MMM d")</span>
+                                <span class="activity-time">
+                                    @m.CourseName
+                                    @if (!string.IsNullOrWhiteSpace(m.InstructorName))
+                                    {
+                                        <text> &middot; @m.InstructorName</text>
+                                    }
+                                    &middot; @m.Type &middot; @m.CreatedAt.ToString("MMM d")
+                                </span>
                             </div>
                         </div>
                     }
@@ -300,19 +308,19 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         </div>
         <div class="quick-actions-grid">
             <NavLink href="/academic-advisor" class="quick-action tile-grades">
-                <span class="action-icon">&#9998;</span>
+                <span class="action-icon"><UiIcon Name="pencil" /></span>
                 <span>Check My Grades</span>
             </NavLink>
             <NavLink href="/study-planner" class="quick-action tile-planner">
-                <span class="action-icon">&#128197;</span>
+                <span class="action-icon"><UiIcon Name="calendar-days" /></span>
                 <span>Plan My Study</span>
             </NavLink>
             <NavLink href="/courses" class="quick-action tile-courses">
-                <span class="action-icon">&#127891;</span>
+                <span class="action-icon"><UiIcon Name="graduation-cap" /></span>
                 <span>Course Recommendations</span>
             </NavLink>
             <NavLink href="/academic-advisor" class="quick-action tile-insights">
-                <span class="action-icon">&#128161;</span>
+                <span class="action-icon"><UiIcon Name="lightbulb" /></span>
                 <span>Academic Insights</span>
             </NavLink>
         </div>
@@ -335,7 +343,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             }
             else if (!_activity.Any())
             {
-                <div class="empty-state">No recent activity.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="history" /></div>No recent activity.</div>
             }
             else
             {
@@ -368,7 +376,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             }
             else if (!_insights.Any())
             {
-                <div class="empty-state">No insights available. Keep learning!</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="chart-no-axes-combined" /></div>No insights available. Keep learning!</div>
             }
             else
             {
@@ -376,13 +384,13 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
                     @foreach (var insight in _insights)
                     {
                         <div class="insight-item @insight.Type.ToLowerInvariant()">
-                            <div class="insight-icon">@GetInsightIcon(insight.Type)</div>
+                            <div class="insight-icon"><UiIcon Name="@GetInsightIcon(insight.Type)" /></div>
                             <div class="insight-content">
                                 <span class="insight-title">@insight.Title</span>
                                 <span class="insight-message">@insight.Message</span>
                                 @if (!string.IsNullOrEmpty(insight.ActionLabel))
                                 {
-                                    <NavLink href="@insight.ActionRoute" class="insight-action">@insight.ActionLabel &rarr;</NavLink>
+                                    <NavLink href="@insight.ActionRoute" class="insight-action">@insight.ActionLabel <UiIcon Name="arrow-right" /></NavLink>
                                 }
                             </div>
                         </div>
@@ -594,9 +602,9 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
 
     private static string GetInsightIcon(string type) => type.ToLowerInvariant() switch
     {
-        "warning" => "\u26A0\uFE0F",
-        "progress" => "\U0001F4C8",
-        "recommendation" => "\U0001F4A1",
-        _ => "\U0001F4A1"
+        "warning" => "triangle-alert",
+        "progress" => "trending-up",
+        "recommendation" => "lightbulb",
+        _ => "lightbulb"
     };
 }

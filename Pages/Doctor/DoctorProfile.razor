@@ -1,0 +1,338 @@
+@page "/legacy/doctor/profile"
+@attribute [Authorize(Roles = "Doctor")]
+@*
+[Authorize] removed on purpose (see Dashboard.razor): access is enforced by
+RoleGate client-side and by [Authorize(Roles="Doctor")] on every /api endpoint.
+*@
+@using System.Net
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>Doctor Profile - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Doctor">
+    <div class="page-header">
+        <h1>Doctor Profile</h1>
+        <p>Your identity details are managed by the university. You can edit your avatar and password.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_toast))
+    {
+        <div class="alert @(_toastIsError ? "alert-error" : "alert-success")">@_toast</div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="ReloadAsync">Retry</button></div>
+    }
+    else if (_profile is null)
+    {
+        <div class="loading">Loading your profile...</div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="card-header">
+                <h3>Account details</h3>
+                <span class="locked-chip"><span class="lock-icon" aria-hidden="true"><UiIcon Name="lock" /></span> Locked</span>
+            </div>
+            <p class="locked-hint"><span class="lock-icon" aria-hidden="true"><UiIcon Name="lock" /></span> Contact an administrator to change this</p>
+            <div class="profile-grid">
+                <div class="profile-field">
+                    <span class="profile-field-label">First name <span class="lock-icon" aria-hidden="true" title="Contact an administrator to change this"><UiIcon Name="lock" /></span></span>
+                    <span class="profile-field-value">@Display(_profile.FirstName)</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-field-label">Middle name <span class="lock-icon" aria-hidden="true" title="Contact an administrator to change this"><UiIcon Name="lock" /></span></span>
+                    <span class="profile-field-value">@Display(_profile.MiddleName)</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-field-label">Last name <span class="lock-icon" aria-hidden="true" title="Contact an administrator to change this"><UiIcon Name="lock" /></span></span>
+                    <span class="profile-field-value">@Display(_profile.LastName)</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-field-label">Email <span class="lock-icon" aria-hidden="true" title="Contact an administrator to change this"><UiIcon Name="lock" /></span></span>
+                    <span class="profile-field-value">@Display(_profile.Email)</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-field-label">Address <span class="lock-icon" aria-hidden="true" title="Contact an administrator to change this"><UiIcon Name="lock" /></span></span>
+                    <span class="profile-field-value">@Display(_profile.Address)</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-field-label">Phone number <span class="lock-icon" aria-hidden="true" title="Contact an administrator to change this"><UiIcon Name="lock" /></span></span>
+                    <span class="profile-field-value">@Display(_profile.PhoneNumber)</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-field-label">University <span class="lock-icon" aria-hidden="true" title="Contact an administrator to change this"><UiIcon Name="lock" /></span></span>
+                    <span class="profile-field-value">@Display(_profile.UniversityName)</span>
+                </div>
+                <div class="profile-field">
+                    <span class="profile-field-label">Department <span class="lock-icon" aria-hidden="true" title="Contact an administrator to change this"><UiIcon Name="lock" /></span></span>
+                    <span class="profile-field-value">@Display(_profile.Department)</span>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_profile.Specialization))
+                {
+                    <div class="profile-field">
+                        <span class="profile-field-label">Specialization <span class="lock-icon" aria-hidden="true" title="Contact an administrator to change this"><UiIcon Name="lock" /></span></span>
+                        <span class="profile-field-value">@Display(_profile.Specialization)</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card profile-form">
+            <div class="card-header"><h3>Avatar</h3></div>
+            <div class="profile-form-body">
+                <div class="avatar-edit">
+                    <span class="avatar-preview">
+                        @if (!string.IsNullOrWhiteSpace(_profile.AvatarUrl))
+                        {
+                            <img src="@_profile.AvatarUrl" alt="Avatar preview" />
+                        }
+                        else
+                        {
+                            <span class="avatar-initial">@Initial</span>
+                        }
+                    </span>
+                    <div class="form-group avatar-url-field">
+                        <label for="avatarUrl">Avatar URL</label>
+                        <input id="avatarUrl" type="url" @bind="_avatarUrl" placeholder="https://..." />
+                        <small class="field-hint">Paste an image URL, or clear it to remove your avatar.</small>
+                    </div>
+                </div>
+                <div class="profile-actions">
+                    <button type="button" class="btn btn-primary" @onclick="SaveAvatarAsync" disabled="@_savingAvatar">
+                        @(_savingAvatar ? "Saving..." : "Save avatar")
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card profile-form">
+            <div class="card-header"><h3>Password</h3></div>
+            <form class="profile-form-body" @onsubmit="ChangePasswordAsync">
+                <div class="form-group">
+                    <label for="currentPassword">Current password</label>
+                    <input id="currentPassword" type="password" @bind="_currentPassword" autocomplete="current-password" />
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="newPassword">New password</label>
+                        <input id="newPassword" type="password" @bind="_newPassword" autocomplete="new-password" />
+                        <small class="field-hint">At least 8 characters, with upper-case, lower-case, digit and symbol.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmNewPassword">Confirm new password</label>
+                        <input id="confirmNewPassword" type="password" @bind="_confirmPassword" autocomplete="new-password" />
+                    </div>
+                </div>
+                <div class="profile-actions">
+                    <button type="submit" class="btn btn-primary" disabled="@_savingPassword">
+                        @(_savingPassword ? "Updating..." : "Change password")
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h3>Teaching</h3></div>
+            <div class="card-body">
+                <p>Rename the titles students see and review enrolled students from your course list.</p>
+                <NavLink class="btn btn-secondary" href="/doctor/courses">Go to My Courses</NavLink>
+            </div>
+        </div>
+    }
+</RoleGate>
+
+@code {
+    private DoctorProfileDto? _profile;
+    private string _avatarUrl = "";
+    private string? _error;
+    private string? _toast;
+    private bool _toastIsError;
+    private bool _savingAvatar;
+    private bool _savingPassword;
+    private string _currentPassword = "";
+    private string _newPassword = "";
+    private string _confirmPassword = "";
+    private bool _started;
+
+    private string Initial =>
+        string.IsNullOrWhiteSpace(_profile?.FirstName) ? "?" : _profile!.FirstName[0].ToString().ToUpperInvariant();
+
+    private static string Display(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _error = null;
+        _profile = null;
+        try
+        {
+            _profile = await Http.GetFromJsonAsync<DoctorProfileDto>("/api/doctor/profile");
+            _avatarUrl = _profile?.AvatarUrl ?? "";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            if (!AuthService.IsInitialized)
+            {
+                _error = "Could not load your profile. Check your connection and try again.";
+            }
+            else
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+        }
+        catch
+        {
+            _error = "Could not load your profile. Please try again.";
+        }
+    }
+
+    private async Task SaveAvatarAsync()
+    {
+        if (_profile is null || _savingAvatar) return;
+        _toast = null;
+        _savingAvatar = true;
+        try
+        {
+            var response = await Http.PutAsJsonAsync("/api/doctor/profile",
+                new { avatarUrl = string.IsNullOrWhiteSpace(_avatarUrl) ? null : _avatarUrl.Trim() });
+            if (response.IsSuccessStatusCode)
+            {
+                _profile = await response.Content.ReadFromJsonAsync<DoctorProfileDto>() ?? _profile;
+                _avatarUrl = _profile.AvatarUrl ?? "";
+                Toast("Avatar updated.");
+            }
+            else if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+            else
+            {
+                Toast(await ErrorTextAsync(response), true);
+            }
+        }
+        catch
+        {
+            Toast("Could not save your avatar. Check your connection and try again.", true);
+        }
+        finally
+        {
+            _savingAvatar = false;
+        }
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        if (_savingPassword) return;
+        _toast = null;
+
+        if (string.IsNullOrWhiteSpace(_currentPassword))
+        {
+            Toast("Enter your current password.", true);
+            return;
+        }
+        if (_newPassword.Length < 8)
+        {
+            Toast("New password must be at least 8 characters.", true);
+            return;
+        }
+        if (_newPassword != _confirmPassword)
+        {
+            Toast("New passwords do not match.", true);
+            return;
+        }
+
+        _savingPassword = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("/api/auth/change-password",
+                new { currentPassword = _currentPassword, newPassword = _newPassword });
+            if (response.IsSuccessStatusCode)
+            {
+                _currentPassword = _newPassword = _confirmPassword = "";
+                Toast("Password changed.");
+            }
+            else if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+            else
+            {
+                Toast(await ErrorTextAsync(response), true);
+            }
+        }
+        catch
+        {
+            Toast("Could not change your password. Check your connection and try again.", true);
+        }
+        finally
+        {
+            _savingPassword = false;
+        }
+    }
+
+    private void Toast(string message, bool isError = false)
+    {
+        _toast = message;
+        _toastIsError = isError;
+    }
+
+    private static async Task<string> ErrorTextAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var text = await response.Content.ReadAsStringAsync();
+            return string.IsNullOrWhiteSpace(text)
+                ? $"Request failed ({(int)response.StatusCode})."
+                : text.Trim('"');
+        }
+        catch
+        {
+            return $"Request failed ({(int)response.StatusCode}).";
+        }
+    }
+}

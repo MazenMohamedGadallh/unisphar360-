@@ -166,29 +166,33 @@ public class AdminController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(req.Title) || string.IsNullOrWhiteSpace(req.Body))
             return BadRequest("Title and Body are required.");
+        if (!req.UniversityId.HasValue)
+            return BadRequest("UniversityId is required.");
+        if (!await _db.Universities.AnyAsync(u => u.Id == req.UniversityId.Value))
+            return BadRequest("University does not exist.");
 
         var announcement = new Announcement
         {
             Title = req.Title,
             Body = req.Body,
             Category = req.Category ?? "general",
-            CreatedByUserId = User.GetUserId()
+            CreatedByUserId = User.GetUserId(),
+            UniversityId = req.UniversityId.Value
         };
 
         _db.Announcements.Add(announcement);
         await _db.SaveChangesAsync();
 
-        return Ok(new { announcement.Id, announcement.Title, announcement.Body, announcement.Category, announcement.CreatedAtUtc });
+        return Ok(new { announcement.Id, announcement.Title, announcement.Body, announcement.Category, announcement.UniversityId, announcement.CreatedAtUtc });
     }
 
-    /// <summary>Get all announcements.</summary>
-    [AllowAnonymous]
+    /// <summary>Get all announcements (admin). Students use /api/announcements.</summary>
     [HttpGet("announcements")]
     public async Task<ActionResult<IReadOnlyList<object>>> GetAnnouncements()
     {
         var announcements = await _db.Announcements.AsNoTracking()
             .OrderByDescending(a => a.CreatedAtUtc)
-            .Select(a => new { a.Id, a.Title, a.Body, a.Category, a.CreatedAtUtc })
+            .Select(a => new { a.Id, a.Title, a.Body, a.Category, a.CreatedAtUtc, a.UniversityId })
             .ToListAsync();
 
         return Ok(announcements);
@@ -306,6 +310,71 @@ public class AdminController : ControllerBase
         return new PagedResultDto<AdminUserDto>(items, total, page, pageSize);
     }
 
+    /// <summary>One user's locked profile fields for the admin edit dialog.</summary>
+    [HttpGet("users/{id:int}")]
+    public async Task<ActionResult<AdminUserDetailDto>> GetUser(int id)
+    {
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id);
+        if (user is null || user.IsDeleted) return NotFound();
+        return await ToAdminUserDetailDtoAsync(user);
+    }
+
+    /// <summary>Admin edit of the locked account fields (first/middle/last
+    /// name, email, phone, address, department, university). Every change is
+    /// audit-logged. Role and password can never be changed here.</summary>
+    [HttpPut("users/{id:int}")]
+    public async Task<ActionResult<AdminUserDetailDto>> UpdateUser(
+        int id,
+        [FromBody] AdminUpdateUserRequest req,
+        [FromServices] IValidator<AdminUpdateUserRequest> validator)
+    {
+        var validation = await validator.ValidateAsync(req);
+        if (!validation.IsValid) return BadRequest(new ValidationProblemDetails(validation.ToDictionary())
+        {
+            Title = "One or more validation errors occurred.",
+            Status = StatusCodes.Status400BadRequest
+        });
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id);
+        if (user is null || user.IsDeleted) return NotFound();
+
+        var email = req.Email.Trim().ToLowerInvariant();
+        if (await _db.Users.AnyAsync(u => u.Id != id && u.Email == email))
+            return Conflict("This email is already used by another account.");
+
+        if (req.UniversityId.HasValue && !await _db.Universities.AnyAsync(u => u.Id == req.UniversityId.Value))
+            return BadRequest("Selected university does not exist.");
+
+        user.FirstName = req.FirstName.Trim();
+        user.MiddleName = string.IsNullOrWhiteSpace(req.MiddleName) ? null : req.MiddleName.Trim();
+        user.LastName = req.LastName.Trim();
+        user.FullName = string.Join(" ", new[] { user.FirstName, user.MiddleName, user.LastName }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
+        user.Email = email;
+        user.PhoneNumber = req.PhoneNumber.Trim();
+        user.Address = req.Address?.Trim() ?? "";
+        user.Department = req.Department?.Trim() ?? "";
+        user.UniversityId = req.UniversityId;
+
+        await LogAdminAsync(User.GetUserId(), $"PUT /api/admin/users/{id}");
+        return await ToAdminUserDetailDtoAsync(user);
+    }
+
+    private async Task<AdminUserDetailDto> ToAdminUserDetailDtoAsync(User u)
+    {
+        var universityName = u.UniversityId.HasValue
+            ? await _db.Universities.AsNoTracking()
+                .Where(x => x.Id == u.UniversityId.Value)
+                .Select(x => x.Name)
+                .FirstOrDefaultAsync() ?? ""
+            : "";
+        return new AdminUserDetailDto(
+            u.Id, u.FirstName, u.MiddleName, u.LastName, u.FullName,
+            u.Email, u.Address, u.PhoneNumber,
+            u.UniversityId, universityName, u.Department,
+            u.Role.ToString(), (int)u.Role, u.IsActive, u.IsDeleted);
+    }
+
     [HttpPatch("users/{id:int}/status")]
     public async Task<IActionResult> SetUserStatus(int id, PatchUserStatusRequest req)
     {
@@ -388,6 +457,163 @@ public class AdminController : ControllerBase
         await _db.SaveChangesAsync();
     }
 
+    // ---- Admin panel: instructor assignments (Part 1) ----
+
+    /// <summary>All doctor-to-course assignments, optionally filtered.</summary>
+    [HttpGet("instructor-assignments")]
+    public async Task<IReadOnlyList<InstructorAssignmentDto>> InstructorAssignments(
+        [FromQuery] int? universityId = null,
+        [FromQuery] int? courseId = null)
+    {
+        var query = _db.CourseInstructors.AsNoTracking().AsQueryable();
+        if (courseId.HasValue)
+            query = query.Where(ci => ci.CourseId == courseId.Value);
+        if (universityId.HasValue)
+        {
+            var courseIds = _db.Courses.AsNoTracking()
+                .Where(c => c.UniversityId == universityId.Value)
+                .Select(c => c.Id);
+            query = query.Where(ci => courseIds.Contains(ci.CourseId));
+        }
+
+        var rows = await query.OrderBy(ci => ci.Id).ToListAsync();
+        var courseIds2 = rows.Select(r => r.CourseId).Distinct().ToList();
+        var doctorIds = rows.Select(r => r.DoctorUserId).Distinct().ToList();
+
+        var courses = await _db.Courses.AsNoTracking()
+            .Where(c => courseIds2.Contains(c.Id))
+            .Select(c => new { c.Id, c.Code, c.Title, c.UniversityId })
+            .ToListAsync();
+        var doctors = await _db.Users.AsNoTracking()
+            .Where(u => doctorIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.FullName })
+            .ToListAsync();
+        var universityIds = courses.Where(c => c.UniversityId.HasValue)
+            .Select(c => c.UniversityId!.Value).Distinct().ToList();
+        var universities = await _db.Universities.AsNoTracking()
+            .Where(u => universityIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.Name);
+
+        return rows.Select(r =>
+        {
+            var course = courses.FirstOrDefault(c => c.Id == r.CourseId);
+            return new InstructorAssignmentDto(
+                r.Id, r.CourseId, course?.Code ?? "", course?.Title ?? "",
+                course?.UniversityId,
+                course?.UniversityId is int uid ? universities.GetValueOrDefault(uid, "") : "",
+                r.DoctorUserId,
+                doctors.FirstOrDefault(d => d.Id == r.DoctorUserId)?.FullName ?? "",
+                r.Term, r.CreatedAtUtc);
+        }).ToList();
+    }
+
+    /// <summary>Assign a doctor to a course for a term. Only doctors of the
+    /// course's own university can be assigned.</summary>
+    [HttpPost("instructor-assignments")]
+    public async Task<ActionResult<InstructorAssignmentDto>> CreateInstructorAssignment(
+        [FromBody] CreateInstructorAssignmentRequest req,
+        [FromServices] IValidator<CreateInstructorAssignmentRequest> validator)
+    {
+        var validation = await validator.ValidateAsync(req);
+        if (!validation.IsValid)
+            return BadRequest(new ValidationProblemDetails(validation.ToDictionary())
+            {
+                Title = "One or more validation errors occurred.",
+                Status = StatusCodes.Status400BadRequest
+            });
+
+        var course = await _db.Courses.FindAsync(req.CourseId);
+        if (course is null) return NotFound("Course not found.");
+
+        var doctor = await _db.Users.FindAsync(req.DoctorUserId);
+        if (doctor is null || doctor.IsDeleted || doctor.Role != UserRole.Doctor)
+            return NotFound("Doctor not found.");
+
+        if (!course.UniversityId.HasValue || !doctor.UniversityId.HasValue
+            || course.UniversityId.Value != doctor.UniversityId.Value)
+        {
+            return BadRequest("Doctor and course must belong to the same university.");
+        }
+
+        var term = req.Term.Trim();
+        var exists = await _db.CourseInstructors.AnyAsync(ci =>
+            ci.CourseId == course.Id && ci.DoctorUserId == doctor.Id && ci.Term == term);
+        if (exists) return Conflict("This doctor is already assigned to the course for that term.");
+
+        var assignment = new CourseInstructor
+        {
+            CourseId = course.Id,
+            DoctorUserId = doctor.Id,
+            Term = term
+        };
+        _db.CourseInstructors.Add(assignment);
+        await LogAdminAsync(User.GetUserId(), "POST /api/admin/instructor-assignments");
+
+        var universityName = await _db.Universities.AsNoTracking()
+            .Where(u => u.Id == course.UniversityId!.Value)
+            .Select(u => u.Name)
+            .FirstOrDefaultAsync() ?? "";
+
+        return StatusCode(StatusCodes.Status201Created, new InstructorAssignmentDto(
+            assignment.Id, course.Id, course.Code, course.Title,
+            course.UniversityId, universityName,
+            doctor.Id, doctor.FullName, assignment.Term, assignment.CreatedAtUtc));
+    }
+
+    [HttpDelete("instructor-assignments/{id:int}")]
+    public async Task<IActionResult> DeleteInstructorAssignment(int id)
+    {
+        var assignment = await _db.CourseInstructors.FindAsync(id);
+        if (assignment is null) return NotFound();
+
+        _db.CourseInstructors.Remove(assignment);
+        await LogAdminAsync(User.GetUserId(), $"DELETE /api/admin/instructor-assignments/{id}");
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    /// <summary>Doctors for the assignment dropdown (optionally by university).</summary>
+    [HttpGet("doctors")]
+    public async Task<IReadOnlyList<AdminDoctorDto>> Doctors([FromQuery] int? universityId = null)
+    {
+        var query = _db.Users.AsNoTracking()
+            .Where(u => u.Role == UserRole.Doctor && !u.IsDeleted);
+        if (universityId.HasValue)
+            query = query.Where(u => u.UniversityId == universityId.Value);
+
+        var doctors = await query.OrderBy(u => u.FullName).ToListAsync();
+        var uniIds = doctors.Where(d => d.UniversityId.HasValue)
+            .Select(d => d.UniversityId!.Value).Distinct().ToList();
+        var universities = await _db.Universities.AsNoTracking()
+            .Where(u => uniIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.Name);
+
+        return doctors.Select(d => new AdminDoctorDto(
+            d.Id, d.FullName, d.Email, d.UniversityId,
+            d.UniversityId.HasValue ? universities.GetValueOrDefault(d.UniversityId.Value, "") : "",
+            d.Specialization ?? "", d.IsActive)).ToList();
+    }
+
+    /// <summary>Courses for the assignment dropdown (optionally by university).</summary>
+    [HttpGet("courses")]
+    public async Task<IReadOnlyList<AdminCourseDto>> Courses(
+        [FromQuery] int? universityId = null,
+        [FromQuery] string? search = null)
+    {
+        var query = _db.Courses.AsNoTracking().AsQueryable();
+        if (universityId.HasValue)
+            query = query.Where(c => c.UniversityId == universityId.Value);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(c => c.Code.ToLower().Contains(s) || c.Title.ToLower().Contains(s));
+        }
+
+        return await query.OrderBy(c => c.Code).Take(500)
+            .Select(c => new AdminCourseDto(c.Id, c.Code, c.Title, c.UniversityId))
+            .ToListAsync();
+    }
+
     // ---- Admin panel: risk, departments, audit, health ----
 
     [HttpGet("analytics/at-risk-students")]
@@ -453,4 +679,4 @@ public class AdminController : ControllerBase
 }
 
 public record SendNotificationRequest(string Title, string Body, int? UserId = null, int? RoleId = null);
-public record CreateAnnouncementRequest(string Title, string Body, string? Category = null);
+public record CreateAnnouncementRequest(string Title, string Body, string? Category = null, int? UniversityId = null);
