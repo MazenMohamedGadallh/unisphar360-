@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -94,6 +95,18 @@ builder.Services.AddRazorComponents()
 
 // HTTP client for Blazor to call the API
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri("http://localhost:5080") });
+
+// Persist the Data Protection keyring next to the app (App_Data is
+// git-ignored). ProtectedLocalStorage encrypts the persisted JWT with
+// these keys — without a stable ring every app restart generated new
+// keys and the stored token became undecryptable ("key was not found
+// in the key ring"), leaving the UI stuck on the auth loading state
+// after each restart. A stable, shared ring lets the WSL and Windows
+// instances (same content root) decrypt each other's sessions.
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(
+        new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "App_Data", "data-protection-keys")))
+    .SetApplicationName("unisphere-360-plus");
 
 // Auth state provider (single instance: the framework's
 // AuthenticationStateProvider and injected BlazorAuthService must share

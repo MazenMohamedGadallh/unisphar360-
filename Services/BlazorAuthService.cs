@@ -184,8 +184,32 @@ public class BlazorAuthService : AuthenticationStateProvider
         {
             return false; // prerendering: no JS interop yet
         }
-        catch
+        catch (Exception ex)
         {
+            // Decrypt failures (stale Data Protection key ring) will never
+            // resolve — drop the poisoned blob and report "no session"
+            // instead of leaving every consumer in the loading limbo.
+            if (ex is System.Security.Cryptography.CryptographicException)
+            {
+                _logger.LogWarning(ex, "Persisted auth token cannot be decrypted (stale key ring) — clearing it and signing out.");
+                try
+                {
+                    _token = null;
+                    ApplyTokenToHttpClient();
+                    await _storage.DeleteAsync(TokenStorageKey);
+                    _resolved = true;
+                    NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
+                }
+                catch (InvalidOperationException)
+                {
+                    return false; // prerender only: delete on the next pass
+                }
+                catch (Exception deleteEx)
+                {
+                    _logger.LogError(deleteEx, "Could not remove the undecryptable persisted token.");
+                }
+                return false;
+            }
             return false;
         }
     }
@@ -352,6 +376,34 @@ public class BlazorAuthService : AuthenticationStateProvider
         }
         catch (Exception ex)
         {
+            // A decrypt/read failure means the stored blob is poisoned
+            // (e.g. written by an app instance whose Data Protection
+            // keyring no longer exists). It will NEVER resolve into a
+            // session, so clearing it and reporting anonymous is the only
+            // escape from the "loading" limbo that otherwise blocks the
+            // login screen forever. Best-effort delete; if JS interop is
+            // temporarily unavailable (prerender) stay in loading and
+            // retry on the next write-notification.
+            if (ex is System.Security.Cryptography.CryptographicException)
+            {
+                _logger.LogWarning(ex, "Persisted auth token cannot be decrypted (stale key ring) — clearing it and signing out.");
+                try
+                {
+                    _token = null;
+                    ApplyTokenToHttpClient();
+                    await _storage.DeleteAsync(TokenStorageKey);
+                    _resolved = true;
+                    return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
+                }
+                catch (InvalidOperationException)
+                {
+                    return new AuthenticationState(LoadingPrincipal); // prerender: retry later
+                }
+                catch (Exception deleteEx)
+                {
+                    _logger.LogError(deleteEx, "Could not remove the undecryptable persisted token; auth stays loading until removed.");
+                }
+            }
             _logger.LogWarning(ex, "Reading the persisted auth token failed; keeping the auth state in loading.");
             return new AuthenticationState(LoadingPrincipal);
         }
