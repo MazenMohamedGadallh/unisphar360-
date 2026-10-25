@@ -23,15 +23,24 @@ and MainLayout bounces anonymous users to /login after auth resolves.
         <NavLink href="/courses" class="btn btn-primary btn-sm">Browse Courses</NavLink>
     </div>
 
-    @if (_enrollments is null)
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+    }
+    @if (!string.IsNullOrEmpty(_dropMessage))
+    {
+        <div class="alert alert-error" role="status">@_dropMessage</div>
+    }
+
+    @if (_loading)
     {
         <div class="loading">Loading enrollments...</div>
     }
-    else if (!_enrollments.Any())
+    else if (_enrollments is not null && !_enrollments.Any())
     {
         <div class="empty-state"><div class="empty-icon"><UiIcon Name="book-open" /></div>You are not enrolled in any courses. Browse available courses to get started.</div>
     }
-    else
+    else if (_enrollments is not null)
     {
         <div class="table-wrapper">
             <table class="data-table">
@@ -53,11 +62,15 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                             <td>@enrollment.CourseTitle</td>
                             <td>@enrollment.CourseCode</td>
                             <td>@enrollment.Semester</td>
-                            <td>@enrollment.GradeLetter</td>
+                            <td>@(string.IsNullOrEmpty(enrollment.GradeLetter) ? "—" : enrollment.GradeLetter)</td>
                             <td>@enrollment.AttendancePercent%</td>
                             <td><span class="status-badge @enrollment.Status.ToLower().Replace(" ", "-")">@enrollment.Status</span></td>
                             <td>
-                                <button class="btn btn-sm btn-danger" @onclick="() => DropEnrollment(enrollment.Id)">Drop</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => DropEnrollment(enrollment.Id)"
+                                        disabled="@(_busyId == enrollment.Id || !string.IsNullOrEmpty(enrollment.GradeLetter))"
+                                        title="@(string.IsNullOrEmpty(enrollment.GradeLetter) ? "Drop this course" : "Courses with a grade cannot be dropped")">
+                                    Drop
+                                </button>
                             </td>
                         </tr>
                     }
@@ -69,18 +82,63 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 
 @code {
     private List<EnrollmentDto>? _enrollments;
+    private bool _loading = true;
+    private string? _error;
+    private string? _dropMessage;
+    private int _busyId;
 
     protected override async Task OnInitializedAsync()
     {
-        _enrollments = await Http.GetFromJsonAsync<List<EnrollmentDto>>("/api/enrollments");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _enrollments = await Http.GetFromJsonAsync<List<EnrollmentDto>>("/api/enrollments");
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not load enrollments ({(ex.InnerException ?? ex).Message}).";
+        }
+        _loading = false;
+        StateHasChanged();
     }
 
     private async Task DropEnrollment(int id)
     {
         if (!await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to drop this course?")) return;
-
-        await Http.DeleteAsync($"/api/enrollments/{id}");
-        _enrollments = await Http.GetFromJsonAsync<List<EnrollmentDto>>("/api/enrollments");
+        _busyId = id;
+        _dropMessage = null;
+        StateHasChanged();
+        HttpResponseMessage response;
+        try
+        {
+            response = await Http.DeleteAsync($"/api/enrollments/{id}");
+        }
+        catch (Exception ex)
+        {
+            _busyId = 0;
+            _dropMessage = $"Drop failed ({(ex.InnerException ?? ex).Message}).";
+            StateHasChanged();
+            return;
+        }
+        _busyId = 0;
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = "";
+            try { body = await response.Content.ReadAsStringAsync(); } catch { /* ignore */ }
+            _dropMessage = response.StatusCode == System.Net.HttpStatusCode.BadRequest
+                ? "This course already has a grade, so it cannot be dropped."
+                : $"Drop failed ({(body.Length > 160 ? body[..160] : body)})";
+            StateHasChanged();
+            return;
+        }
+        await LoadAsync();
     }
 }
 

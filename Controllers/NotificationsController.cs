@@ -22,7 +22,7 @@ public class NotificationsController : ControllerBase
         return await _db.Notifications.AsNoTracking()
             .Where(n => n.UserId == userId)
             .OrderByDescending(n => n.CreatedAtUtc)
-            .Select(n => new NotificationDto(n.Id, n.Title, n.Body, n.CreatedAtUtc, n.IsRead))
+            .Select(n => new NotificationDto(n.Id, n.Title, n.Body, n.CreatedAtUtc, n.IsRead, n.Category ?? "System"))
             .ToListAsync();
     }
 
@@ -36,6 +36,16 @@ public class NotificationsController : ControllerBase
         var n = await _db.Notifications.FindAsync(id);
         if (n is null || n.UserId != User.GetUserId()) return NotFound();
         n.IsRead = true;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var n = await _db.Notifications.FindAsync(id);
+        if (n is null || n.UserId != User.GetUserId()) return NotFound();
+        _db.Notifications.Remove(n);
         await _db.SaveChangesAsync();
         return NoContent();
     }

@@ -32,7 +32,7 @@
                 {
                     <button type="button"
                             class="@("role-option" + (_model.Role == role ? " selected" : ""))"
-                            @onclick="() => _model.Role = role">
+                            @onclick='() => SelectRole(role)'>
                         @role
                     </button>
                 }
@@ -317,6 +317,21 @@
                 ? "/login"
                 : UniSphere.Api.Services.RoleRoutes.HomeFor(user.Role), replace: true);
         }
+    }
+
+    private void SelectRole(string role)
+    {
+        if (string.Equals(_model.Role, role, StringComparison.Ordinal)) return;
+        _model.Role = role;
+        // Hidden role-specific inputs keep their values in Blazor state —
+        // clearing them prevents a leftover academic year / specialization /
+        // graduation field from being submitted for the wrong role.
+        _model.AcademicYear = null;
+        _model.Specialization = "";
+        _model.GraduatedFrom = "";
+        _model.GraduationYear = null;
+        _serverFields = null;
+        _serverError = null;
     }
 
     private int MinAgeForRole =>

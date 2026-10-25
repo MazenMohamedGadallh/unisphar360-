@@ -20,9 +20,9 @@ public abstract class GradPageBase : ComponentBase
     protected bool _loading;
     protected string? _error;
 
+    // Populated after GuardGraduateAsync succeeds (kept for potential
+    // diagnostics); pages read the role from AuthService directly when needed.
     private string? _role;
-
-    protected string Role => _role ??= AuthService.GetUserAsync().GetAwaiter().GetResult()?.Role ?? "";
 
     /// <summary>True when the signed-in account is a Graduate; else bounce.</summary>
     protected async Task<bool> GuardGraduateAsync()

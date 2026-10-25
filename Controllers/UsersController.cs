@@ -71,7 +71,15 @@ public class UsersController : ControllerBase
         return new RoleDto((int)user.Role, user.Role.ToString());
     }
 
-    /// <summary>Users can only read / edit their own profile.</summary>
+    /// <summary>Least-trivial self-profile read: any authenticated user can
+    /// always read their own account row (used by the shared Profile page).</summary>
+    [HttpGet("me")]
+    public async Task<ActionResult<MeDto>> Me()
+    {
+        var u = await _db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == User.GetUserId());
+        return u is null ? NotFound() : new MeDto(u.Id, u.FullName, u.Email, u.AvatarUrl, u.Major, (int)u.Role, u.Role.ToString());
+    }
+
     [HttpGet("{id:int}")]
     public async Task<ActionResult<UserDto>> GetById(int id)
     {

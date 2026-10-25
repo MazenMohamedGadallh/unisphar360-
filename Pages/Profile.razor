@@ -7,7 +7,7 @@ localStorage JWT as a bearer header. /api stays [Authorize]-guarded
 and MainLayout bounces anonymous users to /login after auth resolves.
 *@
 @inject HttpClient Http
-@inject UniSphere.Api.Services.BlazorAuthService AuthService
+@inject NavigationManager Nav
 
 <PageTitle>My Profile - UniSphere 360+</PageTitle>
 
@@ -16,15 +16,19 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     <p>View and edit your personal information.</p>
 </div>
 
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
 <div class="card" style="max-width: 600px;">
     <div class="card-header">
         <h3>Personal Information</h3>
     </div>
-    @if (_user is null)
+    @if (_loading)
     {
         <div class="loading">Loading profile...</div>
     }
-    else
+    else if (_user is not null)
     {
         <form @onsubmit="SaveProfile" class="profile-form">
             <div class="form-group">
@@ -36,7 +40,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                 <input type="email" value="@_user.Email" disabled />
             </div>
             <div class="form-group">
-                <label>Major</label>
+                <label>@MajorLabel</label>
                 <input type="text" @bind="_user.Major" required />
             </div>
             <div class="form-group">
@@ -47,32 +51,104 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                 <label>Avatar URL</label>
                 <input type="url" @bind="_user.AvatarUrl" placeholder="https://..." />
             </div>
-            <button type="submit" class="btn btn-primary">Save Changes</button>
+            @if (_message is not null)
+            {
+                <div class="alert @(_isError ? "alert-error" : "alert-success")" role="status">@_message</div>
+            }
+            <button type="submit" class="btn btn-primary" disabled="@_saving">@(_saving ? "Saving…" : "Save Changes")</button>
         </form>
     }
 </div>
 
 @code {
     private ProfileUser? _user;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _error;
+    private string? _message;
+    private bool _isError;
+
+    /// <summary>The same backend field means "major" for students but
+    /// "field/department of work or study" for doctors, graduates and admins
+    /// — the label reflects that instead of confusing everyone.</summary>
+    private string MajorLabel => _user?.Role switch
+    {
+        "Student" => "Major",
+        "Doctor" => "Field of teaching (department)",
+        "Graduate" => "Field of study",
+        _ => "Major"
+    };
 
     protected override async Task OnInitializedAsync()
     {
-        _user = await Http.GetFromJsonAsync<ProfileUser>("/api/users/me");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _user = await Http.GetFromJsonAsync<ProfileUser>("/api/users/me");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            Nav.NavigateTo("/login?expired=1", replace: true);
+            return;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not load your profile ({(ex.InnerException ?? ex).Message}).";
+        }
+        _loading = false;
+        StateHasChanged();
     }
 
     private async Task SaveProfile(EventArgs e)
     {
         if (_user is null) return;
-        var response = await Http.PutAsJsonAsync($"/api/users/{_user.Id}", new
+        _saving = true;
+        _message = null;
+        StateHasChanged();
+        HttpResponseMessage response;
+        try
         {
-            fullName = _user.FullName,
-            major = _user.Major,
-            avatarUrl = _user.AvatarUrl
-        });
-        if (response.IsSuccessStatusCode)
-        {
-            // Show success message
+            response = await Http.PutAsJsonAsync($"/api/users/{_user.Id}", new
+            {
+                fullName = _user.FullName,
+                major = _user.Major,
+                avatarUrl = _user.AvatarUrl
+            });
         }
+        catch (Exception ex)
+        {
+            _message = $"Save failed ({(ex.InnerException ?? ex).Message}).";
+            _isError = true;
+            _saving = false;
+            StateHasChanged();
+            return;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = "";
+            try { body = await response.Content.ReadAsStringAsync(); } catch { /* ignore */ }
+            string reason = "Please check your input and try again.";
+            if (!string.IsNullOrWhiteSpace(body)) reason = body.Length > 200 ? body[..200] : body;
+            _message = $"Save failed ({reason})";
+            _isError = true;
+            _saving = false;
+            StateHasChanged();
+            return;
+        }
+
+        // Persisted server-side: reload the authoritative record.
+        await LoadAsync();
+        _message = "Profile updated.";
+        _isError = false;
+        StateHasChanged();
     }
 }
 

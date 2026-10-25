@@ -111,6 +111,10 @@ else
                     {
                         <div class="loading">Loading students...</div>
                     }
+                    else if (_rosterError is not null)
+                    {
+                        <div class="empty-state">@_rosterError</div>
+                    }
                     else if (_roster is null || _roster.Count == 0)
                     {
                         <div class="empty-state"><div class="empty-icon"><UiIcon Name="users" /></div>No students are enrolled in this course yet.</div>
@@ -152,6 +156,7 @@ else
 
     private int? _editingCourseId;
     private string _editTitle = "";
+    private string? _rosterError;
     private bool _saving;
 
     private DoctorProfileCourseDto? _rosterCourse;
@@ -280,6 +285,7 @@ else
         _rosterCourse = c;
         _rosterLoading = true;
         _roster = null;
+        _rosterError = null;
         try
         {
             _roster = await Http.GetFromJsonAsync<List<DoctorStudentDto>>($"/api/doctor/courses/{c.CourseId}/students") ?? new();
@@ -290,7 +296,9 @@ else
         }
         catch
         {
-            _roster = new();
+            // Server failure must not masquerade as an empty roster.
+            _roster = null;
+            _rosterError = "Could not load the roster. Check your connection and try again.";
         }
         finally
         {

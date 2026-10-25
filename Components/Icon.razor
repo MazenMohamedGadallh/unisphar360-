@@ -1,0 +1,16 @@
+@namespace UniSphere.Api.Components
+
+<span class="icon @Class" aria-hidden="@(Title is null ? "true" : null)"
+      role="@(Title is null ? null : "img")" aria-label="@Title" title="@Title"
+      style="@Style">@((MarkupString)Src)</span>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "circle";
+    [Parameter] public double Size { get; set; } = 18;
+    [Parameter] public double StrokeWidth { get; set; } = 0;
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? Style { get; set; }
+    [Parameter] public string? Title { get; set; }
+
+    private string Src => IconSet.Svg(Name, Size, StrokeWidth);
+}

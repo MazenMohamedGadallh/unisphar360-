@@ -221,6 +221,15 @@ public class GraduateSettings
     public bool NotifyFollowUps { get; set; } = true;
     public int MatchAlertThresholdPercent { get; set; } = 80;
     public bool ShowGpaOnProfile { get; set; } = false;  // optional, privacy-first
+    /// <summary>UI theme preference persisted per account (light | dark | system);
+    /// localStorage remains the per-browser convenience layer by ThemeService.</summary>
+    public string ThemePreference { get; set; } = "system";
+    /// <summary>Job-alert targeting: comma-separated keywords matched against the
+    /// job title/company/description. Null/empty = no keyword filter.</summary>
+    public string? AlertKeywords { get; set; }
+    /// <summary>Job-alert targeting: comma-separated locations matched against the
+    /// job location. Null/empty = no location filter.</summary>
+    public string? AlertLocations { get; set; }
 }
 
 /// <summary>Single-row state for job catalog sync (throttling last sync).</summary>

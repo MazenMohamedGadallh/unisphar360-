@@ -143,6 +143,21 @@ public class DoctorModuleTests : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task GradeUpdate_UnassignedCourse_Forbidden()
+    {
+        // Mazen's CS120 enrollment is NOT one of the demo doctor's assigned
+        // courses, so the grade update must be rejected server-side.
+        var mazen = await _factory.StudentClient.GetAsync("/api/enrollments");
+        mazen.EnsureSuccessStatusCode();
+        var rows = (await mazen.Content.ReadFromJsonAsync<List<EnrollmentGradeDto>>())!;
+        var unassigned = rows.First(r => r.CourseCode == "CS120");
+
+        var resp = await _factory.DoctorClient.PutAsJsonAsync($"/api/enrollments/{unassigned.Id}/grade",
+            new { GradeLetter = "A" });
+        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [Fact]
     public async Task Doctor_CannotAccessAnotherDoctorsCourse()
     {
         var email = $"doc2-{Guid.NewGuid():N}@unisphere.edu";

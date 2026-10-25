@@ -142,4 +142,8 @@ public record GradInsightsDto(
 public record NameCount(string Name, int Count);
 
 public record GradSettingsDto(
-    bool NotifyNewMatches, bool NotifyFollowUps, int MatchAlertThresholdPercent, bool ShowGpaOnProfile);
+    bool NotifyNewMatches, bool NotifyFollowUps, int MatchAlertThresholdPercent,
+    bool ShowGpaOnProfile,
+    string ThemePreference = "system",
+    string? AlertKeywords = null,
+    string? AlertLocations = null);

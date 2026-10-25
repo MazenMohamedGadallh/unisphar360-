@@ -6,11 +6,14 @@ namespace UniSphere.Api.Dtos;
 
 public record UserDto(int Id, string FullName, string FirstName, string? AvatarUrl, string Major);
 
+/// <summary>Self-profile payload for /api/users/me (any authenticated role).</summary>
+public record MeDto(int Id, string FullName, string Email, string? AvatarUrl, string Major, int RoleId, string Role);
+
 public record ModuleDto(string Key, string Title, string Subtitle, string Icon, string BackgroundColor, string AccentColor);
 
 public record EventDto(int Id, string Title, string Location, DateTime StartsAtUtc, string? ImageUrl, string? Description);
 
-public record NotificationDto(int Id, string Title, string Body, DateTime CreatedAtUtc, bool IsRead);
+public record NotificationDto(int Id, string Title, string Body, DateTime CreatedAtUtc, bool IsRead, string Category);
 
 public record RecommendationDto(string Headline, string Message, string Route);
 

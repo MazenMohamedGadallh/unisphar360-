@@ -57,8 +57,25 @@ public class GraduateNotificationService(
         if (!settings.NotifyNewMatches) return 0;
 
         var matches = precomputed ?? await matching.MatchForUserAsync(userId, limit: 50, minScore: 0);
+
+        // Alert-targeting filters from the settings page (defaults = "everything").
+        // Empty lists never filter: an empty alert box would be silent confusion.
+        var keywords = SplitFilter(settings.AlertKeywords);
+        var locations = SplitFilter(settings.AlertLocations);
+        var candidates = matches.ToList();
+        if (keywords.Count > 0 || locations.Count > 0)
+        {
+            candidates = candidates
+                .Where(m => (keywords.Count == 0 || keywords.Any(k =>
+                        m.Job.Title.Contains(k, StringComparison.OrdinalIgnoreCase)
+                        || m.Job.CompanyName.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                    && (locations.Count == 0 || locations.Any(l =>
+                        m.Job.Location.Contains(l, StringComparison.OrdinalIgnoreCase))))
+                .ToList();
+        }
+
         var threshold = Math.Max(0, settings.MatchAlertThresholdPercent);
-        var strong = matches
+        var strong = candidates
             .Where(m => m.ScorePercent >= threshold)
             .OrderByDescending(m => m.ScorePercent)
             .Take(10)
@@ -209,4 +226,13 @@ public class GraduateNotificationService(
 
     private static string Truncate(string text, int max) =>
         text.Length <= max ? text : text[..max].TrimEnd() + "…";
+
+    /// <summary>Parses the comma-separated alert filters from GraduateSettings;
+    /// null input means "no filter configured" and returns an empty list.</summary>
+    private static IReadOnlyList<string> SplitFilter(string? raw) =>
+        string.IsNullOrWhiteSpace(raw)
+            ? []
+            : raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(v => v.Length > 0)
+                .ToList();
 }
