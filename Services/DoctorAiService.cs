@@ -26,6 +26,8 @@ namespace UniSphere.Api.Services;
 public interface IDoctorAiService
 {
     Task<IReadOnlyList<ChatProviderDto>> GetProvidersAsync(CancellationToken ct);
+    string GetModelName();
+    Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken ct);
     Task<QuizGenerationResponse> GenerateQuizAsync(int doctorUserId, QuizGenerationRequest req, CancellationToken ct);
     Task<LectureSummaryDto> SummarizeAsync(int doctorUserId, SummarizeRequest req, CancellationToken ct);
     Task<LectureAnswerDto> AnswerLectureQuestionAsync(int doctorUserId, LectureQuestionRequest req, CancellationToken ct);
@@ -46,26 +48,36 @@ public class DoctorAiService : IDoctorAiService
     private readonly AppDbContext _db;
     private readonly ChatProviderRegistry _registry;
     private readonly DoctorAiOptions _options;
+    private readonly ChatOptions _chatOptions;
     private readonly IWebHostEnvironment _env;
 
     public DoctorAiService(
         AppDbContext db, ChatProviderRegistry registry,
-        IOptions<DoctorAiOptions> options, IWebHostEnvironment env)
+        IOptions<DoctorAiOptions> options, IOptions<ChatOptions> chatOptions, IWebHostEnvironment env)
     {
         _db = db;
         _registry = registry;
         _options = options.Value;
+        _chatOptions = chatOptions.Value;
         _env = env;
     }
 
     public Task<IReadOnlyList<ChatProviderDto>> GetProvidersAsync(CancellationToken ct) =>
         _registry.AvailableAsync(ct);
 
+    public string GetModelName() =>
+        _registry.ResolveModel(
+            _registry.Available().FirstOrDefault()?.Name ?? "openrouter");
+
     private async Task<IChatProvider> ResolveProviderAsync(CancellationToken ct)
     {
+        // Priority: the doctor feature's own override (DoctorAi:PreferredProvider,
+        // if set) → the chat-wide default (Chat:DefaultProvider) → the built-in order.
         var candidates = new List<string>();
         if (!string.IsNullOrWhiteSpace(_options.PreferredProvider))
             candidates.Add(_options.PreferredProvider.Trim());
+        if (!string.IsNullOrWhiteSpace(_chatOptions.DefaultProvider))
+            candidates.Add(_chatOptions.DefaultProvider.Trim());
         candidates.AddRange(ProviderOrder);
 
         foreach (var name in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
@@ -76,10 +88,11 @@ public class DoctorAiService : IDoctorAiService
 
         throw new AiUnavailableException(
             "No AI provider is configured. Set an API key (for example OPENAI_API_KEY, ANTHROPIC_API_KEY, " +
-            "GEMINI_API_KEY or OPENROUTER_API_KEY) or run a local Ollama instance, then try again.");
+            "GEMINI_API_KEY or OPENROUTER_API_KEY, or the matching Chat:Providers:<Name>:ApiKey) " +
+            "or run a local Ollama instance, then try again.");
     }
 
-    private async Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken ct)
+    public async Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken ct)
     {
         var provider = await ResolveProviderAsync(ct);
         var request = new ChatRequest
@@ -150,21 +163,8 @@ public class DoctorAiService : IDoctorAiService
 
     private static IReadOnlyList<GeneratedQuestionDto> ParseQuestions(string raw, int expected)
     {
-        var start = raw.IndexOf('[');
-        var end = raw.LastIndexOf(']');
-        if (start < 0 || end <= start)
+        if (!AiJsonExtractor.TryExtract(raw, out var array))
             throw new AiInvalidResponseException("The AI response was not valid JSON question data. Please try again.");
-
-        JsonElement array;
-        try
-        {
-            using var doc = JsonDocument.Parse(raw.Substring(start, end - start + 1));
-            array = doc.RootElement.Clone();
-        }
-        catch (JsonException)
-        {
-            throw new AiInvalidResponseException("The AI response could not be parsed as questions. Please try again.");
-        }
 
         if (array.ValueKind != JsonValueKind.Array)
             throw new AiInvalidResponseException("The AI response was not a list of questions.");

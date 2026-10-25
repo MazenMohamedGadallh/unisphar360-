@@ -9,6 +9,7 @@ public class User
     public string LastName { get; set; } = "";
     public string PhoneNumber { get; set; } = "";
     public string Email { get; set; } = "";
+    public string Address { get; set; } = "";
     public string Gender { get; set; } = "";      // Male | Female
     public int Age { get; set; }
     public string? AvatarUrl { get; set; }
@@ -26,9 +27,6 @@ public class User
     public string? Specialization { get; set; }   // doctor: field they teach
     public string? GraduatedFrom { get; set; }    // graduate: university/faculty
     public int? GraduationYear { get; set; }      // graduate
-    // Locked profile field: set at registration or by an admin only
-    // (administrators manage it via the admin user-management API).
-    public string? Address { get; set; }
 }
 
 public class ModuleItem
@@ -51,6 +49,9 @@ public class EventItem
     public DateTime StartsAtUtc { get; set; }
     public string? ImageUrl { get; set; }
     public string? Description { get; set; }
+    /// <summary>University that owns this event. Null only on legacy rows
+    /// before the scope backfill; scoped users never see those.</summary>
+    public int? UniversityId { get; set; }
 }
 
 public class Notification
@@ -79,10 +80,29 @@ public class Course
     public string Description { get; set; } = "";
     public string Track { get; set; } = "";      // used by the simple recommender
     public int Credits { get; set; } = 3;
-    public int? UniversityId { get; set; }       // null = available everywhere
+    public int? UniversityId { get; set; }       // null = legacy/unscoped
     public string Department { get; set; } = ""; // "" = all departments
     public int? AcademicYear { get; set; }       // null = all years
     public string Semester { get; set; } = "";   // e.g. "Fall 2025"
+    /// <summary>Comma-separated prerequisite course codes. The importer
+    /// only keeps codes that resolve inside the same university.</summary>
+    public string Prerequisites { get; set; } = "";
+}
+
+/// <summary>Assignment of a doctor to teach a course in a term. Unique per
+/// course + doctor + term. Managed by admins; doctors only ever see and
+/// write to courses they are assigned to.</summary>
+public class CourseInstructor
+{
+    public int Id { get; set; }
+    public int CourseId { get; set; }
+    public Course? Course { get; set; }
+    public int DoctorUserId { get; set; }
+    public string Term { get; set; } = "";   // e.g. "Fall 2025"
+    /// <summary>Doctor-editable title shown to students. The catalog
+    /// Course.Title and Course.Code are never changed.</summary>
+    public string? DisplayTitle { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
 /// <summary>A course the student takes in the current semester, with grade and attendance.</summary>
@@ -201,7 +221,16 @@ public class CourseMaterial
     public string Content { get; set; } = "";
     public string? FileUrl { get; set; }
     public int? UploadedByUserId { get; set; }
-    public DateTime? DeadlineUtc { get; set; }  // assignments: submission deadline
+    /// <summary>Server-generated GUID + allowed extension for an uploaded
+    /// attachment. Only this bare file name is persisted; no absolute path is
+    /// ever stored in the database.</summary>
+    public string? StoredFileName { get; set; }
+    /// <summary>Sanitized client-facing name of the uploaded attachment.</summary>
+    public string? OriginalFileName { get; set; }
+    public long? FileSizeBytes { get; set; }
+    public string? FileContentType { get; set; }
+    /// <summary>Assignment-style submission deadline (doctor module).</summary>
+    public DateTime? DeadlineUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
@@ -257,4 +286,44 @@ public class GraduationApplication
     public DateTime? ReviewedAtUtc { get; set; }
     public int? ConferredGraduationYear { get; set; } // set when approved
     public DateTime SubmittedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>One generated exam owned by a doctor for one of their assigned
+/// courses. Contains the generation settings and a snapshot of which
+/// source materials were used.</summary>
+public class Exam
+{
+    public int Id { get; set; }
+    public int DoctorUserId { get; set; }
+    public User? DoctorUser { get; set; }
+    public int CourseId { get; set; }
+    public Course? Course { get; set; }
+    public string Title { get; set; } = "";
+    public int QuestionCount { get; set; }
+    public string QuestionTypes { get; set; } = "";   // comma-separated: MCQ, TrueFalse, ShortAnswer
+    public string Difficulty { get; set; } = "mixed"; // easy, medium, hard, mixed
+    public string Language { get; set; } = "en";      // en or ar
+    public string? MaterialsUsed { get; set; }        // JSON list of material titles used
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public string Status { get; set; } = "Draft";     // Draft | Published
+    public DateTime? PublishedAtUtc { get; set; }
+    public int? Marks { get; set; }                   // total marks for the exam
+    public ICollection<ExamQuestion> Questions { get; set; } = new List<ExamQuestion>();
+}
+
+/// <summary>One question inside an exam, with its answer hidden behind a
+/// "Show answers" toggle until the doctor or student chooses to reveal it.</summary>
+public class ExamQuestion
+{
+    public int Id { get; set; }
+    public int ExamId { get; set; }
+    public Exam? Exam { get; set; }
+    public string QuestionText { get; set; } = "";
+    public string QuestionType { get; set; } = "MCQ";   // MCQ, TrueFalse, ShortAnswer
+    public string? OptionsJson { get; set; }            // JSON array of option strings for MCQ
+    public string CorrectAnswer { get; set; } = "";
+    public string? Explanation { get; set; }
+    public string? SourceMaterial { get; set; }         // title of the source material this came from
+    public int OrderIndex { get; set; }
+    public int? Marks { get; set; }                     // marks for this question
 }

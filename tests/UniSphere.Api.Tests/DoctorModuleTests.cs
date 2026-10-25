@@ -29,9 +29,11 @@ public class DoctorModuleTests : IClassFixture<ApiFactory>
         resp.EnsureSuccessStatusCode();
         var list = await resp.Content.ReadFromJsonAsync<List<DoctorCourse>>();
         Assert.NotNull(list);
-        Assert.Equal(4, list.Count);
-        Assert.All(list, c => Assert.Contains(c.Code, new[] { "CS350", "CS330", "CS240", "CS320" }));
-        Assert.DoesNotContain(list, c => c.Code == "CS210");
+        // This project's seed/backfill assigns the demo doctor to six courses
+        // (CS350, CS330, CS240, CS320, CS210, CS120), not the friend's four.
+        Assert.Equal(6, list.Count);
+        Assert.All(list, c => Assert.Contains(c.Code,
+            new[] { "CS350", "CS330", "CS240", "CS320", "CS210", "CS120" }));
     }
 
     [Fact]

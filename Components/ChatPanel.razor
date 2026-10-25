@@ -14,14 +14,14 @@
     @if (ShowConversations && !Compact)
     {
         <aside class="chat-side">
-            <button class="btn btn-primary btn-sm chat-new" @onclick="NewChatAsync" disabled="@_streaming"><Icon Name="plus" Size="15" /> New chat</button>
+            <button class="btn btn-primary btn-sm chat-new" @onclick="NewChatAsync" disabled="@_streaming"><UiIcon Name="plus" /> New chat</button>
             @if (_conversations is null)
             {
                 <div class="loading">Loading…</div>
             }
             else if (!_conversations.Any())
             {
-                <div class="empty-state">No conversations yet.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="message-square" /></div>No conversations yet.</div>
             }
             else
             {
@@ -37,8 +37,8 @@
                         else
                         {
                             <button class="chat-conv-title" @onclick="() => SelectConversationAsync(c.Id)" title="@c.Title">@c.Title</button>
-                            <button class="icon-btn" title="Rename" aria-label="Rename conversation" @onclick="() => StartRename(c)"><Icon Name="pencil" Size="15" /></button>
-                            <button class="icon-btn" title="Delete" aria-label="Delete conversation" @onclick="() => AskDelete(c.Id)"><Icon Name="trash-2" Size="15" Class="icon-danger" /></button>
+                            <button class="icon-btn" title="Rename" aria-label="Rename conversation" @onclick="() => StartRename(c)"><UiIcon Name="pencil" /></button>
+                            <button class="icon-btn icon-btn-danger" title="Delete" aria-label="Delete conversation" @onclick="() => AskDelete(c.Id)"><UiIcon Name="trash-2" /></button>
                         }
                     </div>
                 }
@@ -48,7 +48,7 @@
 
     <section class="chat-main">
         <div class="chat-toolbar">
-            <select value="@_provider" @onchange="ProviderChangedAsync" disabled="@(_streaming || !_providers.Any())" aria-label="AI provider">
+            <select class="chat-provider" value="@_provider" @onchange="ProviderChangedAsync" disabled="@(_streaming || !_providers.Any())" aria-label="AI provider">
                 @if (!_providers.Any())
                 {
                     <option value="">@_providersEmptyText</option>
@@ -58,6 +58,7 @@
                     <option value="@p.Name">@p.DisplayName (@p.Model)</option>
                 }
             </select>
+            <span class="chat-toolbar-spacer"></span>
             @if (_confirmDeleteId is not null)
             {
                 <span class="chat-confirm">Delete this chat?
@@ -65,9 +66,16 @@
                     <button class="btn btn-sm btn-secondary" @onclick="CancelDelete">Cancel</button>
                 </span>
             }
-            else if (!Compact && _activeId is not null)
+            else
             {
-                <button class="btn btn-sm btn-secondary" @onclick="() => AskDelete(_activeId.Value)" disabled="@_streaming">Delete chat</button>
+                @if (!Compact && _activeId is not null && _messages is { Count: > 0 })
+                {
+                    <button class="btn btn-sm btn-secondary" @onclick="() => AskDelete(_activeId.Value)" disabled="@_streaming">Delete chat</button>
+                }
+                @if (CanRegenerate)
+                {
+                    <button class="btn btn-sm btn-secondary chat-regen" @onclick="() => SendAsync(true)" disabled="@_streaming"><UiIcon Name="refresh-cw" /> Regenerate</button>
+                }
             }
         </div>
 
@@ -100,10 +108,18 @@
                                 @RenderBlock(block)
                             }
                         </div>
-                        @if (msg.Role == "assistant")
-                        {
-                            <button class="btn btn-sm btn-secondary chat-copy" @onclick="() => CopyAsync(msg.Content)">Copy</button>
-                        }
+                        <div class="chat-meta">
+                            @if (msg.Role == "assistant" && !string.IsNullOrEmpty(msg.Provider))
+                            {
+                                <span class="chat-meta-provider">@msg.Provider</span>
+                                <span class="chat-meta-model">@msg.Model</span>
+                            }
+                            <span class="chat-meta-time">@LocalTime(msg.CreatedAtUtc)</span>
+                            @if (msg.Role == "assistant")
+                            {
+                                <button class="chat-copy" @onclick="() => CopyAsync(msg.Content)">Copy</button>
+                            }
+                        </div>
                     </div>
                 }
                 @if (_streaming)
@@ -119,6 +135,13 @@
                                 <span class="typing" aria-label="Assistant is typing"><span></span><span></span><span></span></span>
                             }
                         </div>
+                        @if (!string.IsNullOrEmpty(_streamingText))
+                        {
+                            <div class="chat-meta">
+                                <span class="chat-meta-provider">@_provider</span>
+                                <span class="chat-meta-model">@ActiveProviderModel</span>
+                            </div>
+                        }
                     </div>
                 }
             }
@@ -130,17 +153,13 @@
                       disabled="@(_streaming || string.IsNullOrEmpty(_provider))"></textarea>
             @if (_streaming)
             {
-                <button class="btn btn-danger" @onclick="StopAsync">Stop</button>
+                <button class="btn btn-danger chat-send" @onclick="StopAsync">Stop</button>
             }
             else
             {
-                <button class="btn btn-primary" @onclick="() => SendAsync(false)" disabled="@(string.IsNullOrWhiteSpace(_input) || string.IsNullOrEmpty(_provider))">Send</button>
+                <button class="btn btn-primary chat-send" @onclick="() => SendAsync(false)" disabled="@(string.IsNullOrWhiteSpace(_input) || string.IsNullOrEmpty(_provider))"><UiIcon Name="send" /> Send</button>
             }
         </div>
-        @if (CanRegenerate)
-        {
-            <button class="btn btn-sm btn-secondary" @onclick="() => SendAsync(true)" disabled="@_streaming"><Icon Name="refresh-cw" Size="14" /> Regenerate</button>
-        }
         <p class="chat-note">AI can make mistakes. Check important information.</p>
     </section>
 </div>
@@ -172,9 +191,14 @@
     private int? _renameId;
     private string _renameText = "";
 
+    private string ActiveProviderModel =>
+        _providers.FirstOrDefault(p => p.Name == _provider)?.Model ?? "";
+
     private bool CanRegenerate => !_streaming
         && _messages is { Count: > 0 }
         && _messages[^1].Role == "assistant";
+
+    private static string LocalTime(DateTime utc) => utc.ToLocalTime().ToString("HH:mm");
 
     private RenderFragment RenderBlock(MdBlock block) => builder =>
     {
@@ -356,6 +380,8 @@
         _streaming = true;
         _streamingText = "";
         _cts = new CancellationTokenSource();
+        var providerName = _provider;
+        var providerModel = ActiveProviderModel;
         try
         {
             if (regenerate && _messages is { Count: > 0 } && _messages[^1].Role == "assistant")
@@ -378,7 +404,7 @@
                 await LoadConversationsAsync(selectMostRecent: false);
             }
             if (!regenerate || _messages is null || !_messages.Any(m => m.Role == "user"))
-                (_messages ??= new()).Add(new ChatMessageDto(0, "user", text, DateTime.UtcNow));
+                (_messages ??= new()).Add(new ChatMessageDto(0, "user", text, providerName, providerModel, DateTime.UtcNow));
 
             await using var stream = await response.Content.ReadAsStreamAsync(_cts.Token);
             using var reader = new StreamReader(stream);
@@ -392,13 +418,7 @@
                 if (payload == "[DONE]") break;
                 if (currentEvent == "error")
                 {
-                    try
-                    {
-                        using var err = JsonDocument.Parse(payload);
-                        _error = err.RootElement.TryGetProperty("error", out var m)
-                            ? m.GetString() : "The assistant ran into a problem.";
-                    }
-                    catch { _error = "The assistant ran into a problem."; }
+                    _error = ExtractErrorMessage(payload);
                     break;
                 }
                 try
@@ -414,13 +434,17 @@
                 catch { /* skip malformed token */ }
             }
             if (!string.IsNullOrEmpty(_streamingText))
-                (_messages ??= new()).Add(new ChatMessageDto(0, "assistant", _streamingText, DateTime.UtcNow));
+                (_messages ??= new()).Add(new ChatMessageDto(0, "assistant", _streamingText, providerName, providerModel, DateTime.UtcNow));
             _streamingText = "";
             await MaybeAutoScrollAsync();
         }
         catch (OperationCanceledException)
         {
-            _streamingText = ""; // stopped by user: discard partial reply
+            // Stopped by the user: the server keeps the partial answer, so
+            // show the same partial text here instead of dropping it.
+            if (!string.IsNullOrEmpty(_streamingText))
+                (_messages ??= new()).Add(new ChatMessageDto(0, "assistant", _streamingText, providerName, providerModel, DateTime.UtcNow));
+            _streamingText = "";
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
         {
@@ -437,6 +461,32 @@
             _cts = null;
         }
     }
+
+    /// <summary>Reads the provider's safe error message out of an SSE error
+    /// frame. Supports {"error":"..."}, {"error":{"message":"..."}} and the
+    /// legacy bare JSON string.</summary>
+    private static string ExtractErrorMessage(string payload)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            if (doc.RootElement.ValueKind == JsonValueKind.String)
+                return doc.RootElement.GetString() ?? FallbackAssistantError;
+            if (doc.RootElement.TryGetProperty("error", out var error))
+            {
+                if (error.ValueKind == JsonValueKind.String)
+                    return error.GetString() ?? FallbackAssistantError;
+                if (error.TryGetProperty("message", out var nested) && nested.ValueKind == JsonValueKind.String)
+                    return nested.GetString() ?? FallbackAssistantError;
+            }
+            if (doc.RootElement.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String)
+                return message.GetString() ?? FallbackAssistantError;
+        }
+        catch { /* malformed payload */ }
+        return FallbackAssistantError;
+    }
+
+    private const string FallbackAssistantError = "The assistant couldn't complete the reply. Please try again.";
 
     private async Task HandleSendErrorAsync(HttpResponseMessage response)
     {

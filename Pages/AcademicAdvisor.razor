@@ -1,4 +1,5 @@
 @page "/academic-advisor"
+@attribute [Authorize(Roles = "Student")]
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -15,11 +16,6 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     <p>Your academic performance, insights, and progress in one place.</p>
 </div>
 
-@if (!string.IsNullOrEmpty(_error))
-{
-    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
-}
-
 <!-- Summary Cards -->
 <div class="summary-cards">
     <div class="card gpa-card">
@@ -31,19 +27,19 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     <div class="card courses-card">
         <div class="card-info">
             <span class="card-label">Completed Courses</span>
-            <span class="card-value">@(_stats is null ? "--" : $"{_stats.CompletedCourses}/{_stats.TotalCourses}")</span>
+            <span class="card-value">@(_stats?.CompletedCourses ?? 0)/@(_stats?.TotalCourses ?? 0)</span>
         </div>
     </div>
     <div class="card attendance-card">
         <div class="card-info">
             <span class="card-label">Attendance Rate</span>
-            <span class="card-value">@(_stats is null ? "--" : $"{_stats.AttendanceRate}%")</span>
+            <span class="card-value">@(_stats?.AttendanceRate ?? 0)%</span>
         </div>
     </div>
     <div class="card improve-card">
         <div class="card-info">
             <span class="card-label">Subjects to Improve</span>
-            <span class="card-value">@(_stats is null ? "--" : $"{_stats.SubjectsToImprove}")</span>
+            <span class="card-value">@(_stats?.SubjectsToImprove ?? 0)</span>
         </div>
     </div>
 </div>
@@ -108,13 +104,13 @@ and MainLayout bounces anonymous users to /login after auth resolves.
             @foreach (var insight in _insights)
             {
                 <div class="insight-item @insight.Kind">
-                    <div class="insight-icon"><Icon Name="@GetInsightIcon(insight.Kind)" /></div>
+                    <div class="insight-icon"><UiIcon Name="@GetInsightIcon(insight.Kind)" /></div>
                     <div class="insight-content">
                         <span class="insight-title">@insight.Title</span>
                         <span class="insight-message">@insight.Message</span>
                         @if (!string.IsNullOrEmpty(insight.ActionLabel))
                         {
-                            <NavLink href="@insight.ActionRoute" class="insight-action">@insight.ActionLabel &rarr;</NavLink>
+                            <NavLink href="@insight.ActionRoute" class="insight-action">@insight.ActionLabel <UiIcon Name="arrow-right" /></NavLink>
                         }
                     </div>
                 </div>
@@ -127,32 +123,19 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     private AcademicStats? _stats;
     private List<GradeRowDto>? _performance;
     private List<InsightDto>? _insights;
-    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadAsync();
-    }
-
-    private async Task LoadAsync()
-    {
-        _error = null;
-        _stats = null;
-        _performance = null;
-        _insights = null;
         try
         {
-            _stats = await Http.GetFromJsonAsync<AcademicStats>("/api/academic/stats") ?? new AcademicStats(0, 0, 4, 0, 0, 0, 0, 0, 0, 0);
-            _performance = await Http.GetFromJsonAsync<List<GradeRowDto>>("/api/academic/performance") ?? new();
-            _insights = await Http.GetFromJsonAsync<List<InsightDto>>("/api/academic/insights") ?? new();
+            _stats = await Http.GetFromJsonAsync<AcademicStats>("/api/academic/stats");
+            _performance = await Http.GetFromJsonAsync<List<GradeRowDto>>("/api/academic/performance");
+            _insights = await Http.GetFromJsonAsync<List<InsightDto>>("/api/academic/insights");
         }
-        catch (Exception ex)
+        catch
         {
-            // 404 (no academic records yet) and transient failures land here
-            // with a retryable message instead of eternal loaders.
-            _error = $"Could not load your academic data ({(ex.InnerException ?? ex).Message}).";
+            // Handle error
         }
-        StateHasChanged();
     }
 
     private static string GetInsightIcon(string kind) => kind switch

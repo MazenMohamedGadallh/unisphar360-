@@ -1,0 +1,100 @@
+Id,Code,Title,Description,Track,Credits,UniversityId,Department,AcademicYear,Semester,Prerequisites
+1,MTHG001,Algebra,Compulsory,EEC,2,2,MTHG,1,Term 1,
+2,PHYG001,Mechanical properties of Matter and Thermodynamics,Compulsory,EEC,3,2,PHYG,1,Term 1,
+3,EMCG001,Engineering Mechanics-Statics,Compulsory,EEC,2,2,EMCG,1,Term 1,
+4,InTG005,Introduction to Computer Science,Compulsory,EEC,3,2,INTG,1,Term 1,
+5,MTHG002,Calculus 1,Compulsory,EEC,3,2,MTHG,1,Term 1,
+6,CHEG001,Chemistry for Engineers,Compulsory,EEC,2,2,CHEG,1,Term 1,
+7,GENG001,Critical & Creative Thinking,Compulsory,EEC,2,2,GENG,1,Term 1,
+8,MTHG003,Calculus 2,Compulsory,EEC,3,2,MTHG,1,Term 2,MTHG002
+9,PHYG002,Electricity and Magnetism,Compulsory,EEC,3,2,PHYG,1,Term 2,PHYG001
+10,EMCG002,Engineering Mechanics-Dynamics,Compulsory,EEC,3,2,EMCG,1,Term 2,EMCG001
+11,INTG001,Technical Drawing,Compulsory,EEC,2,2,INTG,1,Term 2,
+12,ENGG001,Applied and Modern Manufacturing Engineering,Compulsory,EEC,3,2,ENGG,1,Term 2,
+13,GENG002,Societal Issues,Compulsory,EEC,2,2,GENG,1,Term 2,
+14,EECG111,Fundamental of Circuits,Compulsory,EEC,3,2,EECG,2,Term 1,PHYG002
+15,EECG171,Measurements and Lab 1,Compulsory,EEC,2,2,EECG,2,Term 1,PHYG002
+16,EECG141,Logic Circuits,Compulsory,EEC,3,2,EECG,2,Term 1,InTG005
+17,GENG118,Principles of Economics,Compulsory,EEC,2,2,GENG,2,Term 1,
+18,MTHG102,Linear Algebra and Multivariable Integrals,Compulsory,EEC,3,2,MTHG,2,Term 1,MTHG001
+19,PHYG102,Modern Physics,Compulsory,EEC,3,2,PHYG,2,Term 1,PHYG002
+20,GENG005,Writing and Presentation Skills,Compulsory,EEC,2,2,GENG,2,Term 1,
+21,EECG112,Resonant and Coupled Circuits,Compulsory,EEC,4,2,EECG,2,Term 2,EECG111
+22,EECG122,Introduction to Electronic Circuits,Compulsory,EEC,3,2,EECG,2,Term 2,EECG111
+23,EECG142,Data Structures,Compulsory,EEC,3,2,EECG,2,Term 2,InTG005
+24,GENG351,Selected Current Local Issues,Compulsory,EEC,1,2,GENG,2,Term 2,
+25,MTHG103,Ordinary Differential Equations & Mathematical Transforms,Compulsory,EEC,2,2,MTHG,2,Term 2,MTHG003
+26,PHYG101,Physical Optics,Compulsory,EEC,3,2,PHYG,2,Term 2,PHYG002
+27,MTHG113,Probability and Statistics,Compulsory,EEC,2,2,MTHG,2,Term 2,MTHG002
+28,EECG211,Circuits Synthesis and Analysis,Compulsory,EEC,3,2,EECG,3,Term 1,EECG112
+29,EECG221,Basic Electronic Circuits,Compulsory,EEC,4,2,EECG,3,Term 1,EECG122
+30,EECG231,Analysis of Continuous and Discrete-Time Signals,Compulsory,EEC,4,2,EECG,3,Term 1,MTHG103
+31,EECG241,Processor Architecture,Compulsory,EEC,3,2,EECG,3,Term 1,EECG141
+32,EECG271,Measurements and Lab 2,Compulsory,EEC,2,2,EECG,3,Term 1,EECG171
+33,MTHG202,Special Functions and Partial Differential Equations,Compulsory,EEC,2,2,MTHG,3,Term 1,MTHG103
+34,EECG222,Digital Integrated Circuits,Compulsory,EEC,3,2,EECG,3,Term 2,EECG221
+35,EECG232,Introduction to Communication Systems,Compulsory,EEC,3,2,EECG,3,Term 2,"EECG231, MTHG113"
+36,EECG242,Embedded Systems,Compulsory,EEC,3,2,EECG,3,Term 2,EECG241
+37,EECG252,Fields and Wave Propagation,Compulsory,EEC,4,2,EECG,3,Term 2,"PHYG002, MTHG102"
+38,GENG116,Code of Ethics,Compulsory,EEC,2,2,GENG,3,Term 2,
+39,EECG281,Industrial Training - 1,Compulsory,EEC,1,2,EECG,3,Summer,
+40,EECG321,Analog Integrated Circuits,Compulsory,EEC,4,2,EECG,4,Term 1,EECG221
+41,EECG331,Advanced Communication Systems,Compulsory,EEC,4,2,EECG,4,Term 1,EECG232
+42,EECG341,Advanced Processor Architecture,Compulsory,EEC,3,2,EECG,4,Term 1,EECG241
+43,EECG351,Transmission Lines and Matching Techniques,Compulsory,EEC,3,2,EECG,4,Term 1,EECG252
+44,EECG361,Linear Systems,Compulsory,EEC,3,2,EECG,4,Term 1,EECG231
+45,EECG342,Communication Networks,Compulsory,EEC,3,2,EECG,4,Term 2,EECG232
+46,EECG352,Waveguides and Antennas,Compulsory,EEC,3,2,EECG,4,Term 2,EECG252
+47,EECG362,Control System Design,Compulsory,EEC,3,2,EECG,4,Term 2,EECG361
+48,EECG481,Graduation Project 1,Compulsory,EEC,1,2,EECG,4,Term 2,
+49,GENG111,(UR3) Selected Topics 1,Compulsory,EEC,2,2,GENG,4,Term 2,
+50,EECG461,Modern Control Engineering,Compulsory,EEC,3,2,EECG,5,Term 1,EECG362
+51,EECG482,Graduation Project 2,Compulsory,EEC,3,2,EECG,5,Term 1,EECG481
+52,EPEG130,Introduction to Power and Machines Engineering,Elective,EEC,3,2,EPEG,3,Term 2,
+53,MEPG175,Electronics Cooling,Elective,EEC,3,2,MEPG,3,Term 2,
+54,EECG411,Selected topics in Electronics,Elective,EEC,3,2,EECG,4,Term 2,Sophomore Level
+55,EECG412,Modern Electronics Systems,Elective,EEC,3,2,EECG,4,Term 2,Sophomore Level
+56,EECG413,Very Large Scale Integrated Circuits,Elective,EEC,3,2,EECG,4,Term 2,EECG221
+57,EECG414,Industrial Electronics,Elective,EEC,3,2,EECG,5,Term 1,EECG320
+58,EECG415,RF Integrated Circuits Design,Elective,EEC,3,2,EECG,4,Term 2,EECG121
+59,EECG416,Advanced Electronic Devices,Elective,EEC,3,2,EECG,4,Term 2,EECG121
+60,EECG417,Advanced Analog Circuits and Systems,Elective,EEC,3,2,EECG,4,Term 2,
+61,EECG421,Selected Topics in Communications,Elective,EEC,3,2,EECG,4,Term 2,Sophomore Level
+62,EECG422,Modern Communications Techniques,Elective,EEC,3,2,EECG,4,Term 2,Sophomore Level
+63,EECG423,Multimedia Electronic Systems,Elective,EEC,3,2,EECG,5,Term 1,EECG331
+64,EECG424,Introduction to Digital Signal Processing Applications,Elective,EEC,3,2,EECG,4,Term 2,EECG232
+65,EECG425,Wireless Communication Systems,Elective,EEC,3,2,EECG,5,Term 1,EECG331
+66,EECG426,Satellite Communication Systems,Elective,EEC,3,2,EECG,5,Term 1,EECG331
+67,EECG427,Telephone Systems,Elective,EEC,3,2,EECG,4,Term 2,EECG232
+68,EECG428,Mobile Communications,Elective,EEC,3,2,EECG,5,Term 1,EECG331
+69,EECG431,Advanced Topics in Wireless Communications,Elective,EEC,3,2,EECG,5,Term 1,EECG331
+70,EECG432,Advanced Information Theory,Elective,EEC,3,2,EECG,5,Term 1,EECG331
+71,EECG433,Wireless Networks,Elective,EEC,3,2,EECG,4,Term 2,EECG232
+72,EECG434,IoT Communications and Applications,Elective,EEC,3,2,EECG,5,Term 1,EECG331
+73,EECG435,Telecomm Standards and Regulations,Elective,EEC,3,2,EECG,4,Term 2,EECG232
+74,EECG436,Classical Machine learning Algorithms,Elective,EEC,3,2,EECG,4,Term 2,EECG232
+75,EECG437,Modern Machine Learning Algorithms,Elective,EEC,3,2,EECG,4,Term 2,
+76,EECG438,Millimeter Waves and Optical Wireless Communications,Elective,EEC,3,2,EECG,5,Term 1,EECG331
+77,EECG441,Selected Topics in Computing,Elective,EEC,3,2,EECG,4,Term 2,Sophomore Level
+78,EECG442,Modern Computer Systems,Elective,EEC,3,2,EECG,4,Term 2,EECG221
+79,EECG443,Advanced Embedded Systems,Elective,EEC,3,2,EECG,4,Term 2,EECG242
+80,EECG444,Cloud Computing,Elective,EEC,3,2,EECG,4,Term 2,
+81,EECG445,Application of Machine Learning,Elective,EEC,3,2,EECG,5,Term 1,EECG320
+82,EECG446,Advanced Networking,Elective,EEC,3,2,EECG,4,Term 2,
+83,EECG447,Data Processing Systems,Elective,EEC,3,2,EECG,4,Term 2,
+84,EECG448,Processor Interfacing and Peripherals,Elective,EEC,3,2,EECG,4,Term 2,
+85,EECG449,System Security,Elective,EEC,3,2,EECG,4,Term 2,
+86,EECG451,Selected Topics in Electromagnetics,Elective,EEC,3,2,EECG,4,Term 2,EECG221
+87,EECG452,Modern Applications of Electromagnitics,Elective,EEC,3,2,EECG,5,Term 1,EECG320
+88,EECG453,Optical Fibers Communication Systems,Elective,EEC,3,2,EECG,4,Term 2,
+89,EECG454,Acoustics and Ultrasonics Engineering,Elective,EEC,3,2,EECG,4,Term 2,
+90,EECG455,High Power Microwave Devices,Elective,EEC,3,2,EECG,4,Term 2,
+91,EECG456,Advanced Topics in Antennas,Elective,EEC,3,2,EECG,4,Term 2,
+92,EECG462,Selected Topics in Control,Elective,EEC,3,2,EECG,4,Term 2,
+93,EECG463,Modern Optimal Control,Elective,EEC,3,2,EECG,4,Term 2,
+94,EECG464,Programmable Logic Controllers,Elective,EEC,3,2,EECG,4,Term 2,
+95,EECG465,Process Control,Elective,EEC,3,2,EECG,4,Term 2,EECG231
+96,EECG466,Robotics,Elective,EEC,3,2,EECG,4,Term 2,EECG231
+97,EECG467,Intelligent Control,Elective,EEC,3,2,EECG,5,Term 1,"MTHG103, EECG330"
+98,EECG468,Direct Digital Control,Elective,EEC,3,2,EECG,4,Term 2,EECG241
+99,EECG469,Computer Control,Elective,EEC,3,2,EECG,4,Term 2,EECG141

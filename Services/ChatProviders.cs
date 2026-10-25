@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace UniSphere.Api.Services;
@@ -35,11 +36,9 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
     public abstract string Name { get; }
     public abstract bool IsConfigured { get; }
 
-    /// <summary>Single read path for credential-bearing config entries. Trims
-    /// pasted whitespace and normalizes blank strings to null so IsConfigured
-    /// cannot pass for an effectively empty key.</summary>
-    protected static string? ReadApiKey(IConfiguration config, string name) =>
-        config[name]?.Trim() is { Length: > 0 } value ? value : null;
+    /// <summary>Model of the in-flight request, for stream-error logs.
+    /// One provider instance serves one request at a time.</summary>
+    protected string CurrentModel { get; private set; } = "";
 
     public virtual Task<bool> IsAvailableAsync(CancellationToken ct = default) =>
         Task.FromResult(IsConfigured);
@@ -47,13 +46,23 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
     protected abstract HttpRequestMessage BuildRequest(ChatRequest request);
     protected abstract IAsyncEnumerable<string> ReadTokensAsync(Stream stream, CancellationToken ct);
 
+    /// <summary>Body/detail text for logs: truncated so a huge provider error
+    /// can never flood the log file (never contains keys: only response bodies).</summary>
+    protected static string Truncate(string? text, int max = 500)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length > max ? text[..max] : text;
+    }
+
     protected static string MapStatusToMessage(int statusCode) => statusCode switch
     {
-        401 or 403 => "The AI provider rejected the API key",
-        404 => "AI model not found, check the model name in settings",
-        429 => "Free quota reached, try again later",
-        400 => "The AI provider rejected the request",
-        _ => "The AI provider is temporarily unavailable"
+        401 or 403 => $"The AI provider rejected the API key (HTTP {statusCode}). Check this provider's key.",
+        402 => "The AI provider account has no credits left (HTTP 402). Add credits or switch provider.",
+        404 => "AI model not found (HTTP 404). Check the model name for this provider.",
+        429 => "Rate limited by the AI provider (HTTP 429). Wait a moment and try again.",
+        400 => "The AI provider rejected the request (HTTP 400).",
+        _ when statusCode >= 500 => $"The AI provider is temporarily unavailable (HTTP {statusCode}). Try again later.",
+        _ => $"The AI provider returned an unexpected error (HTTP {statusCode})."
     };
 
     /// <summary>Per-provider error mapping. Defaults to <see cref="MapStatusToMessage"/>. The
@@ -61,8 +70,41 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
     /// detection). Bodies are provider diagnostic output — never log or echo API keys.</summary>
     protected virtual string MapError(int statusCode, string body) => MapStatusToMessage(statusCode);
 
+    /// <summary>Logs (Warning) and maps an error object received INSIDE a stream,
+    /// e.g. OpenRouter's {"error":{"message":"...","code":429}}. Provider details
+    /// are logged truncated server-side; the client only gets the safe mapping.</summary>
+    protected string MapStreamError(string? model, JsonElement error)
+    {
+        string? message = null;
+        int? code = null;
+        if (error.ValueKind == JsonValueKind.Object)
+        {
+            if (error.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String)
+                message = m.GetString();
+            if (error.TryGetProperty("code", out var c))
+            {
+                if (c.ValueKind == JsonValueKind.Number && c.TryGetInt32(out var numeric))
+                    code = numeric;
+                else if (c.ValueKind == JsonValueKind.String && int.TryParse(c.GetString(), out var parsed))
+                    code = parsed;
+            }
+        }
+        else if (error.ValueKind == JsonValueKind.String)
+        {
+            message = error.GetString();
+        }
+
+        _logger.LogWarning("{Provider} ({Model}) stream error. Response body truncated: {Body}",
+            Name, model ?? "", Truncate(message));
+        return code is int status
+            ? MapError(status, Truncate(message))
+            : "The AI provider returned an error while answering. Please try again.";
+    }
+
     public virtual async IAsyncEnumerable<string> StreamAsync(ChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
     {
+        CurrentModel = request.Model;
+
         // Retry loop only establishes the response (no yields inside try:
         // C# forbids yield in a try block with a catch clause).
         const int maxAttempts = 3;
@@ -96,8 +138,8 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
                 attemptResponse = null;
 
                 // Never log keys or full URLs (old Gemini code put the key in the URL).
-                var truncated = body.Length > 500 ? body[..500] : body;
-                _logger.LogWarning("{Provider} request failed: HTTP {Status}. Body: {Body}", Name, status, truncated);
+                _logger.LogWarning("{Provider} ({Model}) request failed: HTTP {Status}. Response body truncated: {Body}",
+                    Name, request.Model, status, Truncate(body));
 
                 var retryable = status == 429 || status >= 500;
                 if (retryable && attempt < maxAttempts)
@@ -110,7 +152,7 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
                 {
                     // 4xx (except 429) are NOT retried.
                     shouldRetry = false;
-                    fatal = new ChatProviderException(MapError(status, truncated));
+                    fatal = new ChatProviderException(MapError(status, Truncate(body)));
                 }
             }
             catch (OperationCanceledException)
@@ -129,7 +171,8 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
                 attemptResponse?.Dispose();
                 if (attempt < maxAttempts)
                 {
-                    _logger.LogWarning(ex, "{Provider} transient network error, retrying ({Attempt})", Name, attempt);
+                    _logger.LogWarning(ex, "{Provider} ({Model}) transient network error, retrying ({Attempt}/{Max})",
+                        Name, request.Model, attempt, maxAttempts);
                     try
                     {
                         await Task.Delay(TimeSpan.FromMilliseconds(400 * attempt * attempt), ct);
@@ -140,14 +183,14 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
                     }
                     continue;
                 }
-                _logger.LogWarning(ex, "{Provider} request failed after retries", Name);
-                throw new ChatProviderException("The AI provider is temporarily unavailable");
+                _logger.LogWarning(ex, "{Provider} ({Model}) request failed after retries", Name, request.Model);
+                throw new ChatProviderException("The AI provider is temporarily unavailable. Please try again.");
             }
             catch (Exception ex)
             {
                 attemptResponse?.Dispose();
-                _logger.LogWarning(ex, "{Provider} request failed", Name);
-                throw new ChatProviderException("The AI provider is temporarily unavailable");
+                _logger.LogWarning(ex, "{Provider} ({Model}) request failed", Name, request.Model);
+                throw new ChatProviderException("The AI provider is temporarily unavailable. Please try again.");
             }
 
             if (fatal is not null) throw fatal;
@@ -156,8 +199,8 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
 
         if (response is null)
         {
-            _logger.LogWarning("{Provider} request failed after retries", Name);
-            throw new ChatProviderException("The AI provider is temporarily unavailable");
+            _logger.LogWarning("{Provider} ({Model}) request failed after retries", Name, request.Model);
+            throw new ChatProviderException("The AI provider is temporarily unavailable. Please try again.");
         }
 
         // Stream tokens outside the retry try/catch (mid-stream errors are not retried).
@@ -178,6 +221,10 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
         while ((line = await reader.ReadLineAsync(ct)) is not null)
         {
             ct.ThrowIfCancellationRequested();
+            // SSE comments are keep-alives (OpenRouter sends
+            // ": OPENROUTER PROCESSING" while a slow model is thinking):
+            // they carry no data and must never reach the JSON parser.
+            if (line.StartsWith(':')) continue;
             if (line.StartsWith("event:", StringComparison.Ordinal))
             {
                 currentEvent = line["event:".Length..].Trim();
@@ -187,30 +234,76 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
             yield return currentEvent + "\n" + line["data:".Length..].Trim();
         }
     }
+
+    /// <summary>Shared token parser for OpenAI-compatible chat/completions SSE
+    /// (OpenAI, OpenRouter, and Ollama's /v1 endpoint). Yields only
+    /// delta.content text (reasoning fields are ignored), stops at [DONE],
+    /// skips malformed lines, and surfaces in-stream {"error":{...}} objects
+    /// (e.g. OpenRouter 429) through <see cref="MapStreamError"/>.</summary>
+    protected async IAsyncEnumerable<string> ReadOpenAiCompatibleTokensAsync(
+        Stream stream, [EnumeratorCancellation] CancellationToken ct)
+    {
+        await foreach (var frame in ReadSseLinesAsync(stream, ct).WithCancellation(ct))
+        {
+            var payload = frame[(frame.IndexOf('\n') + 1)..];
+            if (payload == "[DONE]") yield break;
+            string? text = null;
+            try
+            {
+                using var doc = JsonDocument.Parse(payload);
+                if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
+                {
+                    var choice = choices[0];
+                    // Only delta.content is answer text (reasoning fields ignored).
+                    if (choice.TryGetProperty("delta", out var delta)
+                        && delta.TryGetProperty("content", out var content)
+                        && content.ValueKind == JsonValueKind.String)
+                        text = content.GetString();
+                    if (choice.TryGetProperty("error", out var err))
+                        throw new ChatProviderException(MapStreamError(CurrentModel, err));
+                }
+                else if (doc.RootElement.TryGetProperty("error", out var err))
+                {
+                    throw new ChatProviderException(MapStreamError(CurrentModel, err));
+                }
+            }
+            catch (ChatProviderException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "{Provider}: skipping malformed stream line", Name);
+                continue;
+            }
+            if (!string.IsNullOrEmpty(text)) yield return text;
+        }
+    }
 }
 
 public class OpenAiChatProvider : StreamingChatProviderBase
 {
     private readonly IConfiguration _config;
     private readonly ChatOptions _options;
-    private readonly ILogger<OpenAiChatProvider> _typedLogger;
 
     public OpenAiChatProvider(
-        HttpClient http, IConfiguration config, IOptions<ChatOptions> options,
-        ILogger<OpenAiChatProvider> logger) : base(http, logger)
+        HttpClient http, IConfiguration config, IOptions<ChatOptions> options)
+        : base(http, NullLogger<OpenAiChatProvider>.Instance)
     {
         _config = config;
         _options = options.Value;
-        _typedLogger = logger;
     }
 
     public override string Name => "openai";
-    public override bool IsConfigured => ReadApiKey(_config, "OPENAI_API_KEY") is not null;
+    public override bool IsConfigured => !string.IsNullOrWhiteSpace(ProviderSettings.GetApiKey(_config, Name));
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        var key = ReadApiKey(_config, "OPENAI_API_KEY")
-            ?? throw new ChatProviderException("The AI provider 'OpenAI' is not configured right now.");
+        // Priority: Chat:Providers:OpenAI:ApiKey (appsettings.Local.json) → OPENAI_API_KEY (env/user-secrets/secret.json).
+        var key = ProviderSettings.GetApiKey(_config, Name);
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ChatProviderException(
+                "The AI provider 'OpenAI' is not configured right now (set OPENAI_API_KEY or Chat:Providers:OpenAI:ApiKey).");
         var messages = new List<object> { new { role = "system", content = request.SystemPrompt } };
         messages.AddRange(request.Messages.Select(m => new { role = m.Role, content = m.Content }));
 
@@ -230,73 +323,42 @@ public class OpenAiChatProvider : StreamingChatProviderBase
     protected override async IAsyncEnumerable<string> ReadTokensAsync(
         Stream stream, [EnumeratorCancellation] CancellationToken ct)
     {
-        await foreach (var frame in ReadSseLinesAsync(stream, ct).WithCancellation(ct))
-        {
-            var payload = frame[(frame.IndexOf('\n') + 1)..];
-            if (payload == "[DONE]") yield break;
-            string? text = null;
-            try
-            {
-                using var doc = JsonDocument.Parse(payload);
-                if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
-                {
-                    var choice = choices[0];
-                    if (choice.TryGetProperty("delta", out var delta)
-                        && delta.TryGetProperty("content", out var content)
-                        && content.ValueKind == JsonValueKind.String)
-                        text = content.GetString();
-                    if (choice.TryGetProperty("error", out var err))
-                        throw new ChatProviderException("The AI provider returned an error. Please try again.");
-                }
-                else if (doc.RootElement.TryGetProperty("error", out _))
-                {
-                    throw new ChatProviderException("The AI provider returned an error. Please try again.");
-                }
-            }
-            catch (ChatProviderException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _typedLogger.LogWarning(ex, "OpenAI: skipping malformed stream line");
-                continue;
-            }
-            if (!string.IsNullOrEmpty(text)) yield return text;
-        }
+        await foreach (var token in ReadOpenAiCompatibleTokensAsync(stream, ct).WithCancellation(ct))
+            yield return token;
     }
 }
 
 public class OpenRouterChatProvider : StreamingChatProviderBase
 {
     private readonly IConfiguration _config;
-    private readonly ILogger<OpenRouterChatProvider> _typedLogger;
 
     public OpenRouterChatProvider(
-        HttpClient http, IConfiguration config,
-        ILogger<OpenRouterChatProvider> logger) : base(http, logger)
+        HttpClient http, IConfiguration config)
+        : base(http, NullLogger<OpenRouterChatProvider>.Instance)
     {
         _config = config;
-        _typedLogger = logger;
     }
 
     public override string Name => "openrouter";
-    public override bool IsConfigured => ReadApiKey(_config, "OPENROUTER_API_KEY") is not null;
+    public override bool IsConfigured => !string.IsNullOrWhiteSpace(ProviderSettings.GetApiKey(_config, Name));
 
     protected override string MapError(int statusCode, string body) => statusCode switch
     {
-        401 or 403 => "OpenRouter rejected the API key. Generate a new key at openrouter.ai/keys " +
-            "(user-secrets, OPENROUTER_API_KEY env var, or secret.json), then restart the app.",
-        402 => "The AI provider has run out of credits",
-        404 => "AI model not found, check OPENROUTER_MODEL in settings (OpenRouter ids include the vendor prefix, e.g. nvidia/...)",
-        429 => "Free-tier rate limit reached, try again later",
-        _ => "The AI provider is temporarily unavailable"
+        401 or 403 => "OpenRouter rejected the API key (HTTP 401/403). Check your OpenRouter key.",
+        402 => "OpenRouter has no credits left (HTTP 402). Add credits or pick another provider.",
+        404 => "AI model not found on OpenRouter (HTTP 404). Check the OpenRouter model name in settings.",
+        429 => "OpenRouter rate limit reached (HTTP 429). Wait a moment and try again.",
+        _ when statusCode >= 500 => $"OpenRouter is temporarily unavailable (HTTP {statusCode}). Try again later.",
+        _ => MapStatusToMessage(statusCode)
     };
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        var key = ReadApiKey(_config, "OPENROUTER_API_KEY")
-            ?? throw new ChatProviderException("The AI provider 'OpenRouter' is not configured right now.");
+        // Priority: Chat:Providers:OpenRouter:ApiKey (appsettings.Local.json) → OPENROUTER_API_KEY (env/user-secrets/secret.json).
+        var key = ProviderSettings.GetApiKey(_config, Name);
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ChatProviderException(
+                "The AI provider 'OpenRouter' is not configured right now (set OPENROUTER_API_KEY or Chat:Providers:OpenRouter:ApiKey).");
         var messages = new List<object> { new { role = "system", content = request.SystemPrompt } };
         messages.AddRange(request.Messages.Select(m => new { role = m.Role, content = m.Content }));
 
@@ -317,43 +379,10 @@ public class OpenRouterChatProvider : StreamingChatProviderBase
     protected override async IAsyncEnumerable<string> ReadTokensAsync(
         Stream stream, [EnumeratorCancellation] CancellationToken ct)
     {
-        // OpenAI-compatible SSE. Comment/keep-alive lines (": ...") never reach
-        // here: ReadSseLinesAsync only yields "data:" frames.
-        await foreach (var frame in ReadSseLinesAsync(stream, ct).WithCancellation(ct))
-        {
-            var payload = frame[(frame.IndexOf('\n') + 1)..];
-            if (payload == "[DONE]") yield break;
-            string? text = null;
-            try
-            {
-                using var doc = JsonDocument.Parse(payload);
-                if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
-                {
-                    var choice = choices[0];
-                    // Only delta.content is answer text; delta.reasoning is ignored.
-                    if (choice.TryGetProperty("delta", out var delta)
-                        && delta.TryGetProperty("content", out var content)
-                        && content.ValueKind == JsonValueKind.String)
-                        text = content.GetString();
-                    if (choice.TryGetProperty("error", out var err))
-                        throw new ChatProviderException("The AI provider returned an error. Please try again.");
-                }
-                else if (doc.RootElement.TryGetProperty("error", out _))
-                {
-                    throw new ChatProviderException("The AI provider returned an error. Please try again.");
-                }
-            }
-            catch (ChatProviderException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _typedLogger.LogWarning(ex, "OpenRouter: skipping malformed stream line");
-                continue;
-            }
-            if (!string.IsNullOrEmpty(text)) yield return text;
-        }
+        // OpenAI-compatible SSE; comment/keep-alive lines and reasoning
+        // fields are handled inside the shared parser.
+        await foreach (var token in ReadOpenAiCompatibleTokensAsync(stream, ct).WithCancellation(ct))
+            yield return token;
     }
 }
 
@@ -371,12 +400,15 @@ public class AnthropicChatProvider : StreamingChatProviderBase
     }
 
     public override string Name => "anthropic";
-    public override bool IsConfigured => ReadApiKey(_config, "ANTHROPIC_API_KEY") is not null;
+    public override bool IsConfigured => !string.IsNullOrWhiteSpace(ProviderSettings.GetApiKey(_config, Name));
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        var key = ReadApiKey(_config, "ANTHROPIC_API_KEY")
-            ?? throw new ChatProviderException("The AI provider 'Claude' is not configured right now.");
+        // Priority: Chat:Providers:Anthropic:ApiKey → ANTHROPIC_API_KEY.
+        var key = ProviderSettings.GetApiKey(_config, Name);
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ChatProviderException(
+                "The AI provider 'Claude' is not configured right now (set ANTHROPIC_API_KEY or Chat:Providers:Anthropic:ApiKey).");
         // Anthropic takes system separately and only user/assistant turns.
         var turns = request.Messages
             .Where(m => m.Role is "user" or "assistant")
@@ -457,7 +489,7 @@ public class GeminiChatProvider : StreamingChatProviderBase
     }
 
     public override string Name => "gemini";
-    public override bool IsConfigured => ReadApiKey(_config, "GEMINI_API_KEY") is not null;
+    public override bool IsConfigured => !string.IsNullOrWhiteSpace(ProviderSettings.GetApiKey(_config, Name));
 
     /// <summary>Gemini signals an invalid/absent key with HTTP 400 + "API key not
     /// valid" in the body. Turn that into an actionable message (spell out the exact
@@ -473,8 +505,10 @@ public class GeminiChatProvider : StreamingChatProviderBase
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        var key = ReadApiKey(_config, "GEMINI_API_KEY")
-            ?? throw new ChatProviderException("The AI provider 'Gemini' is not configured right now.");
+        // Priority: Chat:Providers:Gemini:ApiKey → GEMINI_API_KEY.
+        var key = ProviderSettings.GetApiKey(_config, Name)
+            ?? throw new ChatProviderException(
+                "The AI provider 'Gemini' is not configured right now (set GEMINI_API_KEY or Chat:Providers:Gemini:ApiKey).");
 
         // streamGenerateContent SSE endpoint. Key goes ONLY in the header, never the URL.
         var req = new HttpRequestMessage(
@@ -558,6 +592,7 @@ public class OllamaChatProvider : StreamingChatProviderBase
     // Static so the 30s cache survives per-request DI scopes (registry is scoped).
     private static List<string>? _availableModels;
     private static DateTime _tagsCacheTime = DateTime.MinValue;
+    private static string? _cachedRoot;
     private readonly TimeSpan _tagsCacheExpiry = TimeSpan.FromSeconds(30);
     private readonly IConfiguration _config;
     private readonly ChatOptions _options;
@@ -574,7 +609,22 @@ public class OllamaChatProvider : StreamingChatProviderBase
 
     public override string Name => "ollama";
 
-    public string BaseUrl => _config["OLLAMA_BASE_URL"] ?? "http://localhost:11434";
+    /// <summary>Ollama server root. Priority: Chat:Providers:Ollama:BaseUrl →
+    /// OLLAMA_BASE_URL → http://localhost:11434. A "/v1"-suffixed value is
+    /// acceptable and is normalized away for the tags probe below.</summary>
+    public string BaseUrl => ProviderSettings.GetBaseUrl(_config, Name, "http://localhost:11434");
+
+    /// <summary>Server root without any trailing "/v1" segment, so both
+    /// "{root}/v1/chat/completions" (chat) and "{root}/api/tags" (probe) stay
+    /// correct regardless of how the BaseUrl was configured.</summary>
+    public string ServerRoot
+    {
+        get
+        {
+            var root = BaseUrl.TrimEnd('/');
+            return root.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? root[..^3] : root;
+        }
+    }
 
     public string ConfiguredModel => ProviderSettings.GetModel(_config, _options, Name);
 
@@ -604,12 +654,16 @@ public class OllamaChatProvider : StreamingChatProviderBase
     // Callers treat failure as "not available" (hidden from dropdown, no crash).
     public async Task<List<string>> GetAvailableModelsAsync(CancellationToken ct)
     {
-        if (_availableModels != null && DateTime.UtcNow - _tagsCacheTime < _tagsCacheExpiry)
+        if (_availableModels != null
+            && _cachedRoot == ServerRoot
+            && DateTime.UtcNow - _tagsCacheTime < _tagsCacheExpiry)
             return _availableModels;
 
         try
         {
-            using var response = await _http.GetAsync("api/tags", ct);
+            // Absolute URL against the server root so a BaseUrl containing
+            // "/v1" cannot redirect the probe to the wrong path.
+            using var response = await _http.GetAsync($"{ServerRoot}/api/tags", ct);
             if (response.IsSuccessStatusCode)
             {
                 var json = await response.Content.ReadAsStringAsync(ct);
@@ -627,6 +681,9 @@ public class OllamaChatProvider : StreamingChatProviderBase
                 }
                 _availableModels = models;
                 _tagsCacheTime = DateTime.UtcNow;
+                // Key the cache on the server root: a BaseUrl config change
+                // must not keep serving the previous server's model list.
+                _cachedRoot = ServerRoot;
                 return models;
             }
             // Non-success: treat as unavailable but cache empty briefly to avoid hammering.
@@ -641,12 +698,13 @@ public class OllamaChatProvider : StreamingChatProviderBase
 
         _availableModels = new List<string>();
         _tagsCacheTime = DateTime.UtcNow;
+        _cachedRoot = ServerRoot;
         return _availableModels;
     }
 
     public override async IAsyncEnumerable<string> StreamAsync(ChatRequest request, [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var model = ProviderSettings.GetModel(_config, _options, Name);
+        var model = ConfiguredModel;
 
         // Clear model name check: tell the user exactly how to fix it.
         try
@@ -680,10 +738,23 @@ public class OllamaChatProvider : StreamingChatProviderBase
     {
         var model = ProviderSettings.GetModel(_config, _options, Name);
 
-        var req = new HttpRequestMessage(HttpMethod.Post, "api/chat");
-        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        // OpenAI-compatible endpoint on the Ollama server: {root}/v1/chat/completions.
+        // (If the configured BaseUrl already ends with "/v1", use
+        // {root}/chat/completions so the path must not read "/v1/v1/...".
+        var root = ServerRoot;
+        var chatPath = BaseUrl.TrimEnd('/').EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+            ? $"{root}/chat/completions"
+            : $"{root}/v1/chat/completions";
+        var req = new HttpRequestMessage(HttpMethod.Post, chatPath);
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
-        // Ollama chat format: {model, messages: [{role, content}], stream}.
+        // Ollama servers normally need no Authorization; a hardened deployment
+        // behind a proxy may — send Bearer ONLY when a key IS configured.
+        var key = ProviderSettings.GetApiKey(_config, Name);
+        if (!string.IsNullOrWhiteSpace(key))
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+
+        // OpenAI chat format: {model, messages: [{role, content}], stream}.
         // System prompt goes first as a system message.
         var messages = new List<object> { new { role = "system", content = request.SystemPrompt } };
         messages.AddRange(request.Messages.Select(m => new { role = m.Role, content = m.Content }));
@@ -692,6 +763,7 @@ public class OllamaChatProvider : StreamingChatProviderBase
         {
             model = model,
             messages = messages,
+            max_tokens = request.MaxTokens,
             stream = true
         };
 
@@ -702,43 +774,9 @@ public class OllamaChatProvider : StreamingChatProviderBase
     protected override async IAsyncEnumerable<string> ReadTokensAsync(
         Stream stream, [EnumeratorCancellation] CancellationToken ct)
     {
-        // Ollama streams NDJSON (one JSON object per line), NOT SSE.
-        using var reader = new StreamReader(stream);
-        string? line;
-        while ((line = await reader.ReadLineAsync(ct)) is not null)
-        {
-            ct.ThrowIfCancellationRequested();
-            if (string.IsNullOrWhiteSpace(line)) continue;
-            string? text = null;
-            var done = false;
-            try
-            {
-                using var doc = JsonDocument.Parse(line);
-                if (doc.RootElement.TryGetProperty("done", out var doneEl)
-                    && doneEl.ValueKind == JsonValueKind.True)
-                    done = true;
-                if (doc.RootElement.TryGetProperty("message", out var msg) &&
-                    msg.TryGetProperty("content", out var content) &&
-                    content.ValueKind == JsonValueKind.String)
-                {
-                    text = content.GetString();
-                }
-                else if (doc.RootElement.TryGetProperty("error", out _))
-                {
-                    throw new ChatProviderException("The AI provider returned an error. Please try again.");
-                }
-            }
-            catch (ChatProviderException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _typedLogger.LogWarning(ex, "Ollama: skipping malformed stream line");
-                continue;
-            }
-            if (!string.IsNullOrEmpty(text)) yield return text;
-            if (done) yield break;
-        }
+        // Ollama's /v1 endpoint speaks OpenAI-compatible SSE, so the shared
+        // parser applies (NDJSON-only api/chat is no longer used).
+        await foreach (var token in ReadOpenAiCompatibleTokensAsync(stream, ct).WithCancellation(ct))
+            yield return token;
     }
 }

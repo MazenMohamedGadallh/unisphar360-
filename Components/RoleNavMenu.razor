@@ -1,0 +1,56 @@
+<nav class="sidebar-nav" aria-label="Main navigation">
+    @if (Is("Student"))
+    {
+        <NavLink href="/dashboard" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="house" /></span><span>Home</span></NavLink>
+        <NavLink href="/university" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="landmark" /></span><span>My University</span></NavLink>
+        <NavLink href="/academic-advisor" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="graduation-cap" /></span><span>Academic Advisor</span></NavLink>
+        <NavLink href="/career-assistant" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="briefcase" /></span><span>Career</span></NavLink>
+        <NavLink href="/research-hub" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="microscope" /></span><span>Research Hub</span></NavLink>
+        <NavLink href="/student-services" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="headset" /></span><span>Student Services</span></NavLink>
+        <NavLink href="/analytics" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="chart-no-axes-combined" /></span><span>My Analytics</span></NavLink>
+        <NavLink href="/chat" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="sparkles" /></span><span>AI Assistant</span></NavLink>
+        <NavLink href="/events" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="calendar-days" /></span><span>Student Events</span></NavLink>
+    }
+    else if (Is("Doctor"))
+    {
+        <NavLink href="/doctor" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="house" /></span><span>Home</span></NavLink>
+        <NavLink href="/doctor/courses" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="book-open" /></span><span>My Courses</span></NavLink>
+        <NavLink href="/doctor/research" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="microscope" /></span><span>Research Hub</span></NavLink>
+        <NavLink href="/doctor/profile" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="user-round" /></span><span>Doctor Profile</span></NavLink>
+        <NavLink href="/doctor/students" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="users" /></span><span>My Students</span></NavLink>
+        <NavLink href="/doctor/materials" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="file-text" /></span><span>Materials</span></NavLink>
+        <NavLink href="/doctor/announcements" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="megaphone" /></span><span>Announcements</span></NavLink>
+        <NavLink href="/doctor/ai" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="sparkles" /></span><span>AI Assistant</span></NavLink>
+        <NavLink href="/doctor/exam-assistant" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="clipboard-list" /></span><span>Exam Assistant</span></NavLink>
+    }
+    else if (Is("Graduate"))
+    {
+        <NavLink href="/graduate" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="house" /></span><span>Home</span></NavLink>
+        <NavLink href="/graduate/cv-analysis" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="file-text" /></span><span>CV Analysis</span></NavLink>
+        <NavLink href="/graduate/jobs" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="briefcase" /></span><span>Job Matches</span></NavLink>
+        <NavLink href="/graduate/events" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="party-popper" /></span><span>Graduated Events</span></NavLink>
+        <NavLink href="/research-hub" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="microscope" /></span><span>Research Hub</span></NavLink>
+        <NavLink href="/chat" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="sparkles" /></span><span>AI Assistant</span></NavLink>
+    }
+    else if (Is("Admin"))
+    {
+        <NavLink href="/admin" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="shield-check" /></span><span>Admin Panel</span></NavLink>
+    }
+    else
+    {
+        <div class="sidebar-section-title">Loading navigation&hellip;</div>
+    }
+</nav>
+
+@code {
+    [Parameter] public string? Role { get; set; }
+    [Parameter] public EventCallback SidebarClosed { get; set; }
+
+    private bool Is(string role) => string.Equals(Role, role, StringComparison.OrdinalIgnoreCase);
+
+    private async Task CloseSidebar()
+    {
+        if (SidebarClosed.HasDelegate)
+            await SidebarClosed.InvokeAsync();
+    }
+}

@@ -1,4 +1,5 @@
 @page "/career-assistant"
+@attribute [Authorize(Roles = "Student")]
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the

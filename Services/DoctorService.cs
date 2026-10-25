@@ -19,10 +19,15 @@ public class DoctorService
 
     public async Task<DoctorDashboardDto> GetDashboardAsync(User doctor)
     {
-        var courseIds = await _db.CourseAssignments.AsNoTracking()
+        var moduleIds = await _db.CourseAssignments.AsNoTracking()
             .Where(a => a.DoctorUserId == doctor.Id)
             .Select(a => a.CourseId)
             .ToListAsync();
+        var legacyIds = await _db.CourseInstructors.AsNoTracking()
+            .Where(ci => ci.DoctorUserId == doctor.Id)
+            .Select(ci => ci.CourseId)
+            .ToListAsync();
+        var courseIds = moduleIds.Concat(legacyIds).Distinct().ToList();
 
         var courses = await _db.Courses.AsNoTracking()
             .Where(c => courseIds.Contains(c.Id))
@@ -82,7 +87,8 @@ public class DoctorService
             .OrderBy(x => x.u.FullName)
             .Select(x => new DoctorStudentDto(
                 x.e.Id, x.u.Id, x.u.FullName, x.u.Email, x.u.Department, x.u.AcademicYear,
-                x.e.GradeLetter, x.e.GradePoints, x.e.AttendancePercent, x.e.Status))
+                x.e.GradeLetter, x.e.GradePoints, x.e.AttendancePercent, x.e.Status,
+                x.u.Major ?? ""))
             .ToListAsync();
         return rows;
     }

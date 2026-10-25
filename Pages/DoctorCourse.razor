@@ -58,7 +58,7 @@ else
             }
             else if (_students.Count == 0)
             {
-                <div class="empty-state">No students are enrolled in this course yet.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="users" /></div>No students are enrolled in this course yet.</div>
             }
             else
             {
@@ -169,7 +169,7 @@ else
                 <div class="card-header"><h3>Students Needing Support</h3></div>
                 @if (_analytics.Alerts.Count == 0)
                 {
-                    <div class="empty-state">No students require additional support in this course.</div>
+                    <div class="empty-state"><div class="empty-icon"><UiIcon Name="users" /></div>No students require additional support in this course.</div>
                 }
                 else
                 {
@@ -252,7 +252,7 @@ else
             }
             else if (_materials.Count == 0)
             {
-                <div class="empty-state">No materials yet. Add a lecture summary, assignment or exam.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="file-text" /></div>No materials yet. Add a lecture summary, assignment or exam.</div>
             }
             else
             {
@@ -329,7 +329,7 @@ else
             }
             else if (_announcements.Count == 0)
             {
-                <div class="empty-state">No announcements yet.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="megaphone" /></div>No announcements yet.</div>
             }
             else
             {
@@ -370,7 +370,7 @@ else
             <div class="modal" @onclick:stopPropagation="true">
                 <div class="modal-header">
                     <h3>Grade @_gradeStudent.FullName</h3>
-                    <button class="modal-close" @onclick="CloseGradeModal">&times;</button>
+                    <button class="modal-close" @onclick="CloseGradeModal" aria-label="Close"><UiIcon Name="x" /></button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">

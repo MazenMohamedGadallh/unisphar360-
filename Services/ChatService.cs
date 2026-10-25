@@ -2,7 +2,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using UniSphere.Api.Controllers;
 using UniSphere.Api.Data;
 using UniSphere.Api.Models;
 
@@ -111,7 +110,7 @@ public class ChatProviderRegistry
                     if (p is OllamaChatProvider)
                         reason = "Ollama is not configured (missing OLLAMA_MODEL)";
                     else if (MissingKeyHints.TryGetValue(p.Name, out var keyName))
-                        reason = $"{display} is not configured (missing {keyName})";
+                        reason = $"{display} is not configured (set {keyName} or Chat:Providers:{p.Name}:ApiKey)";
                     else
                         reason = $"{display} is not configured";
                 }
@@ -206,12 +205,20 @@ public class ChatService
     private readonly AppDbContext _db;
     private readonly ChatProviderRegistry _registry;
     private readonly ChatOptions _options;
+    private readonly IUniversityScope _scope;
+    private readonly RagChatProvider _ragProvider;
+    private readonly RagOptions _ragOptions;
 
-    public ChatService(AppDbContext db, ChatProviderRegistry registry, IOptions<ChatOptions> options)
+    public ChatService(
+        AppDbContext db, ChatProviderRegistry registry, IOptions<ChatOptions> options,
+        IUniversityScope scope, RagChatProvider ragProvider, IOptions<RagOptions> ragOptions)
     {
         _db = db;
         _registry = registry;
         _options = options.Value;
+        _scope = scope;
+        _ragProvider = ragProvider;
+        _ragOptions = ragOptions.Value;
     }
 
     public IReadOnlyList<Dtos.ChatProviderDto> GetProviders() => _registry.Available();
@@ -226,9 +233,32 @@ public class ChatService
         int userId, string conversationId, string providerName, string content,
         bool regenerate, CancellationToken ct)
     {
-        var (found, provider) = await _registry.TryGetAsync(providerName, ct);
-        if (!found || provider is null)
-            throw new ChatProviderException($"The AI provider '{providerName}' is not available right now.");
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+
+        // Only the Student AI Assistant's RAG provider is routed through the
+        // RAG service. Graduates, doctors and admins keep the existing provider
+        // behaviour, and a student who explicitly picks another provider keeps
+        // that choice instead of being silently redirected.
+        var useRag = user?.Role == UserRole.Student
+            && string.Equals(providerName, "rag", StringComparison.OrdinalIgnoreCase)
+            && _ragOptions.Enabled
+            && _ragProvider.IsConfigured;
+
+        IChatProvider provider;
+        string model;
+        if (useRag)
+        {
+            provider = _ragProvider;
+            model = _ragProvider.ModelName;
+        }
+        else
+        {
+            var (found, resolved) = await _registry.TryGetAsync(providerName, ct);
+            if (!found || resolved is null)
+                throw new ChatProviderException($"The AI provider '{providerName}' is not available right now.");
+            provider = resolved;
+            model = _registry.ResolveModel(provider.Name);
+        }
 
         var today = DateTime.UtcNow.Date;
         var usage = await _db.ChatUsages
@@ -268,7 +298,7 @@ public class ChatService
                 Role = "user",
                 Content = content,
                 Provider = provider.Name,
-                Model = _registry.ResolveModel(provider.Name)
+                Model = model
             });
             conversation.UpdatedAtUtc = DateTime.UtcNow;
             await _db.SaveChangesAsync(ct);
@@ -281,22 +311,38 @@ public class ChatService
             .ToListAsync(ct);
         history.Reverse();
 
-        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (regenerate)
+        {
+            // Regeneration replaces the last assistant answer: don't feed it
+            // back to the provider as context (the previous user turn is
+            // already the last remaining message).
+            var lastAssistant = history.FindLastIndex(m => m.Role == "assistant");
+            if (lastAssistant >= 0) history.RemoveAt(lastAssistant);
+        }
+
         var isGraduate = user?.Role == UserRole.Graduate;
-        var context = user is null
-            ? ""
-            : isGraduate
+        var context = "";
+        var ragDocuments = new List<RagDocument>();
+        if (user is not null && useRag)
+        {
+            ragDocuments = await BuildStudentRagDocumentsAsync(user, content, ct);
+        }
+        else if (user is not null)
+        {
+            context = isGraduate
                 ? await BuildGraduateContextAsync(user, content, ct)
                 : await BuildStudentContextAsync(user, content, ct);
+        }
         var systemPrompt = isGraduate ? GraduateSystemPrompt : SystemPrompt;
 
         var request = new ChatRequest
         {
             Provider = provider.Name,
-            Model = _registry.ResolveModel(provider.Name),
+            Model = model,
             SystemPrompt = string.IsNullOrEmpty(context) ? systemPrompt : systemPrompt + "\n\n" + context,
             Messages = history.Select(m => new ChatTurn { Role = m.Role, Content = m.Content }).ToList(),
-            MaxTokens = _options.MaxTokens
+            MaxTokens = _options.MaxTokens,
+            RagDocuments = ragDocuments
         };
         return new PreparedTurn(conversation, provider, request);
     }
@@ -371,30 +417,71 @@ public class ChatService
         return sb.ToString();
     }
 
+    /// <summary>Persists the assistant turn when the stream ends. On
+    /// <paramref name="replaceLastAssistant"/> (regenerate) the previous
+    /// assistant answer is overwritten instead of adding a duplicate.
+    /// Partial text (user pressed Stop) is saved the same way. Every query
+    /// is scoped to <paramref name="userId"/>; foreign conversations are
+    /// silently ignored (the controller already returned 404 earlier).</summary>
     public async Task CompleteAssistantMessageAsync(
         int userId, int conversationId, string providerName, string model,
-        string fullText, CancellationToken ct)
+        string fullText, bool replaceLastAssistant, CancellationToken ct)
     {
+        if (string.IsNullOrEmpty(fullText)) return;
+
         var conversation = await _db.ChatConversations
             .FirstOrDefaultAsync(c => c.Id == conversationId && c.UserId == userId, ct);
         if (conversation is null) return;
 
-        var promptChars = 0; // approximated below from saved history + system
         var history = await _db.ChatMessages.AsNoTracking()
             .Where(m => m.ConversationId == conversationId)
             .ToListAsync(ct);
-        promptChars = history.Sum(m => m.Content.Length) + SystemPrompt.Length;
+        var promptChars = history.Sum(m => m.Content.Length) + SystemPrompt.Length;
+        var tokensIn = Math.Max(1, promptChars / 4);
+        var tokensOut = Math.Max(1, fullText.Length / 4);
 
-        _db.ChatMessages.Add(new ChatMessage
+        if (replaceLastAssistant)
         {
-            ConversationId = conversationId,
-            Role = "assistant",
-            Content = fullText,
-            Provider = providerName,
-            Model = model,
-            TokensIn = Math.Max(1, promptChars / 4),
-            TokensOut = Math.Max(1, fullText.Length / 4)
-        });
+            var lastAssistant = await _db.ChatMessages
+                .Where(m => m.ConversationId == conversationId && m.Role == "assistant")
+                .OrderByDescending(m => m.Id)
+                .FirstOrDefaultAsync(ct);
+            if (lastAssistant is not null)
+            {
+                lastAssistant.Content = fullText;
+                lastAssistant.Provider = providerName;
+                lastAssistant.Model = model;
+                lastAssistant.TokensIn = tokensIn;
+                lastAssistant.TokensOut = tokensOut;
+                lastAssistant.CreatedAtUtc = DateTime.UtcNow;
+            }
+            else
+            {
+                _db.ChatMessages.Add(new ChatMessage
+                {
+                    ConversationId = conversationId,
+                    Role = "assistant",
+                    Content = fullText,
+                    Provider = providerName,
+                    Model = model,
+                    TokensIn = tokensIn,
+                    TokensOut = tokensOut
+                });
+            }
+        }
+        else
+        {
+            _db.ChatMessages.Add(new ChatMessage
+            {
+                ConversationId = conversationId,
+                Role = "assistant",
+                Content = fullText,
+                Provider = providerName,
+                Model = model,
+                TokensIn = tokensIn,
+                TokensOut = tokensOut
+            });
+        }
 
         var today = DateTime.UtcNow.Date;
         var usage = await _db.ChatUsages.FirstOrDefaultAsync(u => u.UserId == userId && u.Date == today, ct);
@@ -407,12 +494,169 @@ public class ChatService
         await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>Role-specific grounding. Doctors only ever get their own
+    /// assigned courses and materials; everyone else stays inside their own
+    /// university and eligible courses.</summary>
+    private Task<string> BuildUserContextAsync(User user, string question, CancellationToken ct) =>
+        user.Role == UserRole.Doctor
+            ? BuildDoctorContextAsync(user, question, ct)
+            : BuildStudentContextAsync(user, question, ct);
+
+    /// <summary>Doctor context: only the courses assigned to this doctor
+    /// (CourseInstructor) inside the doctor's own university.</summary>
+    private async Task<string> BuildDoctorContextAsync(User user, string question, CancellationToken ct)
+    {
+        var sb = new StringBuilder();
+        var scope = await _scope.GetAsync(user.Id);
+        var uni = scope.UniversityId.HasValue
+            ? await _db.Universities.AsNoTracking()
+                .Where(u => u.Id == scope.UniversityId.Value)
+                .Select(u => u.Name).FirstOrDefaultAsync(ct)
+            : null;
+        sb.Append("Doctor context: ").Append(user.FullName);
+        if (!string.IsNullOrWhiteSpace(user.Specialization))
+            sb.Append(", specialization: ").Append(user.Specialization);
+        if (!string.IsNullOrWhiteSpace(uni)) sb.Append(", university: ").Append(uni);
+        sb.AppendLine(".");
+
+        var assignedIds = await _db.CourseInstructors.AsNoTracking()
+            .Where(ci => ci.DoctorUserId == user.Id)
+            .Select(ci => ci.CourseId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var courses = assignedIds.Count == 0 ? new List<Course>() :
+            await _db.Courses.AsNoTracking()
+                .VisibleToCurrentUser(scope)
+                .Where(c => assignedIds.Contains(c.Id))
+                .ToListAsync(ct);
+        if (courses.Count > 0)
+            sb.AppendLine("Assigned courses: " + string.Join(", ", courses.Select(c => $"{c.Code} {c.Title}")) + ".");
+
+        var keywords = Regex.Split(question.ToLowerInvariant(), @"[^\p{L}\p{Nd}]+")
+            .Where(w => w.Length > 2 && !Stopwords.Contains(w))
+            .Distinct()
+            .Take(12)
+            .ToList();
+
+        if (keywords.Count > 0 && courses.Count > 0)
+        {
+            var scopedIds = courses.Select(c => c.Id).ToList();
+            var materials = await _db.CourseMaterials.AsNoTracking()
+                .Include(m => m.Course)
+                .Where(m => scopedIds.Contains(m.CourseId))
+                .ToListAsync(ct);
+
+            var scored = materials
+                .Select(m => (Material: m, Score: ScoreMaterial(m, keywords)))
+                .Where(x => x.Score > 0)
+                .OrderByDescending(x => x.Score)
+                .Take(5)
+                .ToList();
+
+            foreach (var (material, _) in scored)
+            {
+                var snippet = (material.Content ?? "").Trim();
+                if (snippet.Length > 400) snippet = snippet[..400].TrimEnd() + "…";
+                sb.AppendLine($"Reference [{material.Course?.Title} — {material.Title}]: {snippet}");
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>Builds the authorised document set for the student RAG turn.
+    /// Only courses visible to this student and materials they are eligible to
+    /// read are sent; the RAG service never receives another student's data.</summary>
+    private async Task<List<RagDocument>> BuildStudentRagDocumentsAsync(
+        User user, string question, CancellationToken ct)
+    {
+        var scope = await _scope.GetAsync(user.Id);
+        if (!scope.UniversityId.HasValue)
+            return new List<RagDocument>();
+
+        var scopedIds = await _db.Courses.AsNoTracking()
+            .VisibleToCurrentUser(scope)
+            .EligibleForStudent(user)
+            .Select(c => c.Id)
+            .ToListAsync(ct);
+        if (scopedIds.Count == 0)
+            return new List<RagDocument>();
+
+        var materials = await _db.CourseMaterials.AsNoTracking()
+            .Include(m => m.Course)
+            .VisibleToCurrentUser(scope)
+            .Where(m => scopedIds.Contains(m.CourseId)
+                        && !string.IsNullOrWhiteSpace(m.Content))
+            .ToListAsync(ct);
+        if (materials.Count == 0)
+            return new List<RagDocument>();
+
+        var keywords = Regex.Split(question.ToLowerInvariant(), @"[^\p{L}\p{Nd}]+")
+            .Where(w => w.Length > 2 && !Stopwords.Contains(w))
+            .Distinct()
+            .Take(12)
+            .ToList();
+
+        var selected = keywords.Count == 0
+            ? materials
+                .OrderByDescending(m => m.CreatedAtUtc)
+                .Take(8)
+                .Select(m => (Material: m, Score: 0))
+                .ToList()
+            : materials
+                .Select(m => (Material: m, Score: ScoreMaterial(m, keywords)))
+                .Where(x => x.Score > 0)
+                .OrderByDescending(x => x.Score)
+                .ThenByDescending(x => x.Material.CreatedAtUtc)
+                .Take(8)
+                .ToList();
+
+        if (selected.Count == 0)
+        {
+            selected = materials
+                .OrderByDescending(m => m.CreatedAtUtc)
+                .Take(5)
+                .Select(m => (Material: m, Score: 0))
+                .ToList();
+        }
+
+        var documents = new List<RagDocument>();
+        var totalChars = 0;
+        foreach (var (material, _) in selected)
+        {
+            var text = (material.Content ?? "").Trim();
+            if (text.Length > 6000) text = text[..6000].TrimEnd() + "…";
+            if (totalChars + text.Length > 30_000) break;
+            totalChars += text.Length;
+
+            var course = material.Course;
+            var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["courseId"] = material.CourseId.ToString(),
+                ["courseCode"] = course?.Code ?? "",
+                ["courseTitle"] = course?.Title ?? "",
+                ["materialId"] = material.Id.ToString(),
+                ["materialType"] = material.Type
+            };
+
+            documents.Add(new RagDocument(
+                material.Id.ToString(),
+                course is null ? material.Title : $"{course.Code} — {material.Title}",
+                text,
+                metadata));
+        }
+
+        return documents;
+    }
+
     private async Task<string> BuildStudentContextAsync(User user, string question, CancellationToken ct)
     {
         var sb = new StringBuilder();
-        var uni = user.UniversityId.HasValue
+        var scope = await _scope.GetAsync(user.Id);
+        var uni = scope.UniversityId.HasValue
             ? await _db.Universities.AsNoTracking()
-                .Where(u => u.Id == user.UniversityId.Value)
+                .Where(u => u.Id == scope.UniversityId.Value)
                 .Select(u => u.Name).FirstOrDefaultAsync(ct)
             : null;
         sb.Append("Student context: ").Append(user.FullName).Append(", ").Append(user.Role);
@@ -423,7 +667,9 @@ public class ChatService
 
         var enrolled = await _db.Enrollments.AsNoTracking()
             .Include(e => e.Course)
-            .Where(e => e.UserId == user.Id)
+            .Where(e => e.UserId == user.Id
+                && scope.UniversityId.HasValue
+                && e.Course!.UniversityId == scope.UniversityId)
             .Select(e => e.Course!.Title)
             .ToListAsync(ct);
         if (enrolled.Count > 0)
@@ -435,12 +681,15 @@ public class ChatService
             .Take(12)
             .ToList();
 
-        if (keywords.Count > 0 && user.UniversityId.HasValue)
+        if (keywords.Count > 0 && scope.UniversityId.HasValue)
         {
-            var scopedIds = await UniversityController.InScope(_db.Courses.AsNoTracking(), user)
+            var scopedIds = await _db.Courses.AsNoTracking()
+                .VisibleToCurrentUser(scope)
+                .EligibleForStudent(user)
                 .Select(c => c.Id).ToListAsync(ct);
             var materials = await _db.CourseMaterials.AsNoTracking()
                 .Include(m => m.Course)
+                .VisibleToCurrentUser(scope)
                 .Where(m => scopedIds.Contains(m.CourseId))
                 .ToListAsync(ct);
 

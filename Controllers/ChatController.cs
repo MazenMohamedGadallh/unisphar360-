@@ -22,29 +22,53 @@ public class ChatController : ControllerBase
     private readonly ChatService _chat;
     private readonly IValidator<SendChatMessageRequest> _messageValidator;
     private readonly IValidator<RenameConversationRequest> _renameValidator;
+    private readonly IRagClient _rag;
+    private readonly ILogger<ChatController> _logger;
 
     public ChatController(
         AppDbContext db,
         ChatService chat,
         IValidator<SendChatMessageRequest> messageValidator,
-        IValidator<RenameConversationRequest> renameValidator)
+        IValidator<RenameConversationRequest> renameValidator,
+        IRagClient rag,
+        ILogger<ChatController> logger)
     {
         _db = db;
         _chat = chat;
         _messageValidator = messageValidator;
         _renameValidator = renameValidator;
+        _rag = rag;
+        _logger = logger;
     }
 
-    /// <summary>Only providers that are currently available (keys set, Ollama up).</summary>
+    /// <summary>Only providers that are currently available (keys set, Ollama up).
+    /// Students also see the course-grounded RAG assistant.</summary>
     [HttpGet("providers")]
-    public async Task<ActionResult<IReadOnlyList<ChatProviderDto>>> Providers(CancellationToken ct) =>
-        Ok(await _chat.GetProvidersAsync(ct));
+    public async Task<ActionResult<IReadOnlyList<ChatProviderDto>>> Providers(CancellationToken ct)
+    {
+        var providers = (await _chat.GetProvidersAsync(ct)).ToList();
+        if (User.IsInRole("Student") && _rag.IsConfigured
+            && !providers.Any(p => string.Equals(p.Name, "rag", StringComparison.OrdinalIgnoreCase)))
+        {
+            providers.Insert(0, new ChatProviderDto("rag", _rag.DisplayName, _rag.ModelName));
+        }
+        return Ok(providers);
+    }
 
     /// <summary>All providers with availability + reason (no keys). Used by the UI
     /// to explain why the dropdown is empty.</summary>
     [HttpGet("providers/status")]
-    public async Task<ActionResult<IReadOnlyList<ChatProviderStatusDto>>> ProviderStatuses(CancellationToken ct) =>
-        Ok(await _chat.GetProviderStatusesAsync(ct));
+    public async Task<ActionResult<IReadOnlyList<ChatProviderStatusDto>>> ProviderStatuses(CancellationToken ct)
+    {
+        var providers = (await _chat.GetProviderStatusesAsync(ct)).ToList();
+        if (User.IsInRole("Student") && _rag.IsConfigured
+            && !providers.Any(p => string.Equals(p.Name, "rag", StringComparison.OrdinalIgnoreCase)))
+        {
+            providers.Insert(0, new ChatProviderStatusDto(
+                "rag", _rag.DisplayName, _rag.ModelName, true, ""));
+        }
+        return Ok(providers);
+    }
 
     [HttpGet("conversations")]
     public async Task<IReadOnlyList<ChatConversationDto>> Conversations()
@@ -75,7 +99,7 @@ public class ChatController : ControllerBase
         var messages = await _db.ChatMessages.AsNoTracking()
             .Where(m => m.ConversationId == id)
             .OrderBy(m => m.Id)
-            .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.CreatedAtUtc))
+            .Select(m => new ChatMessageDto(m.Id, m.Role, m.Content, m.Provider, m.Model, m.CreatedAtUtc))
             .ToListAsync();
 
         return new ChatConversationDetailDto(
@@ -172,6 +196,8 @@ public class ChatController : ControllerBase
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, HttpContext.RequestAborted);
         var linkedToken = linked.Token;
         var reply = new StringBuilder();
+        var providerError = (string?)null;
+        var wasCancelled = false;
         try
         {
             await foreach (var token in prepared.Provider
@@ -182,21 +208,82 @@ public class ChatController : ControllerBase
                 await Response.WriteAsync($"data: {JsonSerializer.Serialize(token)}\n\n", linkedToken);
                 await Response.Body.FlushAsync(linkedToken);
             }
+
+            if (reply.Length == 0)
+            {
+                // Empty answer (e.g. the model refused or the provider sent
+                // only reasoning/keep-alives): tell the user the real reason,
+                // save nothing (an empty assistant turn would be noise).
+                _logger.LogWarning("Chat provider {Provider} ({Model}) ended the stream without answer content",
+                    prepared.Provider.Name, prepared.Request.Model);
+                await WriteErrorEventAsync("The AI provider returned an empty answer. Please try again.");
+                return;
+            }
+
             await Response.WriteAsync("data: [DONE]\n\n", linkedToken);
             await Response.Body.FlushAsync(linkedToken);
-
-            await _chat.CompleteAssistantMessageAsync(userId, prepared.Conversation.Id,
-                prepared.Provider.Name, prepared.Request.Model, reply.ToString(), CancellationToken.None);
         }
         catch (OperationCanceledException)
         {
-            // Client went away (Stop button / disconnect): stop quietly.
+            // Client went away (Stop button / disconnect): keep what the
+            // user already saw and persist it below.
+            wasCancelled = true;
         }
         catch (ChatProviderException ex)
         {
+            // Real safe reason from the provider mapping (already logged
+            // server-side with the response body, truncated to 500 chars).
+            providerError = ex.Message;
+        }
+        catch (Exception ex) when (ex is IOException or HttpRequestException or TimeoutException)
+        {
+            // The connection dropped mid-answer: same treatment as a provider
+            // error (safe reason to the UI, partial text kept below) instead
+            // of letting the exception escape after the SSE response started.
+            _logger.LogWarning(ex, "Chat provider {Provider} ({Model}) stream interrupted",
+                prepared.Provider.Name, prepared.Request.Model);
+            providerError = "The AI provider connection dropped while answering. Please try again.";
+        }
+
+        // Persist whatever was generated: the full answer, or the partial
+        // text when the user pressed Stop. Regenerate replaces the last
+        // assistant message instead of appending a duplicate.
+        if (reply.Length > 0)
+        {
+            try
+            {
+                await _chat.CompleteAssistantMessageAsync(
+                    userId, prepared.Conversation.Id, prepared.Provider.Name,
+                    prepared.Request.Model, reply.ToString(), regenerate, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Saving the assistant reply failed (conversation {ConversationId})",
+                    prepared.Conversation.Id);
+            }
+        }
+
+        if (providerError is not null)
+            await WriteErrorEventAsync(providerError);
+        else if (wasCancelled)
+            _logger.LogInformation("Chat stream stopped by the user (conversation {ConversationId}, {Chars} chars kept)",
+                prepared.Conversation.Id, reply.Length);
+    }
+
+    /// <summary>SSE error frame with the JSON shape the chat UI reads:
+    /// {"error":"..."}. Best-effort: the client may already be gone.</summary>
+    private async Task WriteErrorEventAsync(string message)
+    {
+        try
+        {
             await Response.WriteAsync(
-                $"event: error\ndata: {JsonSerializer.Serialize(ex.Message)}\n\n",
+                $"event: error\ndata: {JsonSerializer.Serialize(new { error = message })}\n\n",
                 CancellationToken.None);
+            await Response.Body.FlushAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // Client disconnected: nothing to deliver.
         }
     }
 }

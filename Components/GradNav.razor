@@ -1,70 +1,58 @@
-@* Graduate sidebar navigation — labels follow the reference interface
-   ("/graduate" is Home) plus a persistent Notifications/Settings pair.
+@* Graduate sidebar navigation — exact labels required by spec.
    Used by MainLayout whenever the signed-in role is Graduate. *@
 @namespace UniSphere.Api.Components
-@using System.Net.Http.Json
-@implements IDisposable
 <nav class="sidebar-nav">
     <NavLink href="/graduate" Match="NavLinkMatch.All" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="house" /></span>
-        <span>Home</span>
+        <span class="nav-icon"><UiIcon Name="house" /></span>
+        <span>Career Overview</span>
     </NavLink>
     <NavLink href="/graduate/profile" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="user-round" /></span>
+        <span class="nav-icon"><UiIcon Name="user-round" /></span>
         <span>My Career Profile</span>
     </NavLink>
     <NavLink href="/graduate/cv" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="file-text" /></span>
+        <span class="nav-icon"><UiIcon Name="file-text" /></span>
         <span>CV &amp; Resume Studio</span>
     </NavLink>
     <NavLink href="/graduate/jobs" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="search" /></span>
+        <span class="nav-icon"><UiIcon Name="search" /></span>
         <span>Find Jobs</span>
     </NavLink>
     <NavLink href="/graduate/matches" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="sparkles" /></span>
+        <span class="nav-icon"><UiIcon Name="thumbs-up" /></span>
         <span>AI Job Matches</span>
     </NavLink>
     <NavLink href="/graduate/skill-gap" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="target" /></span>
+        <span class="nav-icon"><UiIcon Name="target" /></span>
         <span>Skill Gap Analysis</span>
     </NavLink>
     <NavLink href="/graduate/roadmap" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="route" /></span>
+        <span class="nav-icon"><UiIcon Name="map" /></span>
         <span>Career Roadmap</span>
     </NavLink>
     <NavLink href="/graduate/applications" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="clipboard-list" /></span>
+        <span class="nav-icon"><UiIcon Name="file-check-2" /></span>
         <span>My Applications</span>
     </NavLink>
     <NavLink href="/graduate/interview" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="mic" /></span>
+        <span class="nav-icon"><UiIcon Name="mic" /></span>
         <span>AI Interview Coach</span>
     </NavLink>
     <NavLink href="/graduate/assistant" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="bot" /></span>
+        <span class="nav-icon"><UiIcon Name="message-square" /></span>
         <span>AI Career Assistant</span>
     </NavLink>
     <NavLink href="/graduate/alumni" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="landmark" /></span>
+        <span class="nav-icon"><UiIcon Name="landmark" /></span>
         <span>Alumni &amp; University Services</span>
     </NavLink>
+    <NavLink href="/graduate/events" class="nav-item" @onclick="HandleNavigate">
+        <span class="nav-icon"><UiIcon Name="party-popper" /></span>
+        <span>Graduated Events</span>
+    </NavLink>
     <NavLink href="/graduate/insights" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="chart-column" /></span>
+        <span class="nav-icon"><UiIcon Name="chart-no-axes-combined" /></span>
         <span>Career Insights</span>
-    </NavLink>
-    <div class="nav-divider" role="separator"></div>
-    <NavLink href="/notifications" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="bell" /></span>
-        <span>Notifications</span>
-        @if (_unread > 0)
-        {
-            <span class="nav-badge">@_unread</span>
-        }
-    </NavLink>
-    <NavLink href="/graduate/settings" class="nav-item" @onclick="HandleNavigate">
-        <span class="nav-icon"><Icon Name="settings" /></span>
-        <span>Settings</span>
     </NavLink>
 </nav>
 
@@ -72,49 +60,5 @@
     [Parameter]
     public EventCallback OnNavigate { get; set; }
 
-    [Inject]
-    private UniSphere.Api.Services.SharedUnreadBadgeState Badge { get; set; } = default!;
-
-    [Inject]
-    private HttpClient Http { get; set; } = default!;
-
-    private int _unread;
-    private Action _sync = () => { };
-
-    private sealed record UnreadCountDto(int UnreadCount);
-
-    protected override void OnInitialized()
-    {
-        // Publishers push the new count; the nav only re-renders.
-        _sync = () => { _unread = Badge.UnreadCount; StateHasChanged(); };
-        Badge.Subscribe(_sync);
-        var _ = RefreshAsync();
-    }
-
-    private async Task RefreshAsync()
-    {
-        try
-        {
-            var count = await Http.GetFromJsonAsync<UnreadCountDto>("/api/notifications/unread-count");
-            _unread = Math.Max(0, count?.UnreadCount ?? 0);
-            Badge.Publish(_unread);
-        }
-        catch
-        {
-            // Never block navigation over the badge.
-        }
-        StateHasChanged();
-    }
-
-    private async Task HandleNavigate()
-    {
-        await RefreshAsync();
-        await OnNavigate.InvokeAsync();
-    }
-
-    public void Dispose()
-    {
-        Badge.Unsubscribe(_sync);
-        GC.SuppressFinalize(this);
-    }
+    private Task HandleNavigate() => OnNavigate.InvokeAsync();
 }

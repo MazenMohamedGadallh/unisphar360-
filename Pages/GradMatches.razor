@@ -42,15 +42,8 @@ else
                 <div style="padding:14px 18px;">
                     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
                         <span class="grad-badge">Source: @match.Job.Source</span>
-                        @if (!string.IsNullOrWhiteSpace(match.Job.Url))
-                        {
-                            <a class="btn btn-small" href="@match.Job.Url" target="_blank" rel="noopener">Open posting</a>
-                        }
-                        else
-                        {
-                            <span class="muted" style="font-size:.8rem;">Listing was pulled from a saved record — no link available.</span>
-                        }
-                        <button class="btn btn-small" @onclick="() => ToggleSaveAsync(match.Job)">@if (match.Job.IsSaved) { <text>Saved</text><Icon Name="check" Size="14" /> } else { <text>Save</text> }</button>
+                        <a class="btn btn-small" href="@match.Job.Url" target="_blank" rel="noopener">Open posting</a>
+                        <button class="btn btn-small" @onclick="() => ToggleSaveAsync(match.Job)">@if (match.Job.IsSaved) { <UiIcon Name="check" /> <text>Saved</text> } else { <text>Save</text> }</button>
                     </div>
                     <p><strong>Matched skills:</strong> @if (match.MatchedSkills.Count > 0) { foreach (var s in match.MatchedSkills) { <span class="grad-badge">@s</span> } } else { <span class="muted">none from our catalog yet</span> }</p>
                     @if (match.MissingSkills.Count > 0)

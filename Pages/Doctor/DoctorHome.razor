@@ -1,0 +1,214 @@
+@page "/legacy/doctor"
+@attribute [Authorize(Roles = "Doctor")]
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server challenges
+every F5 to /login because the browser never sends the localStorage JWT as a
+bearer header. /api stays [Authorize]-guarded and RoleGate enforces the role
+client-side.
+*@
+@using System.Net
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>Doctor Home - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Doctor">
+    <div class="page-header">
+        <h1>Doctor Workspace</h1>
+        <p>Your courses, students, materials and announcements in one place.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="ReloadAsync">Retry</button></div>
+    }
+    else if (_summary is null)
+    {
+        <div class="loading">Loading your workspace...</div>
+    }
+    else
+    {
+        <div class="summary-cards">
+            <div class="card doctor-summary">
+                <div class="card-info">
+                    <span class="card-label">Assigned courses</span>
+                    <span class="card-value">@_summary.CoursesCount</span>
+                </div>
+            </div>
+            <div class="card doctor-summary">
+                <div class="card-info">
+                    <span class="card-label">Enrolled students</span>
+                    <span class="card-value">@_summary.StudentsCount</span>
+                </div>
+            </div>
+            <div class="card doctor-summary">
+                <div class="card-info">
+                    <span class="card-label">Published materials</span>
+                    <span class="card-value">@_summary.MaterialsCount</span>
+                </div>
+            </div>
+            <div class="card doctor-summary">
+                <div class="card-info">
+                    <span class="card-label">Course announcements</span>
+                    <span class="card-value">@_summary.AnnouncementsCount</span>
+                </div>
+            </div>
+        </div>
+
+        @if (_summary.CoursesCount == 0)
+        {
+            <div class="card" style="margin-top: 24px;">
+                <div class="card-header"><h3>Getting started</h3></div>
+                <div class="empty-state">
+                    <div class="empty-icon"><UiIcon Name="landmark" /></div>
+                    <p>Course assignments are managed by the university administrator.</p>
+                    <p>Once courses are assigned to you, they will appear under <NavLink href="/doctor/courses">My Courses</NavLink>.</p>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="card" style="margin-top: 24px;">
+                <div class="card-header"><h3>Latest materials</h3></div>
+                @if (!_summary.LatestMaterials.Any())
+                {
+                    <div class="empty-state"><div class="empty-icon"><UiIcon Name="file-text" /></div>No materials published yet. Add one from <NavLink href="/doctor/materials">Materials</NavLink>.</div>
+                }
+                else
+                {
+                    <div class="recommendation-list">
+                        @foreach (var m in _summary.LatestMaterials)
+                        {
+                            <div class="recommendation-item">
+                                <div class="rec-info">
+                                    <span class="rec-code">@m.Type</span>
+                                    <span class="rec-title">@m.Title</span>
+                                    <span class="rec-track">@m.CourseName &middot; @m.CreatedAt.ToString("MMM d, yyyy")</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="card" style="margin-top: 24px;">
+                <div class="card-header"><h3>Latest announcements</h3></div>
+                @if (!_summary.LatestAnnouncements.Any())
+                {
+                    <div class="empty-state"><div class="empty-icon"><UiIcon Name="megaphone" /></div>No course announcements yet. Post one from <NavLink href="/doctor/announcements">Announcements</NavLink>.</div>
+                }
+                else
+                {
+                    <div class="announcement-list">
+                        @foreach (var a in _summary.LatestAnnouncements)
+                        {
+                            <div class="announcement-item">
+                                <div class="announcement-header">
+                                    <h4>@a.Title</h4>
+                                    <span class="announcement-category">@a.CourseName</span>
+                                </div>
+                                <p>@a.Body</p>
+                                <span class="announcement-date">@a.CreatedAtUtc.ToString("MMM dd, yyyy")</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="card" style="margin-top: 24px;">
+                <div class="card-header"><h3>Upcoming exams &amp; assignments</h3></div>
+                @if (!_summary.Upcoming.Any())
+                {
+                    <div class="empty-state"><div class="empty-icon"><UiIcon Name="clipboard-check" /></div>No exams or assignments scheduled for your courses.</div>
+                }
+                else
+                {
+                    <div class="recommendation-list">
+                        @foreach (var m in _summary.Upcoming)
+                        {
+                            <div class="recommendation-item">
+                                <div class="rec-info">
+                                    <span class="rec-code">@m.Type</span>
+                                    <span class="rec-title">@m.Title</span>
+                                    <span class="rec-track">@m.CourseName &middot; @m.CreatedAt.ToString("MMM d, yyyy")</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    }
+</RoleGate>
+
+@code {
+    private DoctorSummaryDto? _summary;
+    private string? _error;
+    private bool _started;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // F5: auth restores in OnAfterRenderAsync (JS interop). Never
+        // redirect while it is still resolving.
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _error = null;
+        try
+        {
+            _summary = await Http.GetFromJsonAsync<DoctorSummaryDto>("/api/doctor/summary");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            if (!AuthService.IsInitialized)
+            {
+                _error = "Could not load your workspace. Check your connection and try again.";
+            }
+            else
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+        }
+        catch
+        {
+            _error = "Could not load your workspace. Please try again.";
+        }
+    }
+}

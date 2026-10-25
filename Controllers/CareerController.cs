@@ -7,7 +7,7 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-[Authorize]
+[Authorize(Roles = "Student")]
 [ApiController]
 [Route("api/[controller]")]
 public class CareerController : ControllerBase
@@ -98,7 +98,11 @@ public class CareerController : ControllerBase
             .Select(e => e.Course!.Title)
             .ToListAsync();
 
-        var allCourses = await _db.Courses.AsNoTracking().Select(c => c.Title).ToListAsync();
+        var allCourses = await _db.Courses.AsNoTracking()
+            .Where(c => user.UniversityId.HasValue && c.UniversityId == user.UniversityId)
+            .EligibleForStudent(user)
+            .Select(c => c.Title)
+            .ToListAsync();
         var pendingCourses = allCourses.Except(completedCourses).ToList();
 
         return Ok(new

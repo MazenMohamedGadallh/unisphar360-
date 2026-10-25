@@ -50,7 +50,7 @@ else if (_gap is not null)
             <div class="card-header"><h3>Skills you have</h3></div>
             @if (_gap.Matched.Count == 0)
             {
-                <div class="empty-state">No role skills detected yet — add skills to your profile.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="target" /></div>No role skills detected yet — add skills to your profile.</div>
             }
             else
             {
@@ -72,7 +72,7 @@ else if (_gap is not null)
             <div class="card-header"><h3>Skills to learn next</h3></div>
             @if (_gap.Missing.Count == 0)
             {
-                <div class="empty-state">Nothing missing — you cover this role's core stack.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="circle-check" /></div>Nothing missing — you cover this role's core stack.</div>
             }
             else
             {
@@ -102,7 +102,7 @@ else if (_gap is not null)
 }
 else
 {
-    <div class="empty-state">Pick a role (or let us guess from your preferences) and press Analyze.</div>
+    <div class="empty-state"><div class="empty-icon"><UiIcon Name="target" /></div>Pick a role (or let us guess from your preferences) and press Analyze.</div>
 }
 
 @code {

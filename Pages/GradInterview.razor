@@ -39,7 +39,7 @@ else
 {
     @if (_sessions.Count == 0)
     {
-        <div class="empty-state">No practice sessions yet.</div>
+        <div class="empty-state"><div class="empty-icon"><UiIcon Name="message-square" /></div>No practice sessions yet.</div>
     }
     <div class="grad-list" style="margin-bottom:16px;">
         @foreach (var session in _sessions)

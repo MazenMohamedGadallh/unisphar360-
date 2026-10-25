@@ -1,0 +1,873 @@
+@page "/legacy/doctor/research"
+@attribute [Authorize(Roles = "Doctor")]
+@*
+[Authorize] on the page is informational; access is enforced by RoleGate
+client-side and by [Authorize(Roles="Doctor")] on every /api endpoint.
+*@
+@using System.Globalization
+@using System.Net
+@using System.Net.Http.Headers
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@implements IAsyncDisposable
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+@inject IJSRuntime JS
+
+<PageTitle>Research Hub - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Doctor">
+    <div class="page-header">
+        <h1>Research Hub</h1>
+        <p>Upload your papers and browse published research from doctors across every university.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_toast))
+    {
+        <div class="alert @(_toastIsError ? "alert-error" : "alert-success")">@_toast</div>
+    }
+
+    <div class="research-tabs" role="tablist" aria-label="Research hub sections">
+        <button type="button" role="tab" aria-selected="@(_tab == "mine")"
+                class="research-tab @(_tab == "mine" ? "active" : "")"
+                @onclick='() => SwitchTabAsync("mine")'>
+            My Research
+        </button>
+        <button type="button" role="tab" aria-selected="@(_tab == "browse")"
+                class="research-tab @(_tab == "browse" ? "active" : "")"
+                @onclick='() => SwitchTabAsync("browse")'>
+            Browse Research
+        </button>
+    </div>
+
+    @if (_tab == "mine")
+    {
+        <div class="card research-intro">
+            <div>
+                <h3>My papers</h3>
+                <p class="field-hint">Only you can edit or delete your papers. Published papers can be found and downloaded by doctors from other universities.</p>
+            </div>
+            <button type="button" class="btn btn-primary" @onclick="StartCreate"><UiIcon Name="upload" /> Upload paper</button>
+        </div>
+
+        @if (_showForm)
+        {
+            <div class="card research-form-card">
+                <div class="card-header">
+                    <h3>@(_editingId is null ? "Upload a paper" : "Edit paper")</h3>
+                    <button type="button" class="modal-close" aria-label="Close form" @onclick="CancelForm"><UiIcon Name="x" /></button>
+                </div>
+
+                @if (!string.IsNullOrEmpty(_formError))
+                {
+                    <div class="alert alert-error">@_formError</div>
+                }
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="paper-title">Title <span class="required-mark">*</span></label>
+                        <input id="paper-title" maxlength="250" @bind="_formTitle" placeholder="Paper title" />
+                    </div>
+                    <div class="form-group">
+                        <label for="paper-year">Year <span class="required-mark">*</span></label>
+                        <input id="paper-year" type="number" min="1950" max="@MaxYear" @bind="_formYear" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="paper-authors">Authors <span class="required-mark">*</span></label>
+                    <input id="paper-authors" maxlength="500" @bind="_formAuthors" placeholder="Authors, comma separated" />
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="paper-field">Field / department <span class="required-mark">*</span></label>
+                        <input id="paper-field" maxlength="200" @bind="_formField" placeholder="e.g. Artificial Intelligence" />
+                    </div>
+                    <div class="form-group">
+                        <label for="paper-keywords">Keywords</label>
+                        <input id="paper-keywords" maxlength="300" @bind="_formKeywords" placeholder="e.g. machine learning, vision" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="paper-doi">DOI or link <span class="field-hint-inline">(optional)</span></label>
+                    <input id="paper-doi" maxlength="500" @bind="_formDoiOrUrl" placeholder="https://... or 10.1234/..." />
+                </div>
+
+                <div class="form-group">
+                    <label for="paper-abstract">Abstract <span class="required-mark">*</span></label>
+                    <textarea id="paper-abstract" rows="6" maxlength="5000" @bind="_formAbstract"
+                              placeholder="Summarize the paper..."></textarea>
+                    <small class="field-hint">@_formAbstract.Length / 5000 characters</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="paper-pdf">PDF file @if (_editingId is null) { <span class="required-mark">*</span> }</label>
+                    <InputFile id="paper-pdf" OnChange="OnPdfSelected" accept=".pdf,application/pdf" class="file-input" />
+                    <small class="field-hint">
+                        PDF only, up to 20 MB. The file is checked on the server.
+                        @if (_editingId is not null)
+                        {
+                            <span> Leave empty to keep the current PDF.</span>
+                        }
+                    </small>
+                    @if (_pdfFile is not null)
+                    {
+                        <small class="field-hint">Selected: @_pdfFile.Name (@FormatSize(_pdfFile.Size))</small>
+                    }
+                </div>
+
+                <div class="form-check">
+                    <input id="paper-published" type="checkbox" @bind="_formPublished" />
+                    <label for="paper-published">
+                        Publish to the cross-university Browse
+                        <span class="field-hint">Drafts stay visible only to you.</span>
+                    </label>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-primary" @onclick="SavePaperAsync" disabled="@_saving">
+                        @(_saving ? "Saving..." : (_editingId is null ? "Upload paper" : "Save changes"))
+                    </button>
+                    <button type="button" class="btn btn-secondary" @onclick="CancelForm" disabled="@_saving">Cancel</button>
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(_myError))
+        {
+            <div class="alert alert-error">@_myError <button type="button" class="btn btn-sm btn-secondary" @onclick="LoadMyAsync">Retry</button></div>
+        }
+        else if (_myPapers is null)
+        {
+            <div class="loading">Loading your research...</div>
+        }
+        else if (_myPapers.Count == 0)
+        {
+            <div class="card">
+                <div class="empty-state">
+                    <h3>No papers yet</h3>
+                    <p>Upload your first paper. Published papers become visible to doctors at every university in Browse Research.</p>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="research-grid">
+                @foreach (var paper in _myPapers)
+                {
+                    <article class="research-card">
+                        <div class="research-card-top">
+                            <h3>@paper.Title</h3>
+                            <span class="research-badge @(paper.IsPublished ? "published" : "draft")">
+                                @(paper.IsPublished ? "Published" : "Draft")
+                            </span>
+                        </div>
+
+                        <div class="research-meta">
+                            <span>@paper.Year</span>
+                            <span>@paper.Field</span>
+                            <span>Updated @paper.UpdatedAtUtc.ToLocalTime().ToString("MMM d, yyyy")</span>
+                        </div>
+
+                        <p class="research-authors">@paper.Authors</p>
+                        @if (!string.IsNullOrWhiteSpace(paper.Keywords))
+                        {
+                            <p class="research-keywords">@paper.Keywords</p>
+                        }
+                        <p class="research-abstract-preview">@Preview(paper.Abstract, 220)</p>
+
+                        <div class="research-actions">
+                            @if (paper.HasPdf)
+                            {
+                                <button type="button" class="btn btn-sm btn-secondary" @onclick="() => DownloadPdfAsync(paper.Id, paper.Title)">
+                                    View PDF
+                                </button>
+                            }
+                            <button type="button" class="btn btn-sm btn-secondary" @onclick="() => StartEdit(paper)">Edit</button>
+
+                            @if (_confirmDeleteId == paper.Id)
+                            {
+                                <span class="delete-confirm">
+                                    Delete permanently?
+                                    <button type="button" class="btn btn-sm btn-danger" @onclick="() => DeletePaperAsync(paper.Id)">Confirm</button>
+                                    <button type="button" class="btn btn-sm btn-secondary" @onclick="() => _confirmDeleteId = null">Cancel</button>
+                                </span>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-link" @onclick="() => _confirmDeleteId = paper.Id">Delete</button>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        <div class="card research-filter-card">
+            <div class="research-filter-grid">
+                <div class="form-group search-group">
+                    <label for="browse-search">Search</label>
+                    <div class="research-search">
+                        <input id="browse-search" @bind="_search" @bind:event="oninput"
+                               @onkeyup="HandleSearchKey"
+                               placeholder="Search title, abstract, keywords or author..." />
+                        <button type="button" class="btn btn-primary" @onclick="() => LoadBrowseAsync(1)">Search</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="browse-university">University</label>
+                    <select id="browse-university" @bind="_filterUniversity">
+                        <option value="">All universities</option>
+                        @if (_filters is not null)
+                        {
+                            @foreach (var uni in _filters.Universities)
+                            {
+                                <option value="@uni.Id">@uni.Name</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="browse-field">Department / field</label>
+                    <select id="browse-field" @bind="_filterField">
+                        <option value="">All fields</option>
+                        @if (_filters is not null)
+                        {
+                            @foreach (var field in _filters.Fields)
+                            {
+                                <option value="@field">@field</option>
+                            }
+                        }
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="browse-year">Year</label>
+                    <select id="browse-year" @bind="_filterYear">
+                        <option value="">All years</option>
+                        @if (_filters is not null)
+                        {
+                            @foreach (var year in _filters.Years)
+                            {
+                                <option value="@year">@year</option>
+                            }
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="research-filter-actions">
+                <button type="button" class="btn btn-primary" @onclick="() => LoadBrowseAsync(1)">Apply filters</button>
+                <button type="button" class="btn btn-secondary" @onclick="ClearFiltersAsync">Clear</button>
+                <span class="field-hint">Newest first &middot; 20 per page</span>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_browseError))
+        {
+            <div class="alert alert-error">@_browseError <button type="button" class="btn btn-sm btn-secondary" @onclick="() => LoadBrowseAsync(_browse?.Page ?? 1)">Retry</button></div>
+        }
+        else if (_browseLoading && _browse is null)
+        {
+            <div class="loading">Loading published research...</div>
+        }
+        else if (_browse is not null && _browse.Items.Count == 0)
+        {
+            <div class="card">
+                <div class="empty-state">
+                    <h3>No papers match these filters</h3>
+                    <p>Try a different search term, university, field or year.</p>
+                </div>
+            </div>
+        }
+        else if (_browse is not null)
+        {
+            <div class="research-results-head">
+                <span>@_browse.Total published paper@(_browse.Total == 1 ? "" : "s")</span>
+                <span class="field-hint">Page @_browse!.Page of @TotalPages</span>
+            </div>
+
+            <div class="research-grid">
+                @foreach (var paper in _browse.Items)
+                {
+                    <article class="research-card">
+                        <NavLink class="research-card-title" href="@($"/doctor/research/{paper.Id}")">@paper.Title</NavLink>
+                        <p class="research-authors">@paper.Authors</p>
+                        <div class="research-meta">
+                            <span>@paper.Year</span>
+                            <span>@paper.Field</span>
+                        </div>
+                        <div class="research-author-line">
+                            <span class="research-avatar" aria-hidden="true"><UiIcon Name="user-round" /></span>
+                            <span><strong>@paper.AuthorName</strong> &middot; @(string.IsNullOrWhiteSpace(paper.UniversityName) ? "University not set" : paper.UniversityName)</span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(paper.Keywords))
+                        {
+                            <p class="research-keywords">@paper.Keywords</p>
+                        }
+                        <div class="research-actions">
+                            <NavLink class="btn btn-sm btn-secondary" href="@($"/doctor/research/{paper.Id}")">View details</NavLink>
+                            @if (paper.HasPdf)
+                            {
+                                <button type="button" class="btn btn-sm btn-secondary" @onclick="() => DownloadPdfAsync(paper.Id, paper.Title)">
+                                    Download PDF
+                                </button>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+
+            @if (TotalPages > 1)
+            {
+                <div class="pagination">
+                    <button type="button" class="btn btn-sm btn-secondary" disabled="@(_browse!.Page <= 1)"
+                            @onclick="() => LoadBrowseAsync(_browse!.Page - 1)">Previous</button>
+                    <span>Page @_browse!.Page of @TotalPages</span>
+                    <button type="button" class="btn btn-sm btn-secondary" disabled="@(_browse!.Page >= TotalPages)"
+                            @onclick="() => LoadBrowseAsync(_browse!.Page + 1)">Next</button>
+                </div>
+            }
+        }
+    }
+</RoleGate>
+
+@code {
+    private const long MaxPdfBytes = 20L * 1024 * 1024;
+    private static int MaxYear => DateTime.UtcNow.Year + 1;
+
+    private string _tab = "mine";
+    private string? _toast;
+    private bool _toastIsError;
+    private bool _started;
+    private bool _downloading;
+
+    // My Research
+    private List<DoctorResearchDto>? _myPapers;
+    private string? _myError;
+    private bool _showForm;
+    private int? _editingId;
+    private int? _confirmDeleteId;
+    private bool _saving;
+
+    private string _formTitle = "";
+    private string _formAbstract = "";
+    private string _formAuthors = "";
+    private string _formKeywords = "";
+    private int _formYear = DateTime.UtcNow.Year;
+    private string _formField = "";
+    private string _formDoiOrUrl = "";
+    private bool _formPublished = true;
+    private IBrowserFile? _pdfFile;
+    private string? _formError;
+
+    // Browse Research
+    private PagedResultDto<ResearchBrowseItemDto>? _browse;
+    private ResearchFiltersDto? _filters;
+    private bool _browseLoading;
+    private string? _browseError;
+    private string _search = "";
+    private string _filterUniversity = "";
+    private string _filterField = "";
+    private string _filterYear = "";
+    private int _lastBrowsePage = 1;
+
+    private IJSObjectReference? _downloadModule;
+    private int TotalPages => _browse is null
+        ? 1
+        : Math.Max(1, (int)Math.Ceiling(_browse.Total / (double)Math.Max(1, _browse.PageSize)));
+
+    [Microsoft.AspNetCore.Components.SupplyParameterFromQuery(Name = "tab")]
+    public string? Tab { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.Equals(Tab, "browse", StringComparison.OrdinalIgnoreCase))
+            _tab = "browse";
+
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+
+        await Task.WhenAll(LoadMyAsync(), LoadFiltersAsync());
+        if (_tab == "browse")
+            await LoadBrowseAsync(1);
+    }
+
+    private async Task SwitchTabAsync(string tab)
+    {
+        _tab = tab;
+        _toast = null;
+        if (tab == "browse" && _browse is null)
+            await LoadBrowseAsync(1);
+    }
+
+    // ---- My Research ----
+
+    private async Task LoadMyAsync()
+    {
+        _myError = null;
+        try
+        {
+            var response = await Http.GetAsync("/api/doctor/research");
+            if (response.IsSuccessStatusCode)
+            {
+                _myPapers = await response.Content.ReadFromJsonAsync<List<DoctorResearchDto>>() ?? new();
+            }
+            else if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                await HandleUnauthorizedAsync();
+            }
+            else
+            {
+                _myError = await ErrorTextAsync(response);
+                _myPapers = new();
+            }
+        }
+        catch
+        {
+            _myPapers ??= new();
+            _myError = "Could not load your papers. Check your connection and try again.";
+        }
+    }
+
+    private void StartCreate()
+    {
+        _editingId = null;
+        _formTitle = "";
+        _formAbstract = "";
+        _formAuthors = "";
+        _formKeywords = "";
+        _formYear = DateTime.UtcNow.Year;
+        _formField = "";
+        _formDoiOrUrl = "";
+        _formPublished = true;
+        _pdfFile = null;
+        _formError = null;
+        _confirmDeleteId = null;
+        _showForm = true;
+        _toast = null;
+    }
+
+    private void StartEdit(DoctorResearchDto paper)
+    {
+        _editingId = paper.Id;
+        _formTitle = paper.Title;
+        _formAbstract = paper.Abstract;
+        _formAuthors = paper.Authors;
+        _formKeywords = paper.Keywords;
+        _formYear = paper.Year;
+        _formField = paper.Field;
+        _formDoiOrUrl = paper.DoiOrUrl ?? "";
+        _formPublished = paper.IsPublished;
+        _pdfFile = null;
+        _formError = null;
+        _confirmDeleteId = null;
+        _showForm = true;
+        _toast = null;
+    }
+
+    private void CancelForm()
+    {
+        _showForm = false;
+        _editingId = null;
+        _pdfFile = null;
+        _formError = null;
+    }
+
+    private void OnPdfSelected(InputFileChangeEventArgs e)
+    {
+        _formError = null;
+        _pdfFile = null;
+
+        if (e.FileCount == 0) return;
+        var file = e.File;
+        if (file is null) return;
+
+        if (!file.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            _formError = "Choose a PDF file (.pdf).";
+            return;
+        }
+        if (file.Size > MaxPdfBytes)
+        {
+            _formError = "PDF files must be 20 MB or smaller.";
+            return;
+        }
+        if (file.Size == 0)
+        {
+            _formError = "The selected PDF is empty.";
+            return;
+        }
+
+        _pdfFile = file;
+    }
+
+    private string? ValidateForm()
+    {
+        var title = _formTitle.Trim();
+        if (title.Length < 3) return "Title must be at least 3 characters.";
+        if (title.Length > 250) return "Title must be at most 250 characters.";
+        if (HasHtml(title)) return "Title must be plain text (HTML is not allowed).";
+
+        var abstractText = _formAbstract.Trim();
+        if (abstractText.Length == 0) return "Abstract is required.";
+        if (abstractText.Length > 5000) return "Abstract must be at most 5000 characters.";
+        if (HasHtml(abstractText)) return "Abstract must be plain text (HTML is not allowed).";
+
+        var authors = _formAuthors.Trim();
+        if (authors.Length == 0) return "Authors are required.";
+        if (authors.Length > 500) return "Authors must be at most 500 characters.";
+        if (HasHtml(authors)) return "Authors must be plain text (HTML is not allowed).";
+
+        var keywords = _formKeywords.Trim();
+        if (keywords.Length > 300) return "Keywords must be at most 300 characters.";
+        if (HasHtml(keywords)) return "Keywords must be plain text (HTML is not allowed).";
+
+        var field = _formField.Trim();
+        if (field.Length == 0) return "Field / department is required.";
+        if (field.Length > 200) return "Field / department must be at most 200 characters.";
+        if (HasHtml(field)) return "Field / department must be plain text (HTML is not allowed).";
+
+        if (_formYear < 1950 || _formYear > MaxYear)
+            return $"Year must be between 1950 and {MaxYear}.";
+
+        var doi = _formDoiOrUrl.Trim();
+        if (doi.Length > 500) return "DOI / link must be at most 500 characters.";
+
+        if (_editingId is null && _pdfFile is null)
+            return "A PDF file is required.";
+
+        return null;
+    }
+
+    private async Task SavePaperAsync()
+    {
+        if (_saving) return;
+
+        _formError = ValidateForm();
+        if (_formError is not null) return;
+
+        _saving = true;
+        _toast = null;
+        try
+        {
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(_formTitle.Trim()), "Title");
+            form.Add(new StringContent(_formAbstract.Trim()), "Abstract");
+            form.Add(new StringContent(_formAuthors.Trim()), "Authors");
+            form.Add(new StringContent(_formKeywords.Trim()), "Keywords");
+            form.Add(new StringContent(_formYear.ToString(CultureInfo.InvariantCulture)), "Year");
+            form.Add(new StringContent(_formField.Trim()), "Field");
+            form.Add(new StringContent(_formDoiOrUrl.Trim()), "DoiOrUrl");
+            form.Add(new StringContent(_formPublished ? "true" : "false"), "IsPublished");
+
+            if (_pdfFile is not null)
+            {
+                var fileStream = _pdfFile.OpenReadStream(MaxPdfBytes);
+                var fileContent = new StreamContent(fileStream);
+                fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+                form.Add(fileContent, "Pdf", _pdfFile.Name);
+            }
+
+            var response = _editingId is null
+                ? await Http.PostAsync("/api/doctor/research", form)
+                : await Http.PutAsync($"/api/doctor/research/{_editingId}", form);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var wasEditing = _editingId is not null;
+                _showForm = false;
+                _pdfFile = null;
+                _formError = null;
+                Toast(wasEditing ? "Paper updated." : "Paper uploaded.");
+                await LoadMyAsync();
+                await LoadFiltersAsync();
+                if (_browse is not null)
+                    await LoadBrowseAsync(_lastBrowsePage);
+            }
+            else if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                await HandleUnauthorizedAsync();
+            }
+            else
+            {
+                _formError = await ErrorTextAsync(response);
+            }
+        }
+        catch
+        {
+            _formError = "Could not save the paper. Check your connection and try again.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeletePaperAsync(int id)
+    {
+        _confirmDeleteId = null;
+        _toast = null;
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/doctor/research/{id}");
+            if (response.IsSuccessStatusCode)
+            {
+                Toast("Paper deleted.");
+                await LoadMyAsync();
+                await LoadFiltersAsync();
+                if (_browse is not null)
+                    await LoadBrowseAsync(_lastBrowsePage);
+            }
+            else if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                await HandleUnauthorizedAsync();
+            }
+            else if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                Toast("That paper no longer exists.", true);
+                await LoadMyAsync();
+            }
+            else
+            {
+                Toast(await ErrorTextAsync(response), true);
+            }
+        }
+        catch
+        {
+            Toast("Could not delete the paper. Check your connection and try again.", true);
+        }
+    }
+
+    // ---- Browse Research ----
+
+    private async Task LoadFiltersAsync()
+    {
+        try
+        {
+            var response = await Http.GetAsync("/api/doctor/research/browse/filters");
+            if (response.IsSuccessStatusCode)
+                _filters = await response.Content.ReadFromJsonAsync<ResearchFiltersDto>();
+        }
+        catch
+        {
+            // Filters are helpful but not essential; browse still works.
+        }
+    }
+
+    private async Task LoadBrowseAsync(int page)
+    {
+        page = Math.Max(1, page);
+        _lastBrowsePage = page;
+        _browseError = null;
+        _browseLoading = true;
+        try
+        {
+            var query = new List<string> { $"page={page}", "pageSize=20" };
+            if (!string.IsNullOrWhiteSpace(_search))
+                query.Add("search=" + Uri.EscapeDataString(_search.Trim()));
+            if (!string.IsNullOrWhiteSpace(_filterUniversity))
+                query.Add("universityId=" + Uri.EscapeDataString(_filterUniversity));
+            if (!string.IsNullOrWhiteSpace(_filterField))
+                query.Add("field=" + Uri.EscapeDataString(_filterField));
+            if (!string.IsNullOrWhiteSpace(_filterYear))
+                query.Add("year=" + Uri.EscapeDataString(_filterYear));
+
+            var response = await Http.GetAsync("/api/doctor/research/browse?" + string.Join("&", query));
+            if (response.IsSuccessStatusCode)
+            {
+                _browse = await response.Content.ReadFromJsonAsync<PagedResultDto<ResearchBrowseItemDto>>();
+            }
+            else if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                await HandleUnauthorizedAsync();
+            }
+            else
+            {
+                _browseError = await ErrorTextAsync(response);
+            }
+        }
+        catch
+        {
+            _browseError = "Could not load published research. Check your connection and try again.";
+        }
+        finally
+        {
+            _browseLoading = false;
+        }
+    }
+
+    private async Task HandleSearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await LoadBrowseAsync(1);
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _search = "";
+        _filterUniversity = "";
+        _filterField = "";
+        _filterYear = "";
+        await LoadBrowseAsync(1);
+    }
+
+    // ---- PDF download (authenticated, then saved by the browser) ----
+
+    private async Task DownloadPdfAsync(int id, string title)
+    {
+        if (_downloading) return;
+        _downloading = true;
+        try
+        {
+            using var response = await Http.GetAsync($"/api/doctor/research/{id}/pdf");
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode == HttpStatusCode.Unauthorized)
+                    await HandleUnauthorizedAsync();
+                else if (response.StatusCode == HttpStatusCode.NotFound)
+                    Toast("The PDF is no longer available.", true);
+                else
+                    Toast(await ErrorTextAsync(response), true);
+                return;
+            }
+
+            _downloadModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/download.js");
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            using var streamReference = new DotNetStreamReference(stream);
+            await _downloadModule.InvokeVoidAsync("downloadPdf", SafeFileName(title, id), streamReference);
+        }
+        catch
+        {
+            Toast("Could not download the PDF. Please try again.", true);
+        }
+        finally
+        {
+            _downloading = false;
+        }
+    }
+
+    // ---- Helpers ----
+
+    private static bool HasHtml(string value) => value.Contains('<') || value.Contains('>');
+
+    private static string Preview(string value, int max) =>
+        value.Length <= max ? value : value[..max].TrimEnd() + "...";
+
+    private static string FormatSize(long bytes) =>
+        bytes >= 1024 * 1024
+            ? $"{bytes / 1024d / 1024d:0.0} MB"
+            : $"{Math.Max(1, bytes / 1024)} KB";
+
+    private static string SafeFileName(string title, int id)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var cleaned = new string(title.Where(c => !invalid.Contains(c) && c != '\r' && c != '\n').ToArray()).Trim();
+        if (cleaned.Length > 80) cleaned = cleaned[..80];
+        if (string.IsNullOrWhiteSpace(cleaned)) cleaned = $"research-{id}";
+        return $"{cleaned}.pdf";
+    }
+
+    private async Task HandleUnauthorizedAsync()
+    {
+        await AuthService.LogoutAsync();
+        Nav.NavigateTo("/login?expired=1");
+    }
+
+    private void Toast(string message, bool isError = false)
+    {
+        _toast = message;
+        _toastIsError = isError;
+    }
+
+    private static async Task<string> ErrorTextAsync(HttpResponseMessage response)
+    {
+        var text = await response.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(text))
+            return $"Request failed ({(int)response.StatusCode}).";
+
+        try
+        {
+            using var doc = JsonDocument.Parse(text);
+            if (doc.RootElement.TryGetProperty("errors", out var errors) &&
+                errors.ValueKind == JsonValueKind.Object)
+            {
+                var messages = new List<string>();
+                foreach (var property in errors.EnumerateObject())
+                {
+                    foreach (var item in property.Value.EnumerateArray())
+                    {
+                        var message = item.GetString();
+                        if (!string.IsNullOrWhiteSpace(message) && !messages.Contains(message))
+                            messages.Add(message);
+                    }
+                }
+                if (messages.Count > 0)
+                    return string.Join(" ", messages);
+            }
+
+            foreach (var key in new[] { "message", "detail", "title" })
+            {
+                if (doc.RootElement.TryGetProperty(key, out var value) &&
+                    value.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(value.GetString()))
+                    return value.GetString()!;
+            }
+        }
+        catch
+        {
+            // Not JSON (e.g. a plain-text model-binding error).
+        }
+
+        return text.Trim('"');
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_downloadModule is not null)
+        {
+            try { await _downloadModule.DisposeAsync(); }
+            catch { /* circuit is closing */ }
+        }
+    }
+}

@@ -10,25 +10,64 @@ using UniSphere.Api.Validators;
 namespace UniSphere.Api.Controllers;
 
 /// <summary>University-scoped courses and materials. Students only ever see
-/// their own university + department + year; ids from the client are always
-/// re-validated server-side against the JWT identity.</summary>
+/// their own university; ids from the client are always re-validated
+/// server-side against the JWT identity. Department/year are optional
+/// catalog filters, never a security boundary.</summary>
 [Authorize]
 [ApiController]
 [Route("api/university")]
 public class UniversityController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public UniversityController(AppDbContext db) => _db = db;
+    private readonly IUniversityScope _scope;
+    private readonly CourseMaterialFileStorage _materialFiles;
+
+    public UniversityController(AppDbContext db, IUniversityScope scope,
+        CourseMaterialFileStorage materialFiles)
+    {
+        _db = db;
+        _scope = scope;
+        _materialFiles = materialFiles;
+    }
 
     private Task<User?> MeAsync() =>
         _db.Users.FirstOrDefaultAsync(u => u.Id == User.GetUserId());
 
-    public static IQueryable<Course> InScope(IQueryable<Course> query, User user) =>
-        query.Where(c => user.UniversityId != null
-                && c.UniversityId == user.UniversityId
-                && (string.IsNullOrEmpty(user.Department) || c.Department == "" || c.Department == user.Department)
-                && (!user.AcademicYear.HasValue || !c.AcademicYear.HasValue || c.AcademicYear == user.AcademicYear));
+    private async Task<IQueryable<Course>> MyCourseQueryAsync()
+    {
+        var scope = await _scope.GetAsync();
+        // My University lists the full catalog of the caller's university.
+        // University isolation still comes from the server-side scope; the
+        // old department/year eligibility filter is intentionally not used
+        // here (recommendations keep their own eligibility rules).
+        return _db.Courses.AsNoTracking().VisibleToCurrentUser(scope);
+    }
 
+    /// <summary>Courses whose materials the student may read: courses they
+    /// are enrolled in plus courses they are eligible for (own university,
+    /// matching department/year). The full catalog stays visible on the
+    /// course list, but materials for courses the student cannot take are
+    /// not exposed.</summary>
+    private async Task<IQueryable<Course>> MyMaterialCourseQueryAsync(User user)
+    {
+        var scope = await _scope.GetAsync();
+        var enrolledIds = await _db.Enrollments.AsNoTracking()
+            .Where(e => e.UserId == user.Id)
+            .Select(e => e.CourseId)
+            .ToListAsync();
+
+        return _db.Courses.AsNoTracking()
+            .VisibleToCurrentUser(scope)
+            .Where(c => enrolledIds.Contains(c.Id)
+                || ((string.IsNullOrEmpty(user.Department)
+                        || c.Department == ""
+                        || c.Department == user.Department)
+                    && (!user.AcademicYear.HasValue
+                        || !c.AcademicYear.HasValue
+                        || c.AcademicYear == user.AcademicYear)));
+    }
+
+    [Authorize(Roles = "Student")]
     [HttpGet("me")]
     public async Task<ActionResult<MyUniversityDto>> Me()
     {
@@ -48,36 +87,113 @@ public class UniversityController : ControllerBase
         var university = await _db.Universities.FindAsync(user.UniversityId.Value);
         if (university is null) return NotFound("University not found.");
 
-        var courseIds = await InScope(_db.Courses.AsNoTracking(), user).Select(c => c.Id).ToListAsync();
-        var materials = courseIds.Count == 0 ? 0
-            : await _db.CourseMaterials.CountAsync(m => courseIds.Contains(m.CourseId));
+        var courseIds = await (await MyCourseQueryAsync()).Select(c => c.Id).ToListAsync();
+        var materialCourseIds = await (await MyMaterialCourseQueryAsync(user)).Select(c => c.Id).ToListAsync();
+        var materials = materialCourseIds.Count == 0 ? 0
+            : await _db.CourseMaterials.CountAsync(m => materialCourseIds.Contains(m.CourseId));
 
         return new MyUniversityDto(university.Name, user.Department, user.AcademicYear,
             courseIds.Count, materials);
     }
 
+    [Authorize(Roles = "Student")]
     [HttpGet("me/courses")]
-    public async Task<ActionResult<IReadOnlyList<UniversityCourseDto>>> MyCourses()
+    public async Task<ActionResult<IReadOnlyList<UniversityCourseDto>>> MyCourses(
+        [FromQuery] string? department = null,
+        [FromQuery] int? year = null)
     {
         var user = await MeAsync();
         if (user is null || user.IsDeleted) return Unauthorized();
         if (!user.UniversityId.HasValue) return new List<UniversityCourseDto>();
 
-        var courses = await InScope(_db.Courses.AsNoTracking(), user).OrderBy(c => c.Code).ToListAsync();
-        var ids = courses.Select(c => c.Id).ToList();
-        var materials = await _db.CourseMaterials.AsNoTracking()
-            .Where(m => ids.Contains(m.CourseId))
-            .ToListAsync();
+        // Start from the full own-university catalog. Department/year narrow
+        // the catalog only when the caller explicitly supplies them.
+        var allCourses = await (await MyCourseQueryAsync()).OrderBy(c => c.Code).ToListAsync();
 
-        return courses.Select(c =>
+        var enrollmentRows = await _db.Enrollments.AsNoTracking()
+            .Where(e => e.UserId == user.Id)
+            .ToListAsync();
+        var enrollments = enrollmentRows
+            .GroupBy(e => e.CourseId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(e => e.GradePoints).First());
+        var passedCodes = enrollmentRows
+            .Where(e => e.GradePoints >= 2.0)
+            .Join(allCourses, e => e.CourseId, c => c.Id, (_, c) => c.Code)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var courses = allCourses.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(department))
+        {
+            var requested = department.Trim();
+            var departmentName = requested.ToUpperInvariant() switch
+            {
+                "CS" => "Computer Science",
+                "IS" => "Information Systems",
+                "IT" => "Information Technology",
+                "AI" => "Artificial Intelligence",
+                "HU" => "Humanities",
+                "MA" => "Mathematics",
+                "PH" => "Physics",
+                "ST" => "Statistics",
+                _ => requested
+            };
+            courses = courses.Where(c =>
+                string.Equals(c.Department, departmentName, StringComparison.OrdinalIgnoreCase));
+        }
+        if (year.HasValue)
+            courses = courses.Where(c => c.AcademicYear == year.Value);
+
+        var selected = courses.ToList();
+        var ids = selected.Select(c => c.Id).ToList();
+        var materialIds = await (await MyMaterialCourseQueryAsync(user)).Select(c => c.Id).ToListAsync();
+        var materials = await _db.CourseMaterials.AsNoTracking()
+            .Where(m => materialIds.Contains(m.CourseId))
+            .ToListAsync();
+        // Instructor names come only from admin-managed assignments.
+        var instructors = await InstructorDirectory.NamesByCourseAsync(_db, ids);
+        // Students see the doctor-editable display title when one is set.
+        var displayTitles = await InstructorDirectory.DisplayTitlesByCourseAsync(_db, ids);
+
+        return selected.Select(c =>
         {
             var mine = materials.Where(m => m.CourseId == c.Id).ToList();
             DateTime? latest = mine.Count == 0 ? null : mine.Max(m => m.CreatedAtUtc);
-            return new UniversityCourseDto(c.Id, c.Code, c.Title, c.Department,
-                c.AcademicYear, c.Semester, mine.Count, latest);
+            return new UniversityCourseDto(c.Id, c.Code, displayTitles.GetValueOrDefault(c.Id, c.Title),
+                c.Department, c.AcademicYear, c.Semester, mine.Count, latest,
+                instructors.GetValueOrDefault(c.Id, ""),
+                CourseStatus(c, enrollments.GetValueOrDefault(c.Id), passedCodes),
+                MatchesStudentProfile(c, user));
         }).ToList();
     }
 
+    /// <summary>Informational status for the catalog card. Enrollment rules
+    /// are untouched: this only describes what the student has already done.</summary>
+    private static string CourseStatus(
+        Course course, Enrollment? enrollment, HashSet<string> passedCodes)
+    {
+        if (enrollment is not null)
+            return enrollment.GradePoints >= 2.0 ? "Passed" : "InProgress";
+
+        var prerequisites = (course.Prerequisites ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return prerequisites.All(passedCodes.Contains) ? "Available" : "Locked";
+    }
+
+    /// <summary>True when the course belongs to the student's own department
+    /// and year. Empty course fields mean "all departments/years", matching
+    /// the existing eligibility convention.</summary>
+    private static bool MatchesStudentProfile(Course course, User user)
+    {
+        var departmentMatches = string.IsNullOrWhiteSpace(user.Department)
+            || string.IsNullOrWhiteSpace(course.Department)
+            || string.Equals(course.Department, user.Department, StringComparison.OrdinalIgnoreCase);
+        var yearMatches = !user.AcademicYear.HasValue
+            || !course.AcademicYear.HasValue
+            || course.AcademicYear == user.AcademicYear;
+        return departmentMatches && yearMatches;
+    }
+
+    [Authorize(Roles = "Student")]
     [HttpGet("me/materials")]
     public async Task<ActionResult<PagedResultDto<MaterialDto>>> MyMaterials(
         [FromQuery] int? courseId = null,
@@ -94,7 +210,7 @@ public class UniversityController : ControllerBase
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var scopedIds = await InScope(_db.Courses.AsNoTracking(), user).Select(c => c.Id).ToListAsync();
+        var scopedIds = await (await MyMaterialCourseQueryAsync(user)).Select(c => c.Id).ToListAsync();
 
         if (courseId.HasValue && !scopedIds.Contains(courseId.Value))
             return NotFound("Course not found in your university.");
@@ -122,12 +238,18 @@ public class UniversityController : ControllerBase
             .Take(pageSize)
             .ToListAsync();
 
+        var displayTitles = await InstructorDirectory.DisplayTitlesByCourseAsync(_db, scopedIds);
+        var instructors = await InstructorDirectory.NamesByCourseAsync(_db, scopedIds);
         return new PagedResultDto<MaterialDto>(
-            items.Select(m => ToDto(m)).ToList(), total, page, pageSize);
+            items.Select(m => ToDto(m,
+                displayTitles.GetValueOrDefault(m.CourseId, m.Course?.Title ?? ""),
+                instructors.GetValueOrDefault(m.CourseId, ""))).ToList(),
+            total, page, pageSize);
     }
 
     /// <summary>One material for the /university?materialId= deep link.
     /// Out-of-scope ids return 404, never another student's data.</summary>
+    [Authorize(Roles = "Student")]
     [HttpGet("me/materials/{id:int}")]
     public async Task<ActionResult<MaterialDto>> MaterialById(int id)
     {
@@ -135,20 +257,27 @@ public class UniversityController : ControllerBase
         if (user is null || user.IsDeleted) return Unauthorized();
         if (!user.UniversityId.HasValue) return NotFound();
 
-        var scopedIds = await InScope(_db.Courses.AsNoTracking(), user).Select(c => c.Id).ToListAsync();
+        var scopedIds = await (await MyMaterialCourseQueryAsync(user)).Select(c => c.Id).ToListAsync();
         var material = await _db.CourseMaterials.AsNoTracking()
             .Include(m => m.Course)
             .FirstOrDefaultAsync(m => m.Id == id && scopedIds.Contains(m.CourseId));
-        return material is null ? NotFound() : ToDto(material);
+        if (material is null) return NotFound();
+        var titles = await InstructorDirectory.DisplayTitlesByCourseAsync(_db, new[] { material.CourseId });
+        var instructors = await InstructorDirectory.NamesByCourseAsync(_db, new[] { material.CourseId });
+        return ToDto(material,
+            titles.GetValueOrDefault(material.CourseId, material.Course?.Title ?? ""),
+            instructors.GetValueOrDefault(material.CourseId, ""));
     }
 
-    [HttpGet("me/upcoming")]    public async Task<ActionResult<IReadOnlyList<UpcomingItemDto>>> Upcoming([FromQuery] int take = 5)
+    [Authorize(Roles = "Student")]
+    [HttpGet("me/upcoming")]
+    public async Task<ActionResult<IReadOnlyList<UpcomingItemDto>>> Upcoming([FromQuery] int take = 5)
     {
         var user = await MeAsync();
         if (user is null || user.IsDeleted) return Unauthorized();
         if (!user.UniversityId.HasValue) return new List<UpcomingItemDto>();
 
-        var scopedIds = await InScope(_db.Courses.AsNoTracking(), user).Select(c => c.Id).ToListAsync();
+        var scopedIds = await (await MyMaterialCourseQueryAsync(user)).Select(c => c.Id).ToListAsync();
         var items = await _db.CourseMaterials.AsNoTracking()
             .Include(m => m.Course)
             .Where(m => scopedIds.Contains(m.CourseId)
@@ -157,7 +286,10 @@ public class UniversityController : ControllerBase
             .Take(Math.Clamp(take, 1, 20))
             .ToListAsync();
 
-        return items.Select(m => new UpcomingItemDto(m.Id, m.Title, m.Course?.Title ?? "",
+        var titles = await InstructorDirectory.DisplayTitlesByCourseAsync(
+            _db, items.Select(m => m.CourseId).Distinct().ToList());
+        return items.Select(m => new UpcomingItemDto(m.Id, m.Title,
+            titles.GetValueOrDefault(m.CourseId, m.Course?.Title ?? ""),
             m.Type, m.CreatedAtUtc, string.IsNullOrWhiteSpace(m.Description) ? null : m.Description)).ToList();
     }
 
@@ -179,13 +311,14 @@ public class UniversityController : ControllerBase
         var user = await MeAsync();
         if (user is null || user.IsDeleted) return Unauthorized();
 
-        var course = await _db.Courses.FindAsync(req.CourseId);
+        var scope = await _scope.GetAsync();
+        // Doctors may only write to courses they are assigned to teach;
+        // admins manage any course. Foreign/unassigned ids are 404.
+        var courseQuery = _db.Courses.VisibleToCurrentUser(scope);
+        if (scope.Role == UserRole.Doctor)
+            courseQuery = courseQuery.AssignedToDoctor(_db, user.Id);
+        var course = await courseQuery.FirstOrDefaultAsync(c => c.Id == req.CourseId);
         if (course is null) return NotFound("Course not found.");
-
-        if (user.Role == UserRole.Doctor
-            && (!user.UniversityId.HasValue || course.UniversityId != user.UniversityId))
-            return StatusCode(StatusCodes.Status403Forbidden,
-                "You can only add materials for courses of your own university.");
 
         var material = new CourseMaterial
         {
@@ -210,7 +343,9 @@ public class UniversityController : ControllerBase
         });
         await _db.SaveChangesAsync();
 
-        return StatusCode(StatusCodes.Status201Created, ToDto(material, course.Title));
+        var instructors = await InstructorDirectory.NamesByCourseAsync(_db, new[] { course.Id });
+        return StatusCode(StatusCodes.Status201Created,
+            ToDto(material, course.Title, instructors.GetValueOrDefault(course.Id, "")));
     }
 
     [Authorize(Roles = "Admin")]
@@ -223,6 +358,7 @@ public class UniversityController : ControllerBase
         var material = await _db.CourseMaterials.FindAsync(id);
         if (material is null) return NotFound();
 
+        var storedFileName = material.StoredFileName;
         _db.CourseMaterials.Remove(material);
         _db.AuditLogs.Add(new AuditLog
         {
@@ -234,10 +370,15 @@ public class UniversityController : ControllerBase
             UserAgent = HttpContext.Request.Headers.UserAgent.ToString()
         });
         await _db.SaveChangesAsync();
+        _materialFiles.Delete(storedFileName);
         return NoContent();
     }
 
-    private static MaterialDto ToDto(CourseMaterial m, string? courseName = null) =>
+    private static MaterialDto ToDto(CourseMaterial m, string? courseName = null, string? instructorName = null) =>
         new(m.Id, m.CourseId, courseName ?? m.Course?.Title ?? "",
-            m.Title, m.Type, m.Description, m.Content, m.FileUrl, m.CreatedAtUtc);
+            m.Title, m.Type, m.Description, m.Content, m.FileUrl, m.CreatedAtUtc,
+            instructorName ?? "",
+            !string.IsNullOrWhiteSpace(m.StoredFileName),
+            m.OriginalFileName,
+            m.FileSizeBytes);
 }

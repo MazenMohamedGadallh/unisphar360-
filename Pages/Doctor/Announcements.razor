@@ -1,0 +1,396 @@
+@page "/doctor/announcements"
+@attribute [Authorize(Roles = "Doctor")]
+@*
+[Authorize] removed on purpose (see Dashboard.razor): access is enforced by
+RoleGate client-side and by [Authorize(Roles="Doctor")] on every /api endpoint.
+*@
+@using System.Net
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>Announcements - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Doctor">
+    <div class="page-header">
+        <h1>Announcements</h1>
+        <p>Post updates to students enrolled in your courses &mdash; they get a notification.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_toast))
+    {
+        <div class="alert @(_toastIsError ? "alert-error" : "alert-success")">@_toast</div>
+    }
+
+    @if (_deleteCandidate is not null)
+    {
+        <div class="alert alert-error">
+            Delete &quot;@_deleteCandidate.Title&quot;? Students will no longer see it.
+            <button class="btn btn-sm btn-danger" @onclick="ConfirmDeleteAsync" disabled="@_deleting">Delete</button>
+            <button class="btn btn-sm btn-secondary" @onclick="() => _deleteCandidate = null">Cancel</button>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="ReloadAsync">Retry</button></div>
+    }
+    else if (_courses is null)
+    {
+        <div class="loading">Loading your courses...</div>
+    }
+    else if (!_courses.Any())
+    {
+        <div class="card">
+            <div class="empty-state">
+                <h3>No assigned courses</h3>
+                <p>Course announcements become available when the administrator assigns you to a course.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="card-header"><h3>Post an announcement</h3></div>
+            <div class="form-inline">
+                <div class="form-group">
+                    <label for="announcementCourse">Course</label>
+                    <select id="announcementCourse" value="@_formCourseId" @onchange="(e) => _formCourseId = e.Value?.ToString() ?? string.Empty">
+                        @foreach (var c in _courses)
+                        {
+                            <option value="@c.Id">@c.Code &mdash; @c.Title (@c.StudentsCount students)</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="announcementCategory">Category</label>
+                    <select id="announcementCategory" @bind="_formCategory">
+                        @foreach (var cat in Categories)
+                        {
+                            <option value="@cat">@cat</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="form-group" style="margin-top: 12px;">
+                <label for="announcementTitle">Title</label>
+                <input id="announcementTitle" @bind="_formTitle" maxlength="200" placeholder="Announcement title" />
+            </div>
+            <div class="form-group" style="margin-top: 12px;">
+                <label for="announcementBody">Message</label>
+                <textarea id="announcementBody" @bind="_formBody" rows="4" placeholder="Write the announcement..."></textarea>
+            </div>
+            <div style="margin-top: 12px;">
+                <button class="btn btn-primary" @onclick="PostAsync" disabled="@_posting">
+                    @(_posting ? "Posting..." : "Post announcement")
+                </button>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 24px;">
+            <div class="card-header">
+                <h3>Posted announcements</h3>
+                <select value="@_courseId" @onchange="(e) => ChangeCourseFilterAsync(e.Value?.ToString())" aria-label="Filter by course">
+                    <option value="">All my courses</option>
+                    @foreach (var c in _courses)
+                    {
+                        <option value="@c.Id">@c.Code &mdash; @c.Title</option>
+                    }
+                </select>
+            </div>
+
+            @if (_announcements is null)
+            {
+                <div class="loading">Loading announcements...</div>
+            }
+            else if (!_announcements.Any())
+            {
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="megaphone" /></div>No announcements posted yet.</div>
+            }
+            else
+            {
+                <div class="announcement-list">
+                    @foreach (var a in _announcements)
+                    {
+                        <div class="announcement-item">
+                            <div class="announcement-header">
+                                <h4>@a.Title</h4>
+                                <span class="announcement-category">@a.CourseName @(string.IsNullOrWhiteSpace(a.Category) ? "" : $"· {a.Category}")</span>
+                            </div>
+                            <p>@a.Body</p>
+                            <div class="announcement-footer">
+                                <span class="announcement-date">@a.CreatedAtUtc.ToString("MMM dd, yyyy HH:mm")</span>
+                                @if (a.IsMine)
+                                {
+                                    <button class="btn btn-sm btn-danger" @onclick="() => _deleteCandidate = a">Delete</button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="pagination">
+                    <button class="btn btn-sm btn-secondary" disabled="@(_page <= 1)" @onclick="() => ChangePageAsync(-1)">Prev</button>
+                    <span>Page @_page of @TotalPages (@_total total)</span>
+                    <button class="btn btn-sm btn-secondary" disabled="@(_page >= TotalPages)" @onclick="() => ChangePageAsync(1)">Next</button>
+                </div>
+            }
+        </div>
+    }
+</RoleGate>
+
+@code {
+    private static readonly string[] Categories = { "general", "academic", "event", "career" };
+
+    private List<DoctorCourseDto>? _courses;
+    private List<DoctorAnnouncementDto>? _announcements;
+    private List<DoctorAnnouncementDto> _allAnnouncements = new();
+    private string _courseId = "";
+    private int _page = 1;
+    private const int PageSize = 10;
+    private int _total;
+    private int TotalPages => Math.Max(1, (_total + PageSize - 1) / PageSize);
+
+    private string? _error;
+    private string? _toast;
+    private bool _toastIsError;
+    private bool _started;
+
+    private string _formCourseId = "";
+    private string _formTitle = "";
+    private string _formBody = "";
+    private string _formCategory = "general";
+    private bool _posting;
+
+    private DoctorAnnouncementDto? _deleteCandidate;
+    private bool _deleting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _error = null;
+        _courses = null;
+        _announcements = null;
+        try
+        {
+            _courses = await Http.GetFromJsonAsync<List<DoctorCourseDto>>("/api/doctor/courses") ?? new();
+            _formCourseId = _courses.FirstOrDefault()?.Id.ToString() ?? "";
+            _page = 1;
+            await LoadAnnouncementsAsync();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            if (!AuthService.IsInitialized)
+            {
+                _error = "Could not load announcements. Check your connection and try again.";
+            }
+            else
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+        }
+        catch
+        {
+            _error = "Could not load announcements. Please try again.";
+        }
+    }
+
+    private async Task LoadAnnouncementsAsync()
+    {
+        _announcements = null;
+        _error = null;
+        try
+        {
+            var courseIds = int.TryParse(_courseId, out var selectedCourseId)
+                ? new[] { selectedCourseId }
+                : _courses?.Select(c => c.Id).ToArray() ?? Array.Empty<int>();
+
+            var requests = courseIds.Select(courseId =>
+                Http.GetFromJsonAsync<List<DoctorAnnouncementDto>>(
+                    $"/api/doctor/courses/{courseId}/announcements"));
+            var results = await Task.WhenAll(requests);
+
+            _allAnnouncements = results
+                .OfType<List<DoctorAnnouncementDto>>()
+                .SelectMany(items => items)
+                .OrderByDescending(a => a.CreatedAtUtc)
+                .ToList();
+            _total = _allAnnouncements.Count;
+            ApplyPage();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _allAnnouncements = new();
+            _announcements = new();
+            _total = 0;
+            Toast("That course is not assigned to you.", true);
+        }
+        catch
+        {
+            _allAnnouncements = new();
+            _announcements = new();
+            _total = 0;
+            _error = "Could not load announcements. Please try again.";
+        }
+    }
+
+    private void ApplyPage()
+    {
+        if (_page > TotalPages)
+            _page = TotalPages;
+
+        _announcements = _allAnnouncements
+            .Skip((_page - 1) * PageSize)
+            .Take(PageSize)
+            .ToList();
+    }
+
+    private async Task ChangeCourseFilterAsync(string? value)
+    {
+        _courseId = value ?? "";
+        _page = 1;
+        await LoadAnnouncementsAsync();
+    }
+
+    private Task ChangePageAsync(int delta)
+    {
+        _page = Math.Clamp(_page + delta, 1, TotalPages);
+        ApplyPage();
+        return Task.CompletedTask;
+    }
+
+    private async Task PostAsync()
+    {
+        if (_posting) return;
+        if (!int.TryParse(_formCourseId, out var courseId))
+        {
+            Toast("Choose a course first.", true);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_formTitle) || string.IsNullOrWhiteSpace(_formBody))
+        {
+            Toast("Title and message are required.", true);
+            return;
+        }
+
+        _posting = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync(
+                $"/api/doctor/courses/{courseId}/announcements",
+                new CreateCourseAnnouncementRequest(
+                    _formTitle.Trim(), _formBody.Trim(), _formCategory));
+
+            if (response.IsSuccessStatusCode)
+            {
+                Toast("Announcement posted - enrolled students were notified.");
+                _formTitle = "";
+                _formBody = "";
+                _page = 1;
+                await LoadAnnouncementsAsync();
+            }
+            else
+            {
+                Toast($"Could not post the announcement: {await ErrorTextAsync(response)}", true);
+            }
+        }
+        catch
+        {
+            Toast("Could not post the announcement. Check your connection and try again.", true);
+        }
+        finally
+        {
+            _posting = false;
+        }
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_deleteCandidate is null || _deleting) return;
+        _deleting = true;
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/doctor/announcements/{_deleteCandidate.Id}");
+            if (response.IsSuccessStatusCode)
+            {
+                Toast($"Deleted \"{_deleteCandidate.Title}\".");
+                _deleteCandidate = null;
+                await LoadAnnouncementsAsync();
+            }
+            else if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                Toast("That announcement is no longer available or was not posted by you.", true);
+                _deleteCandidate = null;
+                await LoadAnnouncementsAsync();
+            }
+            else
+            {
+                Toast($"Could not delete the announcement: {await ErrorTextAsync(response)}", true);
+            }
+        }
+        catch
+        {
+            Toast("Could not delete the announcement. Check your connection and try again.", true);
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+
+    private void Toast(string message, bool isError = false)
+    {
+        _toast = message;
+        _toastIsError = isError;
+    }
+
+    private static async Task<string> ErrorTextAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var text = await response.Content.ReadAsStringAsync();
+            return string.IsNullOrWhiteSpace(text) ? $"Request failed ({(int)response.StatusCode})." : text;
+        }
+        catch
+        {
+            return $"Request failed ({(int)response.StatusCode}).";
+        }
+    }
+}

@@ -1,4 +1,5 @@
 @page "/enrollments"
+@attribute [Authorize(Roles = "Student")]
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -37,7 +38,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     }
     else if (_enrollments is not null && !_enrollments.Any())
     {
-        <div class="empty-state">You are not enrolled in any courses. Browse available courses to get started.</div>
+        <div class="empty-state"><div class="empty-icon"><UiIcon Name="book-open" /></div>You are not enrolled in any courses. Browse available courses to get started.</div>
     }
     else if (_enrollments is not null)
     {

@@ -10,9 +10,8 @@ using UniSphere.Api.Services;
 namespace UniSphere.Api.Controllers;
 
 /// <summary>Grouped, permission-aware search for the topbar search box.
-/// Courses are a public catalog; materials are limited to the student's own
-/// university + department + year; plan items, notifications and users are
-/// always scoped to what the caller may see.</summary>
+/// Courses, materials and events are limited to the caller's university;
+/// study-plan results are student-only and users are admin-only.</summary>
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
@@ -23,10 +22,14 @@ public class SearchController : ControllerBase
 
     private readonly AppDbContext _db;
     private readonly IValidator<SearchQuery> _validator;
-    public SearchController(AppDbContext db, IValidator<SearchQuery> validator)
+    private readonly IUniversityScope _scope;
+
+    public SearchController(
+        AppDbContext db, IValidator<SearchQuery> validator, IUniversityScope scope)
     {
         _db = db;
         _validator = validator;
+        _scope = scope;
     }
 
     [HttpGet]
@@ -40,8 +43,10 @@ public class SearchController : ControllerBase
                 Status = StatusCodes.Status400BadRequest
             });
 
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == User.GetUserId());
+        var user = await _db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == User.GetUserId());
         if (user is null || user.IsDeleted) return Unauthorized();
+        var scope = await _scope.GetAsync();
 
         var term = query.Q!.Trim();
         var take = query.Take;
@@ -49,13 +54,20 @@ public class SearchController : ControllerBase
         var groups = new List<SearchGroupDto>();
         bool Want(string t) => string.IsNullOrEmpty(type) || type == t;
 
-        if (Want("course")) groups.Add(await CourseGroupAsync(term, take));
-        if (Want("material")) groups.Add(await MaterialGroupAsync(user, term, take));
-        if (Want("plan")) groups.Add(await PlanGroupAsync(user, term, take));
-        if (Want("notification")) groups.Add(await NotificationGroupAsync(user, term, take));
-        if (Want("page")) groups.Add(PageGroup(user, term, take));
-        if (Want("event")) groups.Add(await EventGroupAsync(term, take));
-        if (user.Role == UserRole.Admin && Want("user")) groups.Add(await UserGroupAsync(term, take));
+        if (user.Role != UserRole.Graduate && Want("course"))
+            groups.Add(await CourseGroupAsync(scope, user, term, take));
+        if (user.Role is UserRole.Student or UserRole.Doctor && Want("material"))
+            groups.Add(await MaterialGroupAsync(scope, user, term, take));
+        if (user.Role == UserRole.Student && Want("plan"))
+            groups.Add(await PlanGroupAsync(user, term, take));
+        if (Want("notification"))
+            groups.Add(await NotificationGroupAsync(user, term, take));
+        if (Want("page"))
+            groups.Add(PageGroup(user, term, take));
+        if (user.Role is UserRole.Student or UserRole.Graduate or UserRole.Admin && Want("event"))
+            groups.Add(await EventGroupAsync(scope, user, term, take));
+        if (user.Role == UserRole.Admin && Want("user"))
+            groups.Add(await UserGroupAsync(term, take));
 
         return new SearchResponseDto(groups.Where(g => g.Items.Count > 0).ToList());
     }
@@ -66,10 +78,15 @@ public class SearchController : ControllerBase
         return $"%{escaped}%";
     }
 
-    private async Task<SearchGroupDto> CourseGroupAsync(string term, int take)
+    private async Task<SearchGroupDto> CourseGroupAsync(
+        UniversityScopeSnapshot scope, User user, string term, int take)
     {
         var pattern = LikePattern(term);
-        var matches = await _db.Courses.AsNoTracking()
+        var query = _db.Courses.AsNoTracking().VisibleToCurrentUser(scope);
+        if (user.Role == UserRole.Student)
+            query = query.EligibleForStudent(user);
+
+        var matches = await query
             .Where(c => EF.Functions.Like(c.Title, pattern, "\\")
                 || EF.Functions.Like(c.Code, pattern, "\\")
                 || EF.Functions.Like(c.Description, pattern, "\\"))
@@ -80,23 +97,38 @@ public class SearchController : ControllerBase
             .OrderByDescending(c => c.Title.StartsWith(term, StringComparison.OrdinalIgnoreCase))
             .ThenBy(c => c.Title, StringComparer.OrdinalIgnoreCase)
             .Take(take)
-            .Select(c => new SearchItemDto(c.Id, c.Title, c.Code, $"/courses/{c.Id}", "graduation-cap"))
+            .Select(c => new SearchItemDto(c.Id, c.Title, c.Code,
+                user.Role switch
+                {
+                    UserRole.Student => $"/courses/{c.Id}",
+                    UserRole.Doctor => "/doctor/courses",
+                    _ => "/admin"
+                }, "\U0001F393"))
             .ToList();
         return new SearchGroupDto("course", "Courses", items);
     }
 
-    private async Task<SearchGroupDto> MaterialGroupAsync(User user, string term, int take)
+    private async Task<SearchGroupDto> MaterialGroupAsync(
+        UniversityScopeSnapshot scope, User user, string term, int take)
     {
-        if (!user.UniversityId.HasValue)
-            return new SearchGroupDto("material", "Summaries & materials", new List<SearchItemDto>());
-
-        var scopedIds = await UniversityController.InScope(_db.Courses.AsNoTracking(), user)
-            .Select(c => c.Id).ToListAsync();
         var pattern = LikePattern(term);
-        var matches = await _db.CourseMaterials.AsNoTracking()
+        var materialQuery = _db.CourseMaterials.AsNoTracking()
             .Include(m => m.Course)
-            .Where(m => scopedIds.Contains(m.CourseId)
-                && (EF.Functions.Like(m.Title, pattern, "\\") || EF.Functions.Like(m.Description, pattern, "\\")))
+            .VisibleToCurrentUser(scope);
+
+        if (user.Role == UserRole.Student)
+        {
+            var courseIds = await _db.Courses.AsNoTracking()
+                .VisibleToCurrentUser(scope)
+                .EligibleForStudent(user)
+                .Select(c => c.Id)
+                .ToListAsync();
+            materialQuery = materialQuery.Where(m => courseIds.Contains(m.CourseId));
+        }
+
+        var matches = await materialQuery
+            .Where(m => EF.Functions.Like(m.Title, pattern, "\\")
+                || EF.Functions.Like(m.Description, pattern, "\\"))
             .Take(take * 2)
             .ToListAsync();
 
@@ -105,7 +137,9 @@ public class SearchController : ControllerBase
             .ThenBy(m => m.Title, StringComparer.OrdinalIgnoreCase)
             .Take(take)
             .Select(m => new SearchItemDto(m.Id, m.Title, $"{m.Course?.Title} · {m.Type}",
-                $"/university?materialId={m.Id}", "file-text"))
+                user.Role == UserRole.Doctor
+                    ? "/doctor/materials"
+                    : $"/university?materialId={m.Id}", "\U0001F4C4"))
             .ToList();
         return new SearchGroupDto("material", "Summaries & materials", items);
     }
@@ -123,7 +157,7 @@ public class SearchController : ControllerBase
             .ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase)
             .Take(take)
             .Select(i => new SearchItemDto(i.Id, i.Title, i.Date.ToString("MMM d"),
-                "/study-planner", "calendar"))
+                "/study-planner", "\U0001F4C5"))
             .ToList();
         return new SearchGroupDto("plan", "Study plan", items);
     }
@@ -141,7 +175,7 @@ public class SearchController : ControllerBase
             .OrderByDescending(n => n.Title.StartsWith(term, StringComparison.OrdinalIgnoreCase))
             .ThenBy(n => n.Title, StringComparer.OrdinalIgnoreCase)
             .Take(take)
-            .Select(n => new SearchItemDto(n.Id, n.Title, n.Body, "/notifications", "bell"))
+            .Select(n => new SearchItemDto(n.Id, n.Title, n.Body, "/notifications", "\U0001F514"))
             .ToList();
         return new SearchGroupDto("notification", "Notifications", items);
     }
@@ -151,19 +185,34 @@ public class SearchController : ControllerBase
         var role = user.Role.ToString();
         var pages = new (string Title, string Route, string[] Roles, string Icon)[]
         {
-            ("Home", "/dashboard", new[] { "Student", "Graduate", "Doctor", "Admin" }, "house"),
-            ("Academic Advisor", "/academic-advisor", new[] { "Student", "Graduate", "Doctor" }, "graduation-cap"),
-            ("Career Assistant", "/career-assistant", new[] { "Student", "Graduate", "Doctor" }, "briefcase"),
-            ("Research Hub", "/research-hub", new[] { "Student", "Graduate", "Doctor" }, "flask-conical"),
-            ("My University", "/university", new[] { "Student", "Graduate", "Doctor" }, "landmark"),
-            ("Student Services", "/student-services", new[] { "Student", "Graduate", "Doctor" }, "life-buoy"),
-            ("My Analytics", "/analytics", new[] { "Student", "Graduate" }, "trending-up"),
-            ("Admin Panel", "/admin", new[] { "Admin" }, "chart-column"),
-            ("My Profile", "/profile", new[] { "Student", "Graduate", "Doctor", "Admin" }, "user-round"),
-            ("Notifications", "/notifications", new[] { "Student", "Graduate", "Doctor", "Admin" }, "bell"),
-            ("Settings", "/settings", new[] { "Student", "Graduate", "Doctor", "Admin" }, "settings"),
-            ("Help & Support", "/help", new[] { "Student", "Graduate", "Doctor", "Admin" }, "circle-help"),
-            ("Search", "/search", new[] { "Student", "Graduate", "Doctor", "Admin" }, "search"),
+            ("Home", RoleRoutes.HomeFor(role), new[] { "Student", "Doctor", "Graduate", "Admin" }, "\U0001F3E0"),
+            ("My University", "/university", new[] { "Student" }, "\U0001F3DB"),
+            ("Academic Advisor", "/academic-advisor", new[] { "Student" }, "\U0001F393"),
+            ("Career", "/career-assistant", new[] { "Student" }, "\U0001F4BC"),
+            ("Research Hub", "/research-hub", new[] { "Student", "Graduate" }, "\U0001F50D"),
+            ("Student Services", "/student-services", new[] { "Student" }, "\U0001F3E2"),
+            ("My Analytics", "/analytics", new[] { "Student" }, "\U0001F4C8"),
+            ("My Exams", "/student/exams", new[] { "Student" }, "\U0001F4DD"),
+            ("AI Assistant", "/chat", new[] { "Student", "Doctor", "Graduate" }, "\U0001F4F1"),
+            ("Student Events", "/events", new[] { "Student" }, "\U0001F4C5"),
+            ("Doctor Dashboard", "/doctor", new[] { "Doctor" }, "\U0001F3E0"),
+            ("My Courses", "/doctor/courses", new[] { "Doctor" }, "\U0001F4DA"),
+            ("My Students", "/doctor/students", new[] { "Doctor" }, "\U0001F465"),
+            ("Materials", "/doctor/materials", new[] { "Doctor" }, "\U0001F4C4"),
+            ("Announcements", "/doctor/announcements", new[] { "Doctor" }, "\U0001F4E2"),
+            ("Doctor Profile", "/doctor/profile", new[] { "Doctor" }, "\U0001F464"),
+            ("Doctor Research", "/doctor/research", new[] { "Doctor" }, "\U0001F50D"),
+            ("Doctor AI Assistant", "/doctor/ai", new[] { "Doctor" }, "\U0001F4F1"),
+            ("Exam Assistant", "/doctor/exam-assistant", new[] { "Doctor" }, "\U0001F4DA"),
+            ("CV Analysis", "/graduate/cv", new[] { "Graduate" }, "\U0001F4C4"),
+            ("AI Job Matches", "/graduate/matches", new[] { "Graduate" }, "\U0001F44D"),
+            ("Graduated Events", "/graduate/events", new[] { "Graduate" }, "\U0001F389"),
+            ("Admin Panel", "/admin", new[] { "Admin" }, "\U0001F4CA"),
+            ("My Profile", "/profile", new[] { "Student", "Graduate", "Doctor", "Admin" }, "\U0001F464"),
+            ("Notifications", "/notifications", new[] { "Student", "Graduate", "Doctor", "Admin" }, "\U0001F514"),
+            ("Settings", role == "Graduate" ? "/graduate/settings" : "/settings", new[] { "Student", "Graduate", "Doctor", "Admin" }, "⚙"),
+            ("Help & Support", "/help", new[] { "Student", "Graduate", "Doctor", "Admin" }, "❓"),
+            ("Search", "/search", new[] { "Student", "Graduate", "Doctor", "Admin" }, "\U0001F50D"),
         };
 
         var items = pages
@@ -176,19 +225,28 @@ public class SearchController : ControllerBase
         return new SearchGroupDto("page", "Pages", items);
     }
 
-    private async Task<SearchGroupDto> EventGroupAsync(string term, int take)
+    private async Task<SearchGroupDto> EventGroupAsync(
+        UniversityScopeSnapshot scope, User user, string term, int take)
     {
         var pattern = LikePattern(term);
         var matches = await _db.Events.AsNoTracking()
-            .Where(e => EF.Functions.Like(e.Title, pattern, "\\") || EF.Functions.Like(e.Location, pattern, "\\"))
+            .VisibleToCurrentUser(scope)
+            .Where(e => EF.Functions.Like(e.Title, pattern, "\\")
+                || EF.Functions.Like(e.Location, pattern, "\\"))
             .Take(take * 2)
             .ToListAsync();
 
+        var route = user.Role switch
+        {
+            UserRole.Graduate => "/graduate/events",
+            UserRole.Admin => "/admin",
+            _ => "/events"
+        };
         var items = matches
             .OrderByDescending(e => e.Title.StartsWith(term, StringComparison.OrdinalIgnoreCase))
             .ThenBy(e => e.Title, StringComparer.OrdinalIgnoreCase)
             .Take(take)
-            .Select(e => new SearchItemDto(e.Id, e.Title, e.Location, "/student-services", "calendar-days"))
+            .Select(e => new SearchItemDto(e.Id, e.Title, e.Location, route, "\U0001F4CD"))
             .ToList();
         return new SearchGroupDto("event", "Events", items);
     }
@@ -206,7 +264,7 @@ public class SearchController : ControllerBase
             .OrderByDescending(u => u.FullName.StartsWith(term, StringComparison.OrdinalIgnoreCase))
             .ThenBy(u => u.FullName, StringComparer.OrdinalIgnoreCase)
             .Take(take)
-            .Select(u => new SearchItemDto(u.Id, u.FullName, $"{u.Email} · {u.Role}", "/admin", "user-round"))
+            .Select(u => new SearchItemDto(u.Id, u.FullName, $"{u.Email} · {u.Role}", "/admin", "\U0001F464"))
             .ToList();
         return new SearchGroupDto("user", "Users", items);
     }
