@@ -67,10 +67,12 @@
 
     private sealed record DemoUser(string Role, string Email, string Password);
 
-    // Matches the README "Demo Accounts" table.
+    // Matches the README "Demo Accounts" table, plus this project's extra
+    // Helwan demo student (Password123! seed in DbSeeder).
     private static readonly DemoUser[] DemoAccounts =
     [
         new("Student", "mazenmohamed@unisphere.edu", "Password123!"),
+        new("Student (Helwan)", "helwan.student@unisphere.edu", "Password123!"),
         new("Graduate", "graduate@unisphere.edu", "Graduate123!"),
         new("Doctor", "doctor@unisphere.edu", "Doctor123!"),
         new("Admin", "admin@unisphere.edu", "Admin123!")
@@ -105,7 +107,9 @@
 
     private string LandingPath =>
         IsSafeReturnUrl(ReturnUrl) ? ReturnUrl!
-        : (string.Equals(Fetch?.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "/analytics" : "/dashboard");
+        // Role-aware landing (this project's RoleRoutes): doctors go to their
+        // dashboard, admins to the admin panel, graduates to /graduate.
+        : (Fetch?.Role is null ? "/dashboard" : UniSphere.Api.Services.RoleRoutes.HomeFor(Fetch.Role));
 
     private AuthUserDto? Fetch { get; set; }
 

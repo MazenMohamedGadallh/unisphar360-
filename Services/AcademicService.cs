@@ -65,8 +65,12 @@ public class AcademicService
     {
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) return null;
-        var stats = await GetStatsAsync(userId);
-        if (stats is null) return null;
+
+        // Home badges are derived from the student's real Enrollments, not
+        // from a manually maintained SemesterRecord. Accounts imported or
+        // created without a semester snapshot therefore still get a summary
+        // (zeros are a valid state) instead of a 404.
+        var stats = await GetEnrollmentStatsAsync(userId);
 
         return new DashboardSummaryDto(
             user.FullName, user.FirstName, GreetingFor(DateTime.Now.Hour),
@@ -75,6 +79,60 @@ public class AcademicService
             stats.AttendanceRate, stats.AttendanceDelta,
             stats.SubjectsToImprove, stats.RecommendedCourses,
             await GetUnreadCountAsync(userId));
+    }
+
+    /// <summary>Academic stats computed directly from the student's
+    /// enrollments. SemesterRecords are only used as the previous-term
+    /// baseline for the delta badges (never as the source of the current
+    /// values).</summary>
+    private async Task<AcademicStats> GetEnrollmentStatsAsync(int userId)
+    {
+        var enrollments = await _db.Enrollments.AsNoTracking()
+            .Where(e => e.UserId == userId)
+            .ToListAsync();
+
+        var graded = enrollments
+            .Where(e => !string.IsNullOrWhiteSpace(e.GradeLetter))
+            .ToList();
+
+        var gpa = graded.Count == 0
+            ? 0
+            : Math.Round(graded.Average(e => e.GradePoints), 2);
+        var attendanceRate = enrollments.Count == 0
+            ? 0
+            : (int)Math.Round(enrollments.Average(e => (double)e.AttendancePercent));
+
+        var completed = enrollments
+            .Where(e => e.GradePoints >= 2.0)
+            .Select(e => e.CourseId)
+            .Distinct()
+            .Count();
+        var total = enrollments.Select(e => e.CourseId).Distinct().Count();
+        var percent = total == 0 ? 0 : (int)Math.Round(100.0 * completed / total);
+
+        // Below-B grades need attention; ungraded courses only count when
+        // attendance is already low (a fresh enrollment is not a warning).
+        var toImprove = graded.Count(e => e.GradePoints <= 3.0)
+            + enrollments.Count(e => string.IsNullOrWhiteSpace(e.GradeLetter) && e.AttendancePercent < 85);
+
+        var records = await _db.SemesterRecords.AsNoTracking()
+            .Where(r => r.UserId == userId)
+            .ToListAsync();
+        var previous = records
+            .Where(r => !r.IsCurrent)
+            .OrderByDescending(r => r.Id)
+            .FirstOrDefault();
+
+        var gpaDelta = previous is null ? 0 : Math.Round(gpa - previous.Gpa, 2);
+        var attendanceDelta = previous is null ? 0 : attendanceRate - previous.AttendanceRate;
+
+        var recommended = await GetRecommendedAsync(userId, 4);
+
+        return new AcademicStats(
+            gpa, gpaDelta, 4.0,
+            completed, total, percent,
+            attendanceRate, attendanceDelta,
+            toImprove, recommended.Count);
     }
 
     public async Task<IReadOnlyList<DashboardPerformanceRowDto>> GetDashboardPerformanceAsync(int userId, string? semester)
@@ -86,9 +144,12 @@ public class AcademicService
             .OrderBy(e => e.Id)
             .ToListAsync();
 
+        var titles = await InstructorDirectory.DisplayTitlesByCourseAsync(
+            _db, rows.Select(e => e.CourseId).Distinct().ToList());
+
         return rows.Select(e => new DashboardPerformanceRowDto(
             e.CourseId,
-            e.Course?.Title ?? "",
+            titles.GetValueOrDefault(e.CourseId, e.Course?.Title ?? ""),
             e.GradeLetter,
             e.GradePoints,
             e.AttendancePercent,
@@ -231,9 +292,12 @@ public class AcademicService
             .OrderBy(e => e.Id)
             .ToListAsync();
 
+        var displayTitles = await InstructorDirectory.DisplayTitlesByCourseAsync(
+            _db, rows.Select(e => e.CourseId).Distinct().ToList());
+
         return rows.Select(e => new GradeRowDto(
             e.CourseId,
-            e.Course?.Title ?? "",
+            displayTitles.GetValueOrDefault(e.CourseId, e.Course?.Title ?? ""),
             e.GradeLetter,
             e.GradePoints,
             $"{e.GradeLetter} ({e.GradePoints.ToString("0.0", Inv)})",
@@ -251,11 +315,19 @@ public class AcademicService
             .Where(e => e.UserId == userId).Select(e => e.CourseId).ToListAsync();
 
         var courses = await _db.Courses.AsNoTracking()
+            .Where(c => user.UniversityId.HasValue && c.UniversityId == user.UniversityId)
+            .EligibleForStudent(user)
             .Where(c => !enrolledIds.Contains(c.Id)).ToListAsync();
+
+        var courseIds = courses.Select(c => c.Id).ToList();
+        var instructors = await InstructorDirectory.NamesByCourseAsync(_db, courseIds);
+        var displayTitles = await InstructorDirectory.DisplayTitlesByCourseAsync(_db, courseIds);
 
         return Recommender.Rank(courses, user)
             .Take(take)
-            .Select(c => new CourseDto(c.Id, c.Code, c.Title, c.Description, c.Track, c.Credits))
+            .Select(c => new CourseDto(c.Id, c.Code, displayTitles.GetValueOrDefault(c.Id, c.Title),
+                c.Description, c.Track, c.Credits,
+                instructors.GetValueOrDefault(c.Id, "")))
             .ToList();
     }
 

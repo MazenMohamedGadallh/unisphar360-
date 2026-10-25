@@ -1,4 +1,5 @@
 @page "/research-hub"
+@attribute [Authorize(Roles = "Student,Graduate")]
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -18,7 +19,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 <!-- Search -->
 <div class="search-section">
     <div class="search-box-large">
-        <span class="search-icon">&#128269;</span>
+        <span class="search-icon"><UiIcon Name="search" /></span>
         <input type="text" placeholder="Search research papers..." @bind="_searchQuery" @bind:event="oninput" @onkeyup="HandleSearch" />
     </div>
 </div>
@@ -36,7 +37,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
         }
         else if (!_trending.Any())
         {
-            <div class="empty-state">No trending papers available.</div>
+            <div class="empty-state"><div class="empty-icon"><UiIcon Name="microscope" /></div>No trending papers available.</div>
         }
         else
         {
@@ -76,7 +77,7 @@ else
         }
         else if (!_searchResults.Any())
         {
-            <div class="empty-state">No papers found matching "@_searchQuery".</div>
+            <div class="empty-state"><div class="empty-icon"><UiIcon Name="search" /></div>No papers found matching "@_searchQuery".</div>
         }
         else
         {
@@ -111,7 +112,7 @@ else
         <div class="modal" @onclick:stopPropagation>
             <div class="modal-header">
                 <h3>@_selectedPaper.Title</h3>
-                <button class="modal-close" @onclick="() => _selectedPaper = null">&times;</button>
+                <button class="modal-close" @onclick="() => _selectedPaper = null" aria-label="Close"><UiIcon Name="x" /></button>
             </div>
             <div class="modal-body">
                 <div class="paper-authors">@_selectedPaper.Authors</div>
@@ -120,7 +121,7 @@ else
                     <div class="paper-full-abstract">@_selectedPaper.Abstract</div>
                 }
                 <div class="paper-actions">
-                    <button class="btn btn-primary" @onclick="SummarizePaper">Summarize</button>
+                    <button class="btn btn-primary" @onclick="SummarizePaper"><UiIcon Name="file-text" /> Summarize</button>
                     @if (!string.IsNullOrEmpty(_selectedPaper.Url))
                     {
                         <a href="@_selectedPaper.Url" target="_blank" class="btn btn-secondary">View Original</a>

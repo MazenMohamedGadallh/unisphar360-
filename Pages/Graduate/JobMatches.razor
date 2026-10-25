@@ -1,0 +1,18 @@
+@page "/legacy/graduate/jobs"
+@attribute [Authorize(Roles = "Graduate")]
+
+<PageTitle>Job Matches - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Graduate">
+    <div class="page-header">
+        <h1>Job Matches</h1>
+        <p>Roles selected for your degree, skills and interests.</p>
+    </div>
+
+    <div class="card">
+        <div class="empty-state">
+            <h3>No matches yet</h3>
+            <p>Job recommendations will appear after your CV and preferences are added.</p>
+        </div>
+    </div>
+</RoleGate>

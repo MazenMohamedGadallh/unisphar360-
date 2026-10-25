@@ -1,0 +1,270 @@
+@page "/legacy/doctor/courses"
+@attribute [Authorize(Roles = "Doctor")]
+@*
+[Authorize] removed on purpose (see Dashboard.razor): access is enforced by
+RoleGate client-side and by [Authorize(Roles="Doctor")] on every /api endpoint.
+*@
+@using System.Net
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>My Courses - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Doctor">
+    <div class="page-header">
+        <h1>My Courses</h1>
+        <p>Only courses assigned to you by the administrator are shown here. You can set the title students see without changing the catalog title or code.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_toast))
+    {
+        <div class="alert @(_toastIsError ? "alert-error" : "alert-success")">@_toast</div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="ReloadAsync">Retry</button></div>
+    }
+    else if (_courses is null)
+    {
+        <div class="loading">Loading your courses...</div>
+    }
+    else if (!_courses.Any())
+    {
+        <div class="card">
+            <div class="empty-state">
+                <h3>No assigned courses yet</h3>
+                <p>Your university administrator assigns doctors to courses. Assigned courses, their prerequisites and enrolled student counts will appear here.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="card-header"><h3>Assigned courses (@_courses.Count)</h3></div>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Catalog title</th>
+                            <th>Shown to students</th>
+                            <th>Department / Year</th>
+                            <th>Enrolled students</th>
+                            <th>Term</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in _courses)
+                        {
+                            <tr>
+                                <td><span class="readonly-code" title="Course code is managed by the catalog">@c.Code</span></td>
+                                <td>@c.Title</td>
+                                <td class="display-title-cell">
+                                    @if (_editingCourseId == c.Id)
+                                    {
+                                        <div class="title-editor">
+                                            <input @bind="_titleDraft" @bind:event="oninput" maxlength="120"
+                                                   placeholder="Title students see..." aria-label="Display title for @c.Code" />
+                                            <button class="btn btn-sm btn-primary" @onclick="() => SaveTitleAsync(c)" disabled="@_savingTitle">
+                                                @(_savingTitle ? "Saving..." : "Save")
+                                            </button>
+                                            <button class="btn btn-sm btn-secondary" @onclick="CancelEdit" disabled="@_savingTitle">Cancel</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="display-title @(string.IsNullOrWhiteSpace(c.DisplayTitle) ? "catalog-fallback" : "")">@EffectiveDisplay(c)</span>
+                                        @if (string.IsNullOrWhiteSpace(c.DisplayTitle))
+                                        {
+                                            <small class="field-hint">Using catalog title - not customized yet.</small>
+                                        }
+                                        <button class="btn btn-sm btn-secondary" @onclick="() => StartEdit(c)">Rename</button>
+                                    }
+                                </td>
+                                <td>@c.Department @(c.AcademicYear.HasValue ? $"- Year {c.AcademicYear}" : "")</td>
+                                <td>
+                                    <NavLink class="count-link" href="@($"/doctor/courses/{c.Id}/students")"
+                                             title="Open the enrolled student list">
+                                        @c.StudentsCount
+                                    </NavLink>
+                                    <small class="field-hint">Click to view the student list</small>
+                                </td>
+                                <td>@(string.IsNullOrWhiteSpace(c.Terms) ? (string.IsNullOrWhiteSpace(c.Semester) ? "-" : c.Semester) : c.Terms)</td>
+                                <td class="row-actions">
+                                    <NavLink class="btn btn-sm btn-secondary" href="@($"/doctor/materials?courseId={c.Id}")">Materials</NavLink>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</RoleGate>
+
+@code {
+    private List<DoctorCourseDto>? _courses;
+    private string? _error;
+    private string? _toast;
+    private bool _toastIsError;
+    private int? _editingCourseId;
+    private string _titleDraft = "";
+    private bool _savingTitle;
+    private bool _started;
+
+    private static string EffectiveDisplay(DoctorCourseDto c) =>
+        string.IsNullOrWhiteSpace(c.DisplayTitle) ? c.Title : c.DisplayTitle!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _error = null;
+        _courses = null;
+        _editingCourseId = null;
+        try
+        {
+            _courses = await Http.GetFromJsonAsync<List<DoctorCourseDto>>("/api/doctor/courses") ?? new();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            if (!AuthService.IsInitialized)
+            {
+                _error = "Could not load your courses. Check your connection and try again.";
+            }
+            else
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+        }
+        catch
+        {
+            _error = "Could not load your courses. Please try again.";
+        }
+    }
+
+    private void StartEdit(DoctorCourseDto c)
+    {
+        _editingCourseId = c.Id;
+        _titleDraft = c.DisplayTitle ?? "";
+        _toast = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editingCourseId = null;
+        _titleDraft = "";
+    }
+
+    private async Task SaveTitleAsync(DoctorCourseDto c)
+    {
+        if (_savingTitle || _courses is null) return;
+        var title = _titleDraft.Trim();
+        if (title.Length < 3 || title.Length > 120)
+        {
+            Toast("Display title must be between 3 and 120 characters.", true);
+            return;
+        }
+        if (title.Contains('<') || title.Contains('>'))
+        {
+            Toast("Display title must be plain text (no HTML).", true);
+            return;
+        }
+
+        _savingTitle = true;
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"/api/doctor/courses/{c.Id}/display-title", new { displayTitle = title });
+            if (response.IsSuccessStatusCode)
+            {
+                var index = _courses.FindIndex(x => x.Id == c.Id);
+                if (index >= 0)
+                    _courses[index] = _courses[index] with { DisplayTitle = title };
+                CancelEdit();
+                Toast("Course title updated. Students now see the new title.");
+            }
+            else if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                Toast("That course is not assigned to you.", true);
+            }
+            else if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+            else
+            {
+                Toast(await ErrorTextAsync(response), true);
+            }
+        }
+        catch
+        {
+            Toast("Could not save the title. Check your connection and try again.", true);
+        }
+        finally
+        {
+            _savingTitle = false;
+        }
+    }
+
+    private void Toast(string message, bool isError = false)
+    {
+        _toast = message;
+        _toastIsError = isError;
+    }
+
+    private static async Task<string> ErrorTextAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var text = await response.Content.ReadAsStringAsync();
+            return string.IsNullOrWhiteSpace(text)
+                ? $"Request failed ({(int)response.StatusCode})."
+                : text.Trim('"');
+        }
+        catch
+        {
+            return $"Request failed ({(int)response.StatusCode}).";
+        }
+    }
+}

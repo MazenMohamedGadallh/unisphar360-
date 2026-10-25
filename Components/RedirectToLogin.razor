@@ -55,12 +55,14 @@
 
     private void Redirect(AuthenticationState state)
     {
+        if (_redirected) return;
+        _redirected = true;
         if (state.User.Identity?.IsAuthenticated == true)
         {
-            // Authenticated but not authorized for this page (e.g. a
-            // student opening /admin): back to the dashboard with a
-            // notice. Client-side replace keeps history clean.
-            Nav.NavigateTo("/dashboard?denied=1", replace: true);
+            // Authenticated but not authorized for this page: send the user
+            // to the home route for their own role.
+            var role = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            Nav.NavigateTo(UniSphere.Api.Services.RoleRoutes.HomeFor(role), replace: true);
         }
         else
         {

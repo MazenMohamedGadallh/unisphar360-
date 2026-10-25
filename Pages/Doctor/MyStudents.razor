@@ -1,0 +1,367 @@
+@page "/doctor/students"
+@attribute [Authorize(Roles = "Doctor")]
+@*
+[Authorize] removed on purpose (see Dashboard.razor): access is enforced by
+RoleGate client-side and by [Authorize(Roles="Doctor")] on every /api endpoint.
+*@
+@using System.Globalization
+@using System.Net
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>My Students - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Doctor">
+    <div class="page-header">
+        <h1>My Students</h1>
+        <p>Students enrolled in the courses you teach &mdash; profile summaries only, no private contact data.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_toast))
+    {
+        <div class="alert @(_toastIsError ? "alert-error" : "alert-success")">@_toast</div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="ReloadAsync">Retry</button></div>
+    }
+    else if (_courses is null)
+    {
+        <div class="loading">Loading your courses...</div>
+    }
+    else if (!_courses.Any())
+    {
+        <div class="card">
+            <div class="empty-state">
+                <h3>No students to show yet</h3>
+                <p>Student lists will appear once the administrator assigns you to courses.</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="form-inline">
+                <div class="form-group">
+                    <label for="studentCourse">Course</label>
+                    <select id="studentCourse" value="@_selectedCourseId" @onchange="(e) => SelectCourseAsync(e.Value?.ToString())">
+                        @foreach (var c in _courses)
+                        {
+                            <option value="@c.Id">@c.Code &mdash; @c.Title (@c.StudentsCount)</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="studentSearch">Search</label>
+                    <input id="studentSearch" @bind="_search" @bind:event="oninput" placeholder="Student name..." />
+                </div>
+            </div>
+
+            @if (_students is null)
+            {
+                <div class="loading">Loading students...</div>
+            }
+            else if (!_filteredStudents.Any())
+            {
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="users" /></div>No students match the current filters.</div>
+            }
+            else
+            {
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Year</th>
+                                <th>Major</th>
+                                <th>Status</th>
+                                <th>Grade</th>
+                                <th>Attendance</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in _filteredStudents)
+                            {
+                                <tr>
+                                    <td>@s.FullName</td>
+                                    <td>@(s.AcademicYear.HasValue ? $"Year {s.AcademicYear}" : "-")</td>
+                                    <td>@(string.IsNullOrWhiteSpace(s.Major) ? "-" : s.Major)</td>
+                                    <td>
+                                        <span class="status-badge @(s.Status == "Passed" ? "excellent" : "good")">@s.Status</span>
+                                    </td>
+                                    <td>@(string.IsNullOrWhiteSpace(s.GradeLetter) ? "-" : $"{s.GradeLetter} ({s.GradePoints:0.0})")</td>
+                                    <td>@s.AttendancePercent%</td>
+                                    <td class="row-actions">
+                                        <button class="btn btn-sm btn-secondary" @onclick="() => OpenGradeEditor(s)">Update grade</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        @if (_gradeTarget is not null)
+        {
+            <div class="card" style="margin-top: 24px;">
+                <div class="card-header">
+                    <h3>Update grade &mdash; @_gradeTarget.FullName</h3>
+                    <button class="btn btn-sm btn-secondary" @onclick="CloseGradeEditor">Close</button>
+                </div>
+                <div class="form-inline">
+                    <div class="form-group">
+                        <label for="gradeLetter">Grade letter</label>
+                        <input id="gradeLetter" @bind="_gradeLetter" maxlength="5" placeholder="e.g. B+" />
+                    </div>
+                    <div class="form-group">
+                        <label for="gradePoints">Grade points (0-4)</label>
+                        <input id="gradePoints" @bind="_gradePoints" placeholder="e.g. 3.3" />
+                    </div>
+                    <div class="form-group">
+                        <label for="attendancePercent">Attendance %</label>
+                        <input id="attendancePercent" @bind="_attendancePercent" placeholder="0-100" />
+                    </div>
+                    <div class="form-group">
+                        <label for="gradeStatus">Status</label>
+                        <select id="gradeStatus" @bind="_gradeStatus">
+                            <option value="Excellent">Excellent</option>
+                            <option value="Good">Good</option>
+                            <option value="Needs Attention">Needs Attention</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" @onclick="SaveGradeAsync" disabled="@_saving">
+                        @(_saving ? "Saving..." : "Save grade")
+                    </button>
+                </div>
+            </div>
+        }
+    }
+</RoleGate>
+
+@code {
+    [Microsoft.AspNetCore.Components.SupplyParameterFromQuery] public int? CourseId { get; set; }
+
+    private List<DoctorCourseDto>? _courses;
+    private List<DoctorStudentDto>? _students;
+    private string _selectedCourseId = "";
+    private string _search = "";
+    private string? _error;
+    private string? _toast;
+    private bool _toastIsError;
+    private bool _started;
+
+    private DoctorStudentDto? _gradeTarget;
+    private string _gradeLetter = "";
+    private string _gradePoints = "";
+    private string _attendancePercent = "";
+    private string _gradeStatus = "Good";
+    private bool _saving;
+
+    private IEnumerable<DoctorStudentDto> _filteredStudents =>
+        string.IsNullOrWhiteSpace(_search)
+            ? _students ?? Enumerable.Empty<DoctorStudentDto>()
+            : (_students ?? Enumerable.Empty<DoctorStudentDto>())
+                .Where(s => s.FullName.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _error = null;
+        _courses = null;
+        _students = null;
+        try
+        {
+            _courses = await Http.GetFromJsonAsync<List<DoctorCourseDto>>("/api/doctor/courses") ?? new();
+
+            // Deep link /doctor/students?courseId=... wins when it is one of
+            // my own courses; otherwise open the first assigned course.
+            var selected = CourseId.HasValue
+                ? _courses.FirstOrDefault(c => c.Id == CourseId.Value)
+                : null;
+            selected ??= _courses.FirstOrDefault();
+            _selectedCourseId = selected?.Id.ToString() ?? "";
+            if (selected is not null)
+                await LoadStudentsAsync(selected.Id);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            if (!AuthService.IsInitialized)
+            {
+                _error = "Could not load students. Check your connection and try again.";
+            }
+            else
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+        }
+        catch
+        {
+            _error = "Could not load students. Please try again.";
+        }
+    }
+
+    private async Task SelectCourseAsync(string? value)
+    {
+        _selectedCourseId = value ?? "";
+        _gradeTarget = null;
+        _search = "";
+        if (int.TryParse(_selectedCourseId, out var courseId))
+            await LoadStudentsAsync(courseId);
+        else
+            _students = new();
+    }
+
+    private async Task LoadStudentsAsync(int courseId)
+    {
+        _students = null;
+        try
+        {
+            _students = await Http.GetFromJsonAsync<List<DoctorStudentDto>>(
+                $"/api/doctor/courses/{courseId}/students") ?? new();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _students = new();
+            Toast("That course is not assigned to you.", true);
+        }
+        catch
+        {
+            _students = new();
+            _error = "Could not load students for this course. Please try again.";
+        }
+    }
+
+    private void OpenGradeEditor(DoctorStudentDto s)
+    {
+        _gradeTarget = s;
+        _gradeLetter = s.GradeLetter;
+        _gradePoints = s.GradePoints > 0 ? s.GradePoints.ToString("0.0", CultureInfo.InvariantCulture) : "";
+        _attendancePercent = s.AttendancePercent.ToString(CultureInfo.InvariantCulture);
+        _gradeStatus = s.AttendancePercent >= 90 ? "Excellent"
+            : s.AttendancePercent >= 70 ? "Good" : "Needs Attention";
+    }
+
+    private void CloseGradeEditor() => _gradeTarget = null;
+
+    private async Task SaveGradeAsync()
+    {
+        if (_gradeTarget is null || _saving) return;
+
+        double? points = null;
+        if (!string.IsNullOrWhiteSpace(_gradePoints))
+        {
+            if (!double.TryParse(_gradePoints, NumberStyles.Float, CultureInfo.InvariantCulture, out var gp))
+            {
+                Toast("Grade points must be a number between 0 and 4.", true);
+                return;
+            }
+            points = gp;
+        }
+
+        int? attendance = null;
+        if (!string.IsNullOrWhiteSpace(_attendancePercent))
+        {
+            if (!int.TryParse(_attendancePercent, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ap))
+            {
+                Toast("Attendance must be a whole number between 0 and 100.", true);
+                return;
+            }
+            attendance = ap;
+        }
+
+        _saving = true;
+        try
+        {
+            var response = await Http.PutAsJsonAsync(
+                $"/api/enrollments/{_gradeTarget.EnrollmentId}/grade",
+                new
+                {
+                    gradeLetter = _gradeLetter.Trim(),
+                    gradePoints = points,
+                    attendancePercent = attendance,
+                    status = _gradeStatus
+                });
+
+            if (response.IsSuccessStatusCode)
+            {
+                Toast($"Grade updated for {_gradeTarget.FullName}.");
+                _gradeTarget = null;
+                if (int.TryParse(_selectedCourseId, out var courseId))
+                    await LoadStudentsAsync(courseId);
+            }
+            else
+            {
+                Toast($"Could not save the grade: {await ErrorTextAsync(response)}", true);
+            }
+        }
+        catch
+        {
+            Toast("Could not save the grade. Check your connection and try again.", true);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Toast(string message, bool isError = false)
+    {
+        _toast = message;
+        _toastIsError = isError;
+    }
+
+    private static async Task<string> ErrorTextAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var text = await response.Content.ReadAsStringAsync();
+            return string.IsNullOrWhiteSpace(text) ? $"Request failed ({(int)response.StatusCode})." : text;
+        }
+        catch
+        {
+            return $"Request failed ({(int)response.StatusCode}).";
+        }
+    }
+}

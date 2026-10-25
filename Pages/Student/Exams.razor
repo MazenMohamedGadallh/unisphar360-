@@ -1,0 +1,181 @@
+@page "/student/exams"
+@attribute [Authorize(Roles = "Student")]
+@using System.Net
+@using UniSphere.Api.Dtos
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>@T("MyExams") - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Student">
+    <div class="page-header" dir="@LangDir">
+        <h1>@T("MyExams")</h1>
+        <p>@T("ExamsDescription")</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_toast))
+    {
+        <div class="alert @(_toastIsError ? "alert-error" : "alert-success")" dir="@LangDir">
+            @_toast
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error" dir="@LangDir">
+            @_error
+            <button class="btn btn-small btn-outline" @onclick="ClearError">@T("Dismiss")</button>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="spinner">@T("Loading")...</div>
+    }
+    else if (!_exams.Any())
+    {
+        <div class="alert">@T("NoExams")</div>
+    }
+    else
+    {
+        <div class="exam-list">
+            @foreach (var e in _exams.OrderByDescending(e => e.PublishedAtUtc))
+            {
+                <div class="exam-list-item">
+                    <div class="exam-list-info">
+                        <div class="exam-list-title">@e.Title</div>
+                        <div class="exam-list-meta">
+                            <span>@e.CourseTitle</span>
+                            <span>@e.QuestionCount @T("QuestionsShort")</span>
+                            @if (e.Marks.HasValue)
+                            {
+                                <span>@T("Marks"): @e.Marks</span>
+                            }
+                            <span>@FormatDate(e.PublishedAtUtc ?? e.CreatedAtUtc)</span>
+                        </div>
+                    </div>
+                    <div class="exam-list-actions">
+                        <button class="btn btn-sm btn-outline" @onclick="() => OpenExamAsync(e.Id)">@T("Open")</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @if (_selectedExam is not null)
+    {
+        <div class="exam-detail-card">
+            <div class="exam-detail-header">
+                <h3>@_selectedExam.Title</h3>
+                <div class="exam-detail-meta">
+                    <span>@_selectedExam.CourseTitle (@_selectedExam.CourseCode)</span>
+                    <span>@_selectedExam.QuestionCount @T("QuestionsShort")</span>
+                    @if (_selectedExam.Marks.HasValue)
+                    {
+                        <span>@T("Marks"): @_selectedExam.Marks</span>
+                    }
+                    <span>@FormatDate(_selectedExam.PublishedAtUtc ?? _selectedExam.CreatedAtUtc)</span>
+                </div>
+            </div>
+
+            <div class="exam-detail-actions">
+                <button class="btn btn-primary" @onclick="() => _selectedExam = null">@T("Back")</button>
+            </div>
+        </div>
+    }
+</RoleGate>
+
+@code {
+    private string _lang = "en";
+    private string LangDir => _lang == "ar" ? "rtl" : "ltr";
+
+    private Dictionary<string, string> _strings = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["MyExams"] = "My Exams",
+        ["ExamsDescription"] = "Published exams for your currently registered courses.",
+        ["Loading"] = "Loading",
+        ["NoExams"] = "No exams available yet.",
+        ["QuestionsShort"] = "questions",
+        ["Marks"] = "Marks",
+        ["Open"] = "Open",
+        ["Back"] = "Back",
+        ["Dismiss"] = "Dismiss",
+    };
+
+    string T(string key) =>
+        _strings.TryGetValue(key, out var v) ? v : key;
+
+    private List<StudentExamDto> _exams = new();
+    private StudentExamDto? _selectedExam;
+    private bool _loading;
+    private string _error = "";
+    private string _toast = "";
+    private bool _toastIsError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (AuthService.IsInitialized)
+            await LoadExamsAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !AuthService.IsInitialized)
+        {
+            await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await LoadExamsAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    async Task LoadExamsAsync()
+    {
+        _loading = true;
+        _error = "";
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<List<StudentExamDto>>("/api/student/exams");
+            _exams = resp ?? new();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    async Task OpenExamAsync(int examId)
+    {
+        _loading = true;
+        _error = "";
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<StudentExamDto>($"/api/student/exams/{examId}");
+            if (resp is not null)
+            {
+                _selectedExam = resp;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    void ClearError() => _error = "";
+
+    string FormatDate(DateTime dt) => dt.ToString("yyyy-MM-dd HH:mm");
+}

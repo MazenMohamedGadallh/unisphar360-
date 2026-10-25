@@ -21,4 +21,9 @@
     <Compile Remove="tests\**\*.cs" />
   </ItemGroup>
 
+  <!-- University catalog files are read at startup (university from file name). -->
+  <ItemGroup>
+    <Content Include="Data\courses-*.csv" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

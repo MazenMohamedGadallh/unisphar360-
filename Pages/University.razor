@@ -1,4 +1,5 @@
 @page "/university"
+@attribute [Authorize(Roles = "Student")]
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -6,11 +7,13 @@ localStorage JWT as a bearer header. /api stays [Authorize]-guarded
 and MainLayout bounces anonymous users to /login after auth resolves.
 *@
 @using System.Net
+@using Microsoft.JSInterop
 @using UniSphere.Api.Dtos
 @using UniSphere.Api.Services
 @inject HttpClient Http
 @inject NavigationManager Nav
 @inject BlazorAuthService AuthService
+@inject IJSRuntime JS
 
 <PageTitle>My University - UniSphere 360+</PageTitle>
 
@@ -18,6 +21,14 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     <h1>My University</h1>
     <p>@(_info?.UniversityName ?? "Course materials and summaries")</p>
 </div>
+
+@if (!string.IsNullOrEmpty(_downloadError))
+{
+    <div class="alert alert-error">
+        @_downloadError
+        <button class="btn btn-small" @onclick="() => _downloadError = null">Dismiss</button>
+    </div>
+}
 
 @if (!string.IsNullOrEmpty(_error))
 {
@@ -34,6 +45,89 @@ else if (_info is not null && string.IsNullOrEmpty(_info.UniversityName))
 else
 {
     <div class="card">
+        <div class="card-header">
+            <h3>Courses</h3>
+            <span class="rec-track">@(_courses is null ? "All courses" : $"{_courses.Count} in your university")</span>
+        </div>
+        @if (_courses is null)
+        {
+            <div class="loading">Loading courses...</div>
+        }
+        else
+        {
+            var visibleCourses = VisibleCourses.ToList();
+            <div class="uni-course-filters">
+                <div class="form-group">
+                    <label for="courseDepartment">Department</label>
+                    <select id="courseDepartment" @bind="_departmentFilter">
+                        <option value="">All departments</option>
+                        @foreach (var dept in Departments)
+                        {
+                            <option value="@dept" dir="auto">@dept</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="courseYear">Year</label>
+                    <select id="courseYear" @bind="_yearFilter">
+                        <option value="">All years</option>
+                        @foreach (var year in Years)
+                        {
+                            <option value="@year">Year @year</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group uni-course-search">
+                    <label for="courseSearch">Search</label>
+                    <input id="courseSearch" type="search" @bind="_courseSearch" @bind:event="oninput"
+                           placeholder="Course name or code..." dir="auto" />
+                </div>
+            </div>
+            <div class="uni-course-summary">Showing @visibleCourses.Count of @_courses.Count courses</div>
+            @if (!_courses.Any())
+            {
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="book-open" /></div>No courses are available for your university yet.</div>
+            }
+            else if (visibleCourses.Count == 0)
+            {
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="search" /></div>No courses match the current filters.</div>
+            }
+            else
+            {
+                <div class="uni-course-list">
+                    @foreach (var course in visibleCourses)
+                    {
+                        <div class="uni-course-item">
+                            <div class="rec-info">
+                                <span class="rec-code">@course.Code</span>
+                                <span class="uni-course-name" dir="auto">@course.Title</span>
+                                <span class="rec-track" dir="auto">
+                                    @(string.IsNullOrWhiteSpace(course.Department) ? "All departments" : course.Department)
+                                    &middot; Year @(course.AcademicYear?.ToString() ?? "-")
+                                    &middot; @course.Semester
+                                </span>
+                                @if (!string.IsNullOrWhiteSpace(course.Instructors))
+                                {
+                                    <span class="rec-track" dir="auto">Instructor: @course.Instructors</span>
+                                }
+                                @if (course.MatchesStudentDepartmentYear)
+                                {
+                                    <span class="rec-track">Matches your department/year</span>
+                                }
+                            </div>
+                            <div class="uni-course-actions">
+                                <span class="status-badge @StatusClass(course.Status)">@course.Status</span>
+                                <span class="rec-track">@course.MaterialsCount material@(course.MaterialsCount == 1 ? "" : "s")</span>
+                                <NavLink href="@($"/courses/{course.Id}")" class="rec-btn">Open</NavLink>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    <div class="card">
         <div class="card-header"><h3>Materials</h3></div>
         <div class="form-inline">
             <div class="form-group">
@@ -44,7 +138,7 @@ else
                     {
                         @foreach (var c in _courses)
                         {
-                            <option value="@c.Id">@c.Title (@c.MaterialsCount)</option>
+                            <option value="@c.Id">@c.Title (@c.MaterialsCount)@(!string.IsNullOrWhiteSpace(c.Instructors) ? $" - {c.Instructors}" : "")</option>
                         }
                     }
                 </select>
@@ -70,20 +164,32 @@ else
         }
         else if (!_materials.Any())
         {
-            <div class="empty-state">No materials match the current filters.</div>
+            <div class="empty-state"><div class="empty-icon"><UiIcon Name="file-text" /></div>No materials match the current filters.</div>
         }
         else
         {
             <div class="recommendation-list">
                 @foreach (var m in _materials)
                 {
-                    <div class="recommendation-item @(_selected?.Id == m.Id ? "selected" : "")" @onclick="() => SelectAsync(m)">
+                    <div class="recommendation-item @(_detail?.Id == m.Id ? "selected" : "")" @onclick="() => OpenMaterialAsync(m)">
                         <div class="rec-info">
                             <span class="rec-code">@m.Type</span>
                             <span class="rec-title">@m.Title</span>
-                            <span class="rec-track">@m.CourseName | @m.CreatedAt.ToString("MMM d, yyyy")</span>
+                            <span class="rec-track">
+                                @m.CourseName
+                                @if (!string.IsNullOrWhiteSpace(m.InstructorName))
+                                {
+                                    <text> &middot; @m.InstructorName</text>
+                                }
+                                &middot; @m.CreatedAt.ToString("MMM d, yyyy")
+                            </span>
                         </div>
-                        <span class="rec-btn">Open</span>
+                        @if (m.HasUploadedFile)
+                        {
+                            <button type="button" class="rec-btn" @onclick="() => DownloadAttachmentAsync(m)"
+                                    @onclick:stopPropagation="true" disabled="@_downloading">Download</button>
+                        }
+                        <button type="button" class="rec-btn" @onclick="() => OpenMaterialAsync(m)" @onclick:stopPropagation="true">Open</button>
                     </div>
                 }
             </div>
@@ -95,26 +201,79 @@ else
         }
     </div>
 
-    @if (_selected is not null)
+    @if (_detailOpen)
     {
-        <div class="card" style="margin-top: 24px;">
-            <div class="card-header">
-                <h3>@_selected.Title</h3>
-                <button class="btn btn-sm btn-secondary" @onclick="CloseDetail">Close</button>
-            </div>
-            <div class="chart-container">
-                <p><span class="status-badge good">@_selected.Type</span> @_selected.CourseName · @_selected.CreatedAt.ToString("MMM d, yyyy")</p>
-                @if (!string.IsNullOrWhiteSpace(_selected.Description))
+        <div class="modal-overlay" @onclick="CloseMaterialDetail">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="material-detail-title" @onkeydown="OnDetailKeyDown" @onclick:stopPropagation="true">
+                @if (_detailLoading)
                 {
-                    <p>@_selected.Description</p>
+                    <div class="modal-body"><div class="loading">Loading material...</div></div>
                 }
-                @if (!string.IsNullOrWhiteSpace(_selected.Content))
+                else if (!string.IsNullOrEmpty(_detailError))
                 {
-                    <div class="material-content">@_selected.Content</div>
+                    <div class="modal-body"><div class="alert alert-error">@_detailError</div></div>
+                    <div class="modal-actions">
+                        <button class="btn btn-secondary" @onclick="RetryMaterialDetailAsync">Retry</button>
+                        <button class="btn btn-secondary" @onclick="CloseMaterialDetail">Back</button>
+                    </div>
                 }
-                @if (!string.IsNullOrEmpty(_selected.FileUrl))
+                else if (_detail is not null)
                 {
-                    <a class="btn btn-primary btn-sm" href="@_selected.FileUrl" target="_blank" rel="noopener">Download file</a>
+                    <div class="modal-header">
+                        <h3 id="material-detail-title" dir="auto">@_detail.Title</h3>
+                    </div>
+                    <div class="modal-body">
+                        <p>
+                            <span class="status-badge good">@_detail.Type</span>
+                            @_detail.CourseName
+                            @if (!string.IsNullOrWhiteSpace(_detail.InstructorName))
+                            {
+                                <text> &middot; @_detail.InstructorName</text>
+                            }
+                            &middot; @_detail.CreatedAt.ToString("MMM d, yyyy")
+                        </p>
+                        @if (string.IsNullOrWhiteSpace(_detail.Description)
+                            && string.IsNullOrWhiteSpace(_detail.Content)
+                            && string.IsNullOrEmpty(_detail.FileUrl)
+                            && !_detail.HasUploadedFile)
+                        {
+                            <div class="empty-state">This material has no description or content yet.</div>
+                        }
+                        else
+                        {
+                            @if (!string.IsNullOrWhiteSpace(_detail.Description))
+                            {
+                                <p dir="auto">@_detail.Description</p>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_detail.Content))
+                            {
+                                <div class="material-content" dir="auto">@_detail.Content</div>
+                            }
+                            @if (_detail.HasUploadedFile)
+                            {
+                                <p class="course-meta" dir="auto">
+                                    Attachment: @_detail.UploadedFileName
+                                    @if (_detail.UploadedFileSizeBytes.HasValue)
+                                    {
+                                        <text>(@FormatSize(_detail.UploadedFileSizeBytes.Value))</text>
+                                    }
+                                </p>
+                            }
+                        }
+                    </div>
+                    <div class="modal-actions">
+                        @if (_detail.HasUploadedFile)
+                        {
+                            <button class="btn btn-primary" @onclick="() => DownloadAttachmentAsync(_detail)" disabled="@_downloading">
+                                <UiIcon Name="download" /> @(_downloading ? "Downloading..." : "Download attachment")
+                            </button>
+                        }
+                        @if (!string.IsNullOrEmpty(_detail.FileUrl))
+                        {
+                            <a class="btn btn-secondary" href="@_detail.FileUrl" target="_blank" rel="noopener">Open link</a>
+                        }
+                        <button class="btn btn-secondary" @onclick="CloseMaterialDetail">Back</button>
+                    </div>
                 }
             </div>
         </div>
@@ -128,17 +287,79 @@ else
     private MyUniversityDto? _info;
     private List<UniversityCourseDto>? _courses;
     private List<MaterialDto>? _materials;
-    private MaterialDto? _selected;
+    private MaterialDto? _detail;
+    private bool _detailOpen;
+    private bool _detailLoading;
+    private string? _detailError;
+    private int _detailId;
     private string? _error;
+    private string? _downloadError;
+    private bool _downloading;
+    private IJSObjectReference? _downloadModule;
     private bool _loading = true;
 
     private string _courseId = "";
     private string _type = "";
     private string _search = "";
+    private string _departmentFilter = "";
+    private string _yearFilter = "";
+    private string _courseSearch = "";
     private int _page = 1;
     private const int PageSize = 10;
     private int _total;
     private int TotalPages => Math.Max(1, (_total + PageSize - 1) / PageSize);
+
+    private List<string> Departments => _courses?
+        .Select(c => c.Department)
+        .Where(d => !string.IsNullOrWhiteSpace(d))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(d => d, StringComparer.OrdinalIgnoreCase)
+        .ToList() ?? new();
+
+    private List<int> Years => _courses?
+        .Where(c => c.AcademicYear.HasValue)
+        .Select(c => c.AcademicYear!.Value)
+        .Distinct()
+        .OrderBy(y => y)
+        .ToList() ?? new();
+
+    private IEnumerable<UniversityCourseDto> VisibleCourses
+    {
+        get
+        {
+            if (_courses is null) return Enumerable.Empty<UniversityCourseDto>();
+
+            var courses = _courses.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(_departmentFilter))
+            {
+                courses = courses.Where(c =>
+                    string.Equals(c.Department, _departmentFilter, StringComparison.OrdinalIgnoreCase));
+            }
+            if (int.TryParse(_yearFilter, out var year))
+                courses = courses.Where(c => c.AcademicYear == year);
+            if (!string.IsNullOrWhiteSpace(_courseSearch))
+            {
+                var search = _courseSearch.Trim();
+                courses = courses.Where(c =>
+                    c.Code.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    c.Title.Contains(search, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Own department/year first, then the catalog order.
+            return courses
+                .OrderByDescending(c => c.MatchesStudentDepartmentYear)
+                .ThenBy(c => c.Code, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static string StatusClass(string? status) => status?.ToLowerInvariant() switch
+    {
+        "passed" => "passed",
+        "available" => "available",
+        "inprogress" => "in-progress",
+        "locked" => "locked",
+        _ => ""
+    };
     // Deferred first-run guard: prerender / pre-restore passes must not
     // redirect or 401-logout a signed-in user (see OnAfterRenderAsync).
     private bool _started;
@@ -193,6 +414,7 @@ else
     {
         _loading = true;
         _error = null;
+        _downloadError = null;
         try
         {
             try
@@ -232,19 +454,31 @@ else
 
     private async Task LoadMaterialsAsync()
     {
-        var query = $"/api/university/me/materials?page={_page}&pageSize={PageSize}" +
+        await FetchMaterialsAsync(_page);
+        // A filter change can shrink the list while the user is on a later
+        // page: land on the last valid page instead of an empty one.
+        if (_page > TotalPages && _total > 0)
+        {
+            _page = TotalPages;
+            await FetchMaterialsAsync(_page);
+        }
+    }
+
+    private async Task FetchMaterialsAsync(int page)
+    {
+        var query = $"/api/university/me/materials?page={page}&pageSize={PageSize}" +
             $"&search={Uri.EscapeDataString(_search)}&type={Uri.EscapeDataString(_type)}";
         if (int.TryParse(_courseId, out var courseId))
             query += $"&courseId={courseId}";
-        var page = await Http.GetFromJsonAsync<PagedResultDto<MaterialDto>>(query);
-        _materials = page?.Items.ToList() ?? new();
-        _total = page?.Total ?? 0;
-        _selected = null;
+        var result = await Http.GetFromJsonAsync<PagedResultDto<MaterialDto>>(query);
+        _materials = result?.Items.ToList() ?? new();
+        _total = result?.Total ?? 0;
     }
 
-    private async Task ApplyFiltersAsync()
+    /// <summary>Shared error surface for both filter changes and page changes
+    /// on the materials list (expiring sessions never truncate the reload).</summary>
+    private async Task LoadMaterialsSafeAsync()
     {
-        _page = 1;
         try
         {
             await LoadMaterialsAsync();
@@ -266,6 +500,13 @@ else
         }
     }
 
+    private async Task ApplyFiltersAsync()
+    {
+        // Filter changes intentionally restart at page 1.
+        _page = 1;
+        await LoadMaterialsSafeAsync();
+    }
+
     private async Task SearchKeyUpAsync(KeyboardEventArgs e)
     {
         if (e.Key == "Enter") await ApplyFiltersAsync();
@@ -273,15 +514,157 @@ else
 
     private async Task ChangePageAsync(int delta)
     {
-        _page = Math.Max(1, _page + delta);
-        await ApplyFiltersAsync();
+        // The buttons are disabled at the ends; this guard double-checks the
+        // bounds so a stale click can never land outside the pager.
+        var next = _page + delta;
+        if (next < 1 || next > TotalPages) return;
+        _page = next;
+        await LoadMaterialsSafeAsync();
     }
 
-    private Task SelectAsync(MaterialDto material)
+    private async Task OpenMaterialAsync(MaterialDto material) =>
+        await LoadMaterialDetailAsync(material.Id);
+
+    /// <summary>Opens the detail modal by fetching the full DTO through
+    /// GET /api/university/me/materials/{id}: the server re-checks that the
+    /// material belongs to the caller's university (foreign ids are 404).</summary>
+    private async Task LoadMaterialDetailAsync(int id)
     {
-        _selected = _selected?.Id == material.Id ? null : material;
-        return Task.CompletedTask;
+        _detailId = id;
+        _detailOpen = true;
+        _detailLoading = true;
+        _detailError = null;
+        _downloadError = null;
+        _detail = null;
+        await Task.Yield(); // let the modal paint its loading state first
+        try
+        {
+            var dto = await Http.GetFromJsonAsync<MaterialDto>($"/api/university/me/materials/{id}");
+            if (dto is null)
+                _detailError = "Material not found.";
+            else
+                _detail = dto;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _detailError = "This material is not in your university's materials.";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            // Session expiry follows the list behavior.
+            if (!AuthService.IsInitialized)
+            {
+                _detailError = "Could not load material. Check your connection and try again.";
+            }
+            else
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+        }
+        catch
+        {
+            _detailError = "Could not load material. Check your connection and try again.";
+        }
+        finally
+        {
+            _detailLoading = false;
+        }
     }
 
-    private void CloseDetail() => _selected = null;
+    private async Task DownloadAttachmentAsync(MaterialDto material)
+    {
+        if (_downloading || !material.HasUploadedFile) return;
+
+        _downloading = true;
+        _downloadError = null;
+        try
+        {
+            using var response = await Http.GetAsync($"/api/materials/{material.Id}/file");
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    await AuthService.LogoutAsync();
+                    Nav.NavigateTo("/login?expired=1");
+                    return;
+                }
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    _downloadError = "The attachment is no longer available.";
+                    return;
+                }
+
+                _downloadError = $"Could not download the attachment ({(int)response.StatusCode}).";
+                return;
+            }
+
+            var contentType = response.Content.Headers.ContentType?.MediaType
+                ?? "application/octet-stream";
+            _downloadModule ??= await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./js/download.js");
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            using var streamReference = new DotNetStreamReference(stream);
+            await _downloadModule.InvokeVoidAsync(
+                "downloadFile",
+                SafeFileName(material.UploadedFileName, material.Id),
+                contentType,
+                streamReference);
+        }
+        catch
+        {
+            _downloadError = "Could not download the attachment. Please try again.";
+        }
+        finally
+        {
+            _downloading = false;
+        }
+    }
+
+    private static string SafeFileName(string? original, int id)
+    {
+        if (string.IsNullOrWhiteSpace(original))
+            return $"material-{id}";
+
+        var invalid = Path.GetInvalidFileNameChars();
+        var cleaned = new string(original
+            .Where(c => !invalid.Contains(c) && c != '\r' && c != '\n')
+            .ToArray())
+            .Trim();
+
+        if (cleaned.Length > 180)
+        {
+            var extension = Path.GetExtension(cleaned);
+            var stem = Path.GetFileNameWithoutExtension(cleaned);
+            var maxStem = Math.Max(1, 180 - extension.Length);
+            cleaned = stem[..Math.Min(stem.Length, maxStem)] + extension;
+        }
+
+        return string.IsNullOrWhiteSpace(cleaned) ? $"material-{id}" : cleaned;
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        >= 1024L * 1024L => $"{bytes / (1024.0 * 1024.0):0.#} MB",
+        >= 1024L => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes} B"
+    };
+
+    private async Task RetryMaterialDetailAsync()
+    {
+        if (_detailId > 0) await LoadMaterialDetailAsync(_detailId);
+    }
+
+    private void CloseMaterialDetail()
+    {
+        _detailOpen = false;
+        _detail = null;
+        _detailId = 0;
+        _downloadError = null;
+    }
+
+    private void OnDetailKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CloseMaterialDetail();
+    }
 }

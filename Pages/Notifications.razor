@@ -1,4 +1,5 @@
 @page "/notifications"
+@attribute [Authorize]
 @using System.Net
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
@@ -36,7 +37,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     }
     else if (!_notifications.Any())
     {
-        <div class="empty-state">You have no notifications.</div>
+        <div class="empty-state"><div class="empty-icon"><UiIcon Name="bell" /></div>You have no notifications.</div>
     }
     else
     {

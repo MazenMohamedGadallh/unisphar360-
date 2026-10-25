@@ -224,6 +224,16 @@
                     }
                 </div>
             </div>
+            <div class="form-group">
+                <label for="address">Address (optional)</label>
+                <InputText id="address" @bind-Value="_model.Address" placeholder="Street, city" />
+                <small class="field-hint">Locked after registration; an administrator can update it later.</small>
+                <ValidationMessage For="@(() => _model.Address)" />
+                @if (ServerError("Address") is string addressErr)
+                {
+                    <div class="validation-message">@addressErr</div>
+                }
+            </div>
 
             <h3 class="form-section-title">Account</h3>
             <div class="form-row">
@@ -278,8 +288,9 @@
     protected override async Task OnInitializedAsync()
     {
         // Already signed in (typed URL / Back / link): don't show the form.
-        if (await AuthService.GetUserAsync() is not null)
-            Nav.NavigateTo("/dashboard", replace: true);
+        var user = await AuthService.GetUserAsync();
+        if (user is not null)
+            Nav.NavigateTo(UniSphere.Api.Services.RoleRoutes.HomeFor(user.Role), replace: true);
 
         try
         {
@@ -298,9 +309,14 @@
         // Full reload (F5): the scoped auth service starts empty, so the
         // persisted token can only be read once JS interop is available
         // (OnAfterRenderAsync — never during prerender). Restore it here:
-        // a signed-in user should land on the dashboard, not the form.
+        // a signed-in user should land on their own workspace, not the form.
         if (firstRender && await AuthService.RestoreSessionAsync())
-            Nav.NavigateTo("/dashboard", replace: true);
+        {
+            var user = await AuthService.GetUserAsync();
+            Nav.NavigateTo(user is null
+                ? "/login"
+                : UniSphere.Api.Services.RoleRoutes.HomeFor(user.Role), replace: true);
+        }
     }
 
     private int MinAgeForRole =>
@@ -324,12 +340,13 @@
                 string.IsNullOrWhiteSpace(_model.Specialization) ? null : _model.Specialization.Trim(),
                 string.IsNullOrWhiteSpace(_model.GraduatedFrom) ? null : _model.GraduatedFrom.Trim(),
                 _model.GraduationYear,
-                _model.UniversityId));
+                _model.UniversityId,
+                string.IsNullOrWhiteSpace(_model.Address) ? null : _model.Address.Trim()));
 
             if (result.Succeeded)
             {
                 // The API returns a token, so the user is logged in right away.
-                Nav.NavigateTo("/dashboard");
+                Nav.NavigateTo(UniSphere.Api.Services.RoleRoutes.HomeFor(result.User?.Role));
                 return;
             }
 
@@ -390,6 +407,8 @@
 
         public int? AcademicYear { get; set; }
         public int? UniversityId { get; set; }
+        [StringLength(300, ErrorMessage = "Address is too long.")]
+        public string? Address { get; set; } = "";
         public string? Department { get; set; } = "";
         public string? Specialization { get; set; } = "";
         public string? GraduatedFrom { get; set; } = "";

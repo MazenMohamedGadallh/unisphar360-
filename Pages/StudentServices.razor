@@ -1,4 +1,5 @@
 @page "/student-services"
+@attribute [Authorize(Roles = "Student")]
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -25,7 +26,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     }
     else if (!_announcements.Any())
     {
-        <div class="empty-state">No announcements at this time.</div>
+        <div class="empty-state"><div class="empty-icon"><UiIcon Name="megaphone" /></div>No announcements at this time.</div>
     }
     else
     {
@@ -35,7 +36,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                 <div class="announcement-item">
                     <div class="announcement-header">
                         <h4>@ann.Title</h4>
-                        <span class="announcement-category">@ann.Category</span>
+                        <span class="announcement-category">@ann.Category@(string.IsNullOrWhiteSpace(ann.CourseName) ? "" : $" - {ann.CourseName}")</span>
                     </div>
                     <p>@ann.Body</p>
                     <span class="announcement-date">@ann.CreatedAtUtc.ToString("MMM dd, yyyy")</span>
@@ -56,7 +57,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     }
     else if (!_events.Any())
     {
-        <div class="empty-state">No upcoming events.</div>
+        <div class="empty-state"><div class="empty-icon"><UiIcon Name="calendar-days" /></div>No upcoming events.</div>
     }
     else
     {
@@ -70,8 +71,8 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                     </div>
                     <div class="event-info">
                         <h4>@evt.Title</h4>
-                        <p>&#128205; @evt.Location</p>
-                        <p>@evt.StartsAtUtc.ToString("hh:mm tt")</p>
+                        <p><UiIcon Name="map-pin" /> @evt.Location</p>
+                        <p><UiIcon Name="clock-3" /> @evt.StartsAtUtc.ToString("hh:mm tt")</p>
                     </div>
                 </div>
             }
@@ -110,7 +111,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 
     protected override async Task OnInitializedAsync()
     {
-        _announcements = await Http.GetFromJsonAsync<List<AnnouncementDto>>("/api/admin/announcements");
+        _announcements = await Http.GetFromJsonAsync<List<AnnouncementDto>>("/api/announcements");
         _events = await Http.GetFromJsonAsync<List<EventDto>>("/api/events?upcoming=true");
     }
 }
@@ -122,6 +123,8 @@ public class AnnouncementDto
     public string Body { get; set; } = "";
     public string? Category { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+    public int? CourseId { get; set; }
+    public string? CourseName { get; set; }
 }
 
 public class EventDto

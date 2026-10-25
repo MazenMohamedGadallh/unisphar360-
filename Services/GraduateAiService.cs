@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using UniSphere.Api.Data;
 
 namespace UniSphere.Api.Services;
@@ -13,16 +14,25 @@ namespace UniSphere.Api.Services;
 /// </summary>
 public class GraduateAiService(
     ChatProviderRegistry registry,
+    IOptions<ChatOptions> chatOptions,
     ILogger<GraduateAiService> logger)
 {
     private static readonly string[] ProviderOrder = ["openai", "anthropic", "gemini", "openrouter", "ollama"];
+    private readonly ChatOptions _chatOptions = chatOptions.Value;
 
-    /// <summary>Providers that currently pass configuration + availability checks, in order.
-    /// Empty when nothing is configured (caller throws the explicit setup message).</summary>
+    /// <summary>Providers to try, in order: the configured default
+    /// (Chat:DefaultProvider, e.g. appsettings.Local.json) first, then the
+    /// built-in fallback order. Each still has to pass configuration +
+    /// availability checks.</summary>
     private async Task<List<(IChatProvider Provider, string Model)>> CandidateProvidersAsync(CancellationToken ct)
     {
+        var names = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_chatOptions.DefaultProvider))
+            names.Add(_chatOptions.DefaultProvider.Trim());
+        names.AddRange(ProviderOrder);
+
         var candidates = new List<(IChatProvider, string)>();
-        foreach (var name in ProviderOrder)
+        foreach (var name in names.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var (found, provider) = await registry.TryGetAsync(name, ct);
             if (found && provider is not null)

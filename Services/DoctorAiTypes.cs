@@ -9,7 +9,7 @@ public class DoctorAiOptions
     /// <summary>Preferred provider name (openai/anthropic/gemini/ollama/openrouter).
     /// Empty = try providers in the built-in order and pick the first available.</summary>
     public string PreferredProvider { get; set; } = "";
-    public int MaxTokens { get; set; } = 1200;
+    public int MaxTokens { get; set; } = 4096;
     public int TimeoutSeconds { get; set; } = 90;
     /// <summary>Max characters of lecture text fed to the model for one request.</summary>
     public int MaxContextChars { get; set; } = 12000;

@@ -75,6 +75,7 @@ public class AuthController : ControllerBase
             FullName = fullName,
             PhoneNumber = req.PhoneNumber?.Trim() ?? "",
             Email = email,
+            Address = req.Address?.Trim() ?? "",
             Gender = req.Gender.Trim(),
             Age = req.Age,
             Major = string.IsNullOrWhiteSpace(req.Department) ? "Undeclared" : req.Department.Trim(),
@@ -178,6 +179,15 @@ public class AuthController : ControllerBase
             return BadRequest("Current password is incorrect.");
 
         user.PasswordHash = PasswordService.Hash(req.NewPassword);
+        _db.AuditLogs.Add(new AuditLog
+        {
+            UserId = user.Id,
+            Method = HttpContext.Request.Method,
+            Path = HttpContext.Request.Path.Value ?? "/api/auth/change-password",
+            StatusCode = StatusCodes.Status204NoContent,
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "",
+            UserAgent = HttpContext.Request.Headers.UserAgent.ToString()
+        });
         await _db.SaveChangesAsync();
         return NoContent();
     }

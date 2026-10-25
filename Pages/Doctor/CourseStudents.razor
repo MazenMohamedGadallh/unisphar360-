@@ -1,0 +1,167 @@
+@page "/doctor/courses/{courseId:int}/students"
+@attribute [Authorize(Roles = "Doctor")]
+@*
+[Authorize] removed on purpose (see Dashboard.razor): access is enforced by
+RoleGate client-side and by [Authorize(Roles="Doctor")] on every /api endpoint.
+*@
+@using System.Net
+@using UniSphere.Api.Dtos
+@using UniSphere.Api.Services
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>Enrolled Students - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Doctor">
+    <div class="page-header">
+        <NavLink href="/doctor/courses" class="back-link"><UiIcon Name="arrow-left" /> Back to My Courses</NavLink>
+        <h1>Enrolled students</h1>
+        <p>Read-only list of the students enrolled in this course.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error
+            <button class="btn btn-small" @onclick="ReloadAsync">Retry</button>
+        </div>
+    }
+    else if (_course is null || _students is null)
+    {
+        <div class="loading">Loading the student list...</div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="card-header">
+                <h3>
+                    <span class="readonly-code" title="Course code is managed by the catalog">@_course.Code</span>
+                    @EffectiveTitle()
+                </h3>
+                <span class="status-badge good">@_students.Count enrolled</span>
+            </div>
+            @if (!_students.Any())
+            {
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="users" /></div>No students are enrolled in this course yet.</div>
+            }
+            else
+            {
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Year</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var s in _students)
+                            {
+                                <tr>
+                                    <td>@s.FullName</td>
+                                    <td>@(s.AcademicYear.HasValue ? $"Year {s.AcademicYear}" : "-")</td>
+                                    <td>
+                                        <span class="status-badge @(s.Status == "Passed" ? "excellent" : "good")">@s.Status</span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+</RoleGate>
+
+@code {
+    [Microsoft.AspNetCore.Components.Parameter]
+    public int CourseId { get; set; }
+
+    private DoctorCourseDto? _course;
+    private List<DoctorStudentDto>? _students;
+    private string? _error;
+    private bool _started;
+
+    private string EffectiveTitle() =>
+        _course is null
+            ? ""
+            : string.IsNullOrWhiteSpace(_course.DisplayTitle) ? _course.Title : _course.DisplayTitle!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized)
+            return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _error = null;
+        _course = null;
+        _students = null;
+        try
+        {
+            // The course must be one of my assigned courses; the students
+            // endpoint repeats the ownership check server-side (404 otherwise).
+            var courses = await Http.GetFromJsonAsync<List<DoctorCourseDto>>("/api/doctor/courses") ?? new();
+            _course = courses.FirstOrDefault(c => c.Id == CourseId);
+            if (_course is null)
+            {
+                _error = "That course is not assigned to you.";
+                return;
+            }
+            _students = await Http.GetFromJsonAsync<List<DoctorStudentDto>>(
+                $"/api/doctor/courses/{CourseId}/students") ?? new();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _error = "That course is not assigned to you.";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            if (!AuthService.IsInitialized)
+            {
+                _error = "Could not load the student list. Check your connection and try again.";
+            }
+            else
+            {
+                await AuthService.LogoutAsync();
+                Nav.NavigateTo("/login?expired=1");
+            }
+        }
+        catch
+        {
+            _error = "Could not load the student list. Please try again.";
+        }
+    }
+}
