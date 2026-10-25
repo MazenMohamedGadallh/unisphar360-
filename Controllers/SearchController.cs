@@ -80,7 +80,7 @@ public class SearchController : ControllerBase
             .OrderByDescending(c => c.Title.StartsWith(term, StringComparison.OrdinalIgnoreCase))
             .ThenBy(c => c.Title, StringComparer.OrdinalIgnoreCase)
             .Take(take)
-            .Select(c => new SearchItemDto(c.Id, c.Title, c.Code, $"/courses/{c.Id}", "\U0001F393"))
+            .Select(c => new SearchItemDto(c.Id, c.Title, c.Code, $"/courses/{c.Id}", "graduation-cap"))
             .ToList();
         return new SearchGroupDto("course", "Courses", items);
     }
@@ -105,7 +105,7 @@ public class SearchController : ControllerBase
             .ThenBy(m => m.Title, StringComparer.OrdinalIgnoreCase)
             .Take(take)
             .Select(m => new SearchItemDto(m.Id, m.Title, $"{m.Course?.Title} · {m.Type}",
-                $"/university?materialId={m.Id}", "\U0001F4C4"))
+                $"/university?materialId={m.Id}", "file-text"))
             .ToList();
         return new SearchGroupDto("material", "Summaries & materials", items);
     }
@@ -123,7 +123,7 @@ public class SearchController : ControllerBase
             .ThenBy(i => i.Title, StringComparer.OrdinalIgnoreCase)
             .Take(take)
             .Select(i => new SearchItemDto(i.Id, i.Title, i.Date.ToString("MMM d"),
-                "/study-planner", "\U0001F4C5"))
+                "/study-planner", "calendar"))
             .ToList();
         return new SearchGroupDto("plan", "Study plan", items);
     }
@@ -141,7 +141,7 @@ public class SearchController : ControllerBase
             .OrderByDescending(n => n.Title.StartsWith(term, StringComparison.OrdinalIgnoreCase))
             .ThenBy(n => n.Title, StringComparer.OrdinalIgnoreCase)
             .Take(take)
-            .Select(n => new SearchItemDto(n.Id, n.Title, n.Body, "/notifications", "\U0001F514"))
+            .Select(n => new SearchItemDto(n.Id, n.Title, n.Body, "/notifications", "bell"))
             .ToList();
         return new SearchGroupDto("notification", "Notifications", items);
     }
@@ -151,19 +151,19 @@ public class SearchController : ControllerBase
         var role = user.Role.ToString();
         var pages = new (string Title, string Route, string[] Roles, string Icon)[]
         {
-            ("Home", "/dashboard", new[] { "Student", "Graduate", "Doctor", "Admin" }, "\U0001F3E0"),
-            ("Academic Advisor", "/academic-advisor", new[] { "Student", "Graduate", "Doctor" }, "\U0001F393"),
-            ("Career Assistant", "/career-assistant", new[] { "Student", "Graduate", "Doctor" }, "\U0001F4BC"),
-            ("Research Hub", "/research-hub", new[] { "Student", "Graduate", "Doctor" }, "\U0001F50D"),
-            ("My University", "/university", new[] { "Student", "Graduate", "Doctor" }, "\U0001F3DB"),
-            ("Student Services", "/student-services", new[] { "Student", "Graduate", "Doctor" }, "\U0001F3E2"),
-            ("My Analytics", "/analytics", new[] { "Student", "Graduate" }, "\U0001F4C8"),
-            ("Admin Panel", "/admin", new[] { "Admin" }, "\U0001F4CA"),
-            ("My Profile", "/profile", new[] { "Student", "Graduate", "Doctor", "Admin" }, "\U0001F464"),
-            ("Notifications", "/notifications", new[] { "Student", "Graduate", "Doctor", "Admin" }, "\U0001F514"),
-            ("Settings", "/settings", new[] { "Student", "Graduate", "Doctor", "Admin" }, "⚙"),
-            ("Help & Support", "/help", new[] { "Student", "Graduate", "Doctor", "Admin" }, "❓"),
-            ("Search", "/search", new[] { "Student", "Graduate", "Doctor", "Admin" }, "\U0001F50D"),
+            ("Home", "/dashboard", new[] { "Student", "Graduate", "Doctor", "Admin" }, "house"),
+            ("Academic Advisor", "/academic-advisor", new[] { "Student", "Graduate", "Doctor" }, "graduation-cap"),
+            ("Career Assistant", "/career-assistant", new[] { "Student", "Graduate", "Doctor" }, "briefcase"),
+            ("Research Hub", "/research-hub", new[] { "Student", "Graduate", "Doctor" }, "flask-conical"),
+            ("My University", "/university", new[] { "Student", "Graduate", "Doctor" }, "landmark"),
+            ("Student Services", "/student-services", new[] { "Student", "Graduate", "Doctor" }, "life-buoy"),
+            ("My Analytics", "/analytics", new[] { "Student", "Graduate" }, "trending-up"),
+            ("Admin Panel", "/admin", new[] { "Admin" }, "chart-column"),
+            ("My Profile", "/profile", new[] { "Student", "Graduate", "Doctor", "Admin" }, "user-round"),
+            ("Notifications", "/notifications", new[] { "Student", "Graduate", "Doctor", "Admin" }, "bell"),
+            ("Settings", "/settings", new[] { "Student", "Graduate", "Doctor", "Admin" }, "settings"),
+            ("Help & Support", "/help", new[] { "Student", "Graduate", "Doctor", "Admin" }, "circle-help"),
+            ("Search", "/search", new[] { "Student", "Graduate", "Doctor", "Admin" }, "search"),
         };
 
         var items = pages
@@ -188,7 +188,7 @@ public class SearchController : ControllerBase
             .OrderByDescending(e => e.Title.StartsWith(term, StringComparison.OrdinalIgnoreCase))
             .ThenBy(e => e.Title, StringComparer.OrdinalIgnoreCase)
             .Take(take)
-            .Select(e => new SearchItemDto(e.Id, e.Title, e.Location, "/student-services", "\U0001F4CD"))
+            .Select(e => new SearchItemDto(e.Id, e.Title, e.Location, "/student-services", "calendar-days"))
             .ToList();
         return new SearchGroupDto("event", "Events", items);
     }
@@ -206,7 +206,7 @@ public class SearchController : ControllerBase
             .OrderByDescending(u => u.FullName.StartsWith(term, StringComparison.OrdinalIgnoreCase))
             .ThenBy(u => u.FullName, StringComparer.OrdinalIgnoreCase)
             .Take(take)
-            .Select(u => new SearchItemDto(u.Id, u.FullName, $"{u.Email} · {u.Role}", "/admin", "\U0001F464"))
+            .Select(u => new SearchItemDto(u.Id, u.FullName, $"{u.Email} · {u.Role}", "/admin", "user-round"))
             .ToList();
         return new SearchGroupDto("user", "Users", items);
     }

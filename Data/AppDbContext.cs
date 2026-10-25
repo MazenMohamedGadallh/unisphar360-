@@ -41,6 +41,8 @@ public class AppDbContext : DbContext
     public DbSet<InterviewQuestion> InterviewQuestions => Set<InterviewQuestion>();
     public DbSet<GraduateSettings> GraduateSettings => Set<GraduateSettings>();
     public DbSet<JobSyncState> JobSyncStates => Set<JobSyncState>();
+    public DbSet<CourseAssignment> CourseAssignments => Set<CourseAssignment>();
+    public DbSet<DoctorResearch> DoctorResearches => Set<DoctorResearch>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -92,6 +94,45 @@ public class AppDbContext : DbContext
         // Announcement indexes
         modelBuilder.Entity<Announcement>()
             .HasIndex(a => a.CreatedAtUtc);
+        modelBuilder.Entity<Announcement>()
+            .HasIndex(a => a.CourseId);
+        modelBuilder.Entity<Announcement>()
+            .HasOne(a => a.Course)
+            .WithMany()
+            .HasForeignKey(a => a.CourseId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Course assignment indexes + "a doctor cannot teach the same course twice"
+        modelBuilder.Entity<CourseAssignment>()
+            .HasIndex(a => a.DoctorUserId);
+        modelBuilder.Entity<CourseAssignment>()
+            .HasIndex(a => a.CourseId);
+        modelBuilder.Entity<CourseAssignment>()
+            .HasIndex(a => new { a.DoctorUserId, a.CourseId }).IsUnique();
+        modelBuilder.Entity<CourseAssignment>()
+            .HasOne(a => a.Course)
+            .WithMany()
+            .HasForeignKey(a => a.CourseId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Doctor research hub indexes (browse filters: university, year, title search)
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.DoctorUserId);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.UniversityId);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.Year);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.Title);
+        modelBuilder.Entity<DoctorResearch>()
+            .HasIndex(r => r.IsPublished);
+        // Keep the paper when the user row is removed (Restrict) so publication
+        // history is never silently lost.
+        modelBuilder.Entity<DoctorResearch>()
+            .HasOne(r => r.DoctorUser)
+            .WithMany()
+            .HasForeignKey(r => r.DoctorUserId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Career recommendation indexes
         modelBuilder.Entity<CareerRecommendation>()

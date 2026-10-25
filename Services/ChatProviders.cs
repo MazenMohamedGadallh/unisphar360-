@@ -35,6 +35,12 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
     public abstract string Name { get; }
     public abstract bool IsConfigured { get; }
 
+    /// <summary>Single read path for credential-bearing config entries. Trims
+    /// pasted whitespace and normalizes blank strings to null so IsConfigured
+    /// cannot pass for an effectively empty key.</summary>
+    protected static string? ReadApiKey(IConfiguration config, string name) =>
+        config[name]?.Trim() is { Length: > 0 } value ? value : null;
+
     public virtual Task<bool> IsAvailableAsync(CancellationToken ct = default) =>
         Task.FromResult(IsConfigured);
 
@@ -199,11 +205,11 @@ public class OpenAiChatProvider : StreamingChatProviderBase
     }
 
     public override string Name => "openai";
-    public override bool IsConfigured => !string.IsNullOrWhiteSpace(_config["OPENAI_API_KEY"]);
+    public override bool IsConfigured => ReadApiKey(_config, "OPENAI_API_KEY") is not null;
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        var key = _config["OPENAI_API_KEY"]
+        var key = ReadApiKey(_config, "OPENAI_API_KEY")
             ?? throw new ChatProviderException("The AI provider 'OpenAI' is not configured right now.");
         var messages = new List<object> { new { role = "system", content = request.SystemPrompt } };
         messages.AddRange(request.Messages.Select(m => new { role = m.Role, content = m.Content }));
@@ -275,20 +281,21 @@ public class OpenRouterChatProvider : StreamingChatProviderBase
     }
 
     public override string Name => "openrouter";
-    public override bool IsConfigured => !string.IsNullOrWhiteSpace(_config["OPENROUTER_API_KEY"]);
+    public override bool IsConfigured => ReadApiKey(_config, "OPENROUTER_API_KEY") is not null;
 
     protected override string MapError(int statusCode, string body) => statusCode switch
     {
-        401 or 403 => "The AI provider rejected the API key",
+        401 or 403 => "OpenRouter rejected the API key. Generate a new key at openrouter.ai/keys " +
+            "(user-secrets, OPENROUTER_API_KEY env var, or secret.json), then restart the app.",
         402 => "The AI provider has run out of credits",
-        404 => "AI model not found, check OPENROUTER_MODEL in settings",
+        404 => "AI model not found, check OPENROUTER_MODEL in settings (OpenRouter ids include the vendor prefix, e.g. nvidia/...)",
         429 => "Free-tier rate limit reached, try again later",
         _ => "The AI provider is temporarily unavailable"
     };
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        var key = _config["OPENROUTER_API_KEY"]
+        var key = ReadApiKey(_config, "OPENROUTER_API_KEY")
             ?? throw new ChatProviderException("The AI provider 'OpenRouter' is not configured right now.");
         var messages = new List<object> { new { role = "system", content = request.SystemPrompt } };
         messages.AddRange(request.Messages.Select(m => new { role = m.Role, content = m.Content }));
@@ -364,11 +371,11 @@ public class AnthropicChatProvider : StreamingChatProviderBase
     }
 
     public override string Name => "anthropic";
-    public override bool IsConfigured => !string.IsNullOrWhiteSpace(_config["ANTHROPIC_API_KEY"]);
+    public override bool IsConfigured => ReadApiKey(_config, "ANTHROPIC_API_KEY") is not null;
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        var key = _config["ANTHROPIC_API_KEY"]
+        var key = ReadApiKey(_config, "ANTHROPIC_API_KEY")
             ?? throw new ChatProviderException("The AI provider 'Claude' is not configured right now.");
         // Anthropic takes system separately and only user/assistant turns.
         var turns = request.Messages
@@ -450,7 +457,7 @@ public class GeminiChatProvider : StreamingChatProviderBase
     }
 
     public override string Name => "gemini";
-    public override bool IsConfigured => !string.IsNullOrWhiteSpace(_config["GEMINI_API_KEY"]);
+    public override bool IsConfigured => ReadApiKey(_config, "GEMINI_API_KEY") is not null;
 
     /// <summary>Gemini signals an invalid/absent key with HTTP 400 + "API key not
     /// valid" in the body. Turn that into an actionable message (spell out the exact
@@ -466,7 +473,7 @@ public class GeminiChatProvider : StreamingChatProviderBase
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        var key = _config["GEMINI_API_KEY"]
+        var key = ReadApiKey(_config, "GEMINI_API_KEY")
             ?? throw new ChatProviderException("The AI provider 'Gemini' is not configured right now.");
 
         // streamGenerateContent SSE endpoint. Key goes ONLY in the header, never the URL.

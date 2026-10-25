@@ -105,7 +105,13 @@
 
     private string LandingPath =>
         IsSafeReturnUrl(ReturnUrl) ? ReturnUrl!
-        : (string.Equals(Fetch?.Role, "Admin", StringComparison.OrdinalIgnoreCase) ? "/analytics" : "/dashboard");
+        : (Fetch?.Role switch
+        {
+            "Admin" => "/analytics",
+            "Doctor" => "/doctor",
+            "Graduate" => "/graduate",
+            _ => "/dashboard"
+        });
 
     private AuthUserDto? Fetch { get; set; }
 
@@ -148,9 +154,7 @@
                 Fetch = user;
                 var target = IsSafeReturnUrl(ReturnUrl)
                     ? ReturnUrl!.Trim()
-                    : user is not null && string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase)
-                        ? "/analytics"
-                        : "/dashboard";
+                    : LandingPath;
                 Nav.NavigateTo(target);
             }
             else

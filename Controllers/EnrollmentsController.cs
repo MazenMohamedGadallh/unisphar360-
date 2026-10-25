@@ -14,7 +14,12 @@ namespace UniSphere.Api.Controllers;
 public class EnrollmentsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public EnrollmentsController(AppDbContext db) => _db = db;
+    private readonly DoctorAccessService _access;
+    public EnrollmentsController(AppDbContext db, DoctorAccessService access)
+    {
+        _db = db;
+        _access = access;
+    }
 
     /// <summary>Get the logged-in user's enrollments with course details.</summary>
     [HttpGet]
@@ -106,7 +111,8 @@ public class EnrollmentsController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Admin/Doctor: Update a student's grade, attendance, and status.</summary>
+    /// <summary>Admin/Doctor: Update a student's grade, attendance, and status.
+    /// Doctors may only grade courses they are assigned to (Admins bypass).</summary>
     [Authorize(Roles = "Admin,Doctor")]
     [HttpPut("{id:int}/grade")]
     public async Task<ActionResult<EnrollmentDto>> UpdateGrade(int id, [FromBody] UpdateGradeRequest req)
@@ -117,6 +123,12 @@ public class EnrollmentsController : ControllerBase
 
         if (enrollment is null) return NotFound();
 
+        if (User.IsInRole(UserRole.Doctor.ToString()) && !User.IsInRole(UserRole.Admin.ToString()))
+        {
+            var allowed = await _access.IsAssignedToCourseAsync(User.GetUserId(), enrollment.CourseId);
+            if (!allowed) return Forbid();
+        }
+
         // Validate attendance
         if (req.AttendancePercent is < 0 or > 100)
             return BadRequest("Attendance must be between 0 and 100.");
@@ -126,7 +138,13 @@ public class EnrollmentsController : ControllerBase
             return BadRequest("Grade points must be between 0 and 4.0.");
 
         enrollment.GradeLetter = req.GradeLetter ?? enrollment.GradeLetter;
-        enrollment.GradePoints = req.GradePoints ?? enrollment.GradePoints;
+        // When a doctor/admin assigns a letter without points (the UI quiz flow),
+        // derive the points from the institutional 4.0 scale so letter and GPA
+        // can never disagree.
+        enrollment.GradePoints = req.GradePoints
+            ?? (string.IsNullOrWhiteSpace(req.GradeLetter)
+                ? enrollment.GradePoints
+                : AcademicService.LetterToPoints(req.GradeLetter));
         enrollment.AttendancePercent = req.AttendancePercent ?? enrollment.AttendancePercent;
         enrollment.Status = req.Status ?? enrollment.Status;
 
@@ -147,12 +165,19 @@ public class EnrollmentsController : ControllerBase
             enrollment.AttendancePercent, enrollment.Status));
     }
 
-    /// <summary>Admin/Doctor: Get all enrollments (optionally filter by userId).</summary>
+    /// <summary>Admin/Doctor: Get all enrollments (optionally filtered by userId).
+    /// Doctors see only courses they are assigned to; Admins see all.</summary>
     [Authorize(Roles = "Admin,Doctor")]
     [HttpGet("all")]
     public async Task<ActionResult<IReadOnlyList<EnrollmentDto>>> GetAll([FromQuery] int? userId = null)
     {
         var query = _db.Enrollments.AsNoTracking().Include(e => e.Course).AsQueryable();
+
+        if (User.IsInRole(UserRole.Doctor.ToString()) && !User.IsInRole(UserRole.Admin.ToString()))
+        {
+            var courseIds = await _access.GetAssignedCourseIdsAsync(User.GetUserId());
+            query = query.Where(e => courseIds.Contains(e.CourseId));
+        }
 
         if (userId.HasValue)
             query = query.Where(e => e.UserId == userId.Value);

@@ -64,6 +64,7 @@ public static class DbSeeder
             SeedDemoJobs(db);
             if (legacyGraduate is not null)
                 SeedGraduateCareerDemo(db, legacyGraduate.Id);
+            EnsureDoctorAssignments(db);
             return;
         }
 
@@ -322,8 +323,45 @@ public static class DbSeeder
 
         SeedDemoJobs(db);
         SeedGraduateCareerDemo(db, graduate.Id);
+        EnsureDoctorAssignments(db);
 
         db.SaveChanges();
+    }
+
+    /// <summary>Assigns the demo doctor to a realistic set of courses.
+    /// Idempotent: existing (doctor, course) pairs are left untouched, and
+    /// nothing happens when the doctor or the courses are absent.</summary>
+    private static void EnsureDoctorAssignments(AppDbContext db)
+    {
+        var doctor = db.Users.FirstOrDefault(u => u.Email == "doctor@unisphere.edu" && u.Role == UserRole.Doctor);
+        if (doctor is null) return;
+
+        // A curated subset of the seeded catalogue (leaves at least one
+        // enrolled course unassigned so cross-course isolation stays testable).
+        var codes = new[] { "CS350", "CS330", "CS240", "CS320" };
+        var courses = db.Courses.Where(c => codes.Contains(c.Code)).ToList();
+        if (courses.Count == 0) return;
+
+        var existing = db.CourseAssignments
+            .Where(a => a.DoctorUserId == doctor.Id)
+            .Select(a => a.CourseId)
+            .ToHashSet();
+
+        var added = false;
+        foreach (var course in courses)
+        {
+            if (existing.Contains(course.Id)) continue;
+            db.CourseAssignments.Add(new CourseAssignment
+            {
+                DoctorUserId = doctor.Id,
+                CourseId = course.Id,
+                AssignedByUserId = doctor.Id,
+                AssignedAtUtc = DateTime.UtcNow
+            });
+            added = true;
+        }
+
+        if (added) db.SaveChanges();
     }
 
     /// <summary>Demo job catalog (Source="Demo") — clearly-labeled seed content so

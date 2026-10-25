@@ -35,7 +35,7 @@ else
     <div class="form-inline">
         <div class="form-group">
             <label>Course</label>
-            <select value="_courseId" @onchange="OnCourseChanged">
+            <select value="@_courseId" @onchange="OnCourseChanged">
                 <option value="0">Select a course...</option>
                 @foreach (var c in _courses)
                 {
@@ -72,7 +72,8 @@ else
                         <input type="number" min="1" max="15" @bind="_questionCount" />
                     </div>
                 </div>
-                <button class="btn btn-primary" @onclick="GenerateQuizAsync" disabled="@(_busy || _courseId <= 0)">
+                <button class="btn btn-primary" @onclick="GenerateQuizAsync" disabled="@(_busy || !_available || _courseId <= 0)"
+                        title="@(!_available ? "No AI provider configured" : "")">
                     @(_busy ? "Generating..." : "Generate Quiz")
                 </button>
                 @if (_quiz is not null)
@@ -128,7 +129,8 @@ else
                         }
                     </select>
                 </div>
-                <button class="btn btn-primary" @onclick="SummarizeAsync" disabled="@(_busy || _summarizeMaterialId <= 0)">
+                <button class="btn btn-primary" @onclick="SummarizeAsync" disabled="@(_busy || !_available || _summarizeMaterialId <= 0)"
+                        title="@(!_available ? "No AI provider configured" : "")">
                     @(_busy ? "Summarizing..." : "Summarize")
                 </button>
                 @if (_summary is not null)
@@ -151,7 +153,8 @@ else
                     <label>Your question</label>
                     <textarea rows="3" @bind="_question" placeholder="e.g. What does the course material say about normalization?"></textarea>
                 </div>
-                <button class="btn btn-primary" @onclick="AskAsync" disabled="@(_busy || _courseId <= 0 || string.IsNullOrWhiteSpace(_question))">
+                <button class="btn btn-primary" @onclick="AskAsync" disabled="@(_busy || !_available || _courseId <= 0 || string.IsNullOrWhiteSpace(_question))"
+                        title="@(!_available ? "No AI provider configured" : "")">
                     @(_busy ? "Thinking..." : "Ask")
                 </button>
                 @if (_answer is not null)
@@ -278,10 +281,12 @@ else
         try
         {
             _materials = await Http.GetFromJsonAsync<List<DoctorMaterialDto>>($"/api/doctor/courses/{_courseId}/materials") ?? new();
+            _error = null;
         }
-        catch
+        catch (Exception ex)
         {
             _materials = new();
+            _error = $"Could not load course materials ({(ex.InnerException ?? ex).Message}).";
         }
     }
 
@@ -296,6 +301,10 @@ else
                 _quiz = await resp.Content.ReadFromJsonAsync<QuizGenerationResponse>();
             else
                 _error = await AiErrorAsync(resp);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Request failed ({(ex.InnerException ?? ex).Message}).";
         }
         finally { _busy = false; }
     }
@@ -312,6 +321,10 @@ else
             else
                 _error = await AiErrorAsync(resp);
         }
+        catch (Exception ex)
+        {
+            _error = $"Request failed ({(ex.InnerException ?? ex).Message}).";
+        }
         finally { _busy = false; }
     }
 
@@ -326,6 +339,10 @@ else
                 _answer = await resp.Content.ReadFromJsonAsync<LectureAnswerDto>();
             else
                 _error = await AiErrorAsync(resp);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Request failed ({(ex.InnerException ?? ex).Message}).";
         }
         finally { _busy = false; }
     }

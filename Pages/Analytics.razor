@@ -154,7 +154,7 @@ else
                     <ul class="plain-list">
                         @foreach (var s in _analysis.Strengths)
                         {
-                            <li>&#9989; @s</li>
+                            <li class="list-check"><Icon Name="check" /> @s</li>
                         }
                     </ul>
                 }
@@ -168,7 +168,7 @@ else
                     <ul class="plain-list">
                         @foreach (var w in _analysis.Weaknesses)
                         {
-                            <li>&#9888;&#65039; @w</li>
+                            <li class="list-warn"><Icon Name="triangle-alert" /> @w</li>
                         }
                     </ul>
                 }
@@ -186,7 +186,7 @@ else
                     <ul class="plain-list">
                         @foreach (var r in _analysis.Recommendations)
                         {
-                            <li>&#128161; @r</li>
+                            <li class="list-idea"><Icon Name="lightbulb" /> @r</li>
                         }
                     </ul>
                 }

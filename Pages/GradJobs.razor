@@ -109,7 +109,7 @@ else
                         <td class="muted">@job.PublishedAtUtc.ToString("d MMM yyyy")</td>
                         <td>
                             <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                                <button class="btn btn-small" @onclick="() => ToggleSaveAsync(job)">@if (job.IsSaved) { <text>Saved &#10003;</text> } else { <text>Save</text> }</button>
+                                <button class="btn btn-small" @onclick="() => ToggleSaveAsync(job)">@if (job.IsSaved) { <text>Saved</text><Icon Name="check" Size="14" /> } else { <text>Save</text> }</button>
                                 @if (job.IsApplied)
                                 {
                                     <span class="grad-badge">Applied</span>

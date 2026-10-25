@@ -6,6 +6,7 @@
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject ThemeService ThemeService
+@inject UniSphere.Api.Services.SharedUnreadBadgeState Badge
 @inject ProtectedLocalStorage BrowserStorage
 @inject UniSphere.Api.Services.BlazorAuthService AuthService
 
@@ -15,10 +16,10 @@
     <aside class="sidebar @(_sidebarOpen ? "open" : "")">
         <div class="sidebar-header">
             <div class="logo">
-                <span class="logo-icon">&#9670;</span>
+                <span class="logo-icon"><Icon Name="graduation-cap" /></span>
                 <span class="logo-text">UniSphere <span class="logo-plus">360+</span></span>
             </div>
-            <button class="sidebar-close" @onclick="() => _sidebarOpen = false">&times;</button>
+            <button class="sidebar-close" aria-label="Close menu" @onclick="() => _sidebarOpen = false"><Icon Name="x" Size="18" /></button>
         </div>
 
         <nav class="sidebar-nav">
@@ -29,48 +30,48 @@
             else
             {
             <NavLink href="/dashboard" class="nav-item" @onclick="() => _sidebarOpen = false">
-                <span class="nav-icon">&#8962;</span>
+                <span class="nav-icon"><Icon Name="house" /></span>
                 <span>Home</span>
             </NavLink>
             <NavLink href="/academic-advisor" class="nav-item" @onclick="() => _sidebarOpen = false">
-                <span class="nav-icon">&#127891;</span>
+                <span class="nav-icon"><Icon Name="graduation-cap" /></span>
                 <span>Academic Advisor</span>
             </NavLink>
             <NavLink href="/career-assistant" class="nav-item" @onclick="() => _sidebarOpen = false">
-                <span class="nav-icon">&#128188;</span>
+                <span class="nav-icon"><Icon Name="briefcase" /></span>
                 <span>Career Assistant</span>
             </NavLink>
             <NavLink href="/research-hub" class="nav-item" @onclick="() => _sidebarOpen = false">
-                <span class="nav-icon">&#128269;</span>
+                <span class="nav-icon"><Icon Name="flask-conical" /></span>
                 <span>Research Hub</span>
             </NavLink>
             @if (_userRole is "Student" or "Graduate" or "Doctor")
             {
                 <NavLink href="/university" class="nav-item" @onclick="() => _sidebarOpen = false">
-                    <span class="nav-icon">&#127979;</span>
+                    <span class="nav-icon"><Icon Name="landmark" /></span>
                     <span>My University</span>
                 </NavLink>
             }
             <NavLink href="/student-services" class="nav-item" @onclick="() => _sidebarOpen = false">
-                <span class="nav-icon">&#127974;</span>
+                <span class="nav-icon"><Icon Name="life-buoy" /></span>
                 <span>Student Services</span>
             </NavLink>
             @if (_userRole is "Student" or "Graduate")
             {
                 <NavLink href="/analytics" class="nav-item" @onclick="() => _sidebarOpen = false">
-                    <span class="nav-icon">&#128200;</span>
+                    <span class="nav-icon"><Icon Name="trending-up" /></span>
                     <span>My Analytics</span>
                 </NavLink>
             }
             @if (_userRole == "Admin")
             {
                 <NavLink href="/admin" class="nav-item" @onclick="() => _sidebarOpen = false">
-                    <span class="nav-icon">&#128202;</span>
+                    <span class="nav-icon"><Icon Name="chart-column" /></span>
                     <span>Admin Panel</span>
                 </NavLink>
             }
             <NavLink href="/chat" class="nav-item" @onclick="() => _sidebarOpen = false">
-                <span class="nav-icon">&#128241;</span>
+                <span class="nav-icon"><Icon Name="bot" /></span>
                 <span>AI Assistant</span>
             </NavLink>
             }
@@ -79,23 +80,23 @@
         <div class="sidebar-section sidebar-pinned">
             <div class="sidebar-section-title">Quick Links</div>
             <NavLink href="/profile" class="nav-item" @onclick="() => _sidebarOpen = false">
-                <span class="nav-icon">&#128100;</span>
+                <span class="nav-icon"><Icon Name="user-round" /></span>
                 <span>My Profile</span>
             </NavLink>
             <NavLink href="/notifications" class="nav-item" @onclick="() => _sidebarOpen = false">
-                <span class="nav-icon">&#128276;</span>
+                <span class="nav-icon"><Icon Name="bell" /></span>
                 <span>Notifications</span>
             </NavLink>
             <NavLink href="@(_userRole == "Graduate" ? "/graduate/settings" : "/settings")" class="nav-item" @onclick="() => _sidebarOpen = false">
-                <span class="nav-icon">&#9881;</span>
+                <span class="nav-icon"><Icon Name="settings" /></span>
                 <span>Settings</span>
             </NavLink>
             <NavLink href="/help" class="nav-item" @onclick="() => _sidebarOpen = false">
-                <span class="nav-icon">&#10067;</span>
+                <span class="nav-icon"><Icon Name="circle-help" /></span>
                 <span>Help &amp; Support</span>
             </NavLink>
             <button class="nav-item logout-btn sidebar-logout" @onclick="OpenLogoutModal" title="Log out" aria-label="Log out">
-                <span class="nav-icon">&#128682;</span>
+                <span class="nav-icon"><Icon Name="log-out" /></span>
                 <span>Logout</span>
             </button>
         </div>
@@ -115,11 +116,11 @@
     <div class="main-content">
         <!-- Top bar -->
         <header class="top-bar">
-            <button class="menu-toggle" @onclick="() => _sidebarOpen = !_sidebarOpen">&#9776;</button>
+            <button class="menu-toggle" aria-label="Open menu" @onclick="() => _sidebarOpen = !_sidebarOpen"><Icon Name="menu" Size="20" /></button>
 
             <div class="search-wrap" @onkeydown="SearchKeyDown">
                 <div class="search-box">
-                    <span class="search-icon">&#128269;</span>
+                    <span class="search-icon"><Icon Name="search" /></span>
                     <input id="topbar-search" type="text" placeholder="Search courses, events, modules..."
                            @bind="_searchQuery" @bind:event="oninput" @bind:after="SearchTextChangedAsync"
                            @onfocus="SearchFocused" @onblur="SearchBlurred" @ref="_searchInput"
@@ -142,7 +143,7 @@
                             @foreach (var recent in _recentSearches)
                             {
                                 <div class="search-item" @onmousedown:preventDefault @onclick="() => SearchRecentAsync(recent)">
-                                    <span class="search-item-icon">&#128339;</span>
+                                    <span class="search-item-icon"><Icon Name="clock" /></span>
                                     <span class="search-item-text">@recent</span>
                                 </div>
                             }
@@ -171,7 +172,7 @@
                                 <div role="option" aria-selected="@(fi == _selectedIndex)"
                                      class="search-item @(fi == _selectedIndex ? "selected" : "")"
                                      @onmousedown:preventDefault @onclick="() => SelectResultAsync(entry.Item)">
-                                    <span class="search-item-icon">@entry.Item.Icon</span>
+                                    <span class="search-item-icon"><Icon Name="@(IconSet.ResolveName(entry.Item.Icon))" Size="16" /></span>
                                     <span class="search-item-text">@Highlight(entry.Item.Title, _searchQuery)<small>@entry.Item.Subtitle</small></span>
                                 </div>
                             }
@@ -185,13 +186,13 @@
                 <button type="button" class="icon-btn theme-toggle" title="Dark mode"
                         aria-label="@(_themeDark ? "Switch to light mode" : "Switch to dark mode")"
                         @onclick="ToggleThemeAsync">
-                    @(_themeDark ? "☀" : "🌙")
+                    <Icon Name="@(_themeDark ? "sun" : "moon")" Size="20" />
                 </button>
                 <NavLink href="/chat" class="icon-btn" title="AI Assistant">
-                    &#128241;
+                    <Icon Name="bot" Size="20" />
                 </NavLink>
                 <NavLink href="/notifications" class="icon-btn" title="Notifications">
-                    &#128276;
+                    <Icon Name="bell" Size="20" />
                     @if (_unreadCount > 0)
                     {
                         <span class="badge">@_unreadCount</span>
@@ -218,11 +219,11 @@
                                 <span class="avatar-menu-name">@_userFullName</span>
                             </div>
                             <NavLink href="/profile" class="avatar-menu-item" role="menuitem" @onclick="CloseAvatarMenu">
-                                <span class="nav-icon">&#128100;</span>
+                                <span class="nav-icon"><Icon Name="user-round" /></span>
                                 <span>My Profile</span>
                             </NavLink>
                             <button type="button" class="avatar-menu-item logout" role="menuitem" @onclick="OpenLogoutModalFromMenu">
-                                <span class="nav-icon">&#128682;</span>
+                                <span class="nav-icon"><Icon Name="log-out" /></span>
                                 <span>Logout</span>
                             </button>
                         </div>
@@ -251,10 +252,10 @@
                 <aside class="sidebar @(_sidebarOpen ? "open" : "")">
                     <div class="sidebar-header">
                         <div class="logo">
-                            <span class="logo-icon">&#9670;</span>
+                            <span class="logo-icon"><Icon Name="graduation-cap" /></span>
                             <span class="logo-text">UniSphere <span class="logo-plus">360+</span></span>
                         </div>
-                        <button class="sidebar-close" @onclick="() => _sidebarOpen = false">&times;</button>
+                        <button class="sidebar-close" aria-label="Close menu" @onclick="() => _sidebarOpen = false"><Icon Name="x" Size="18" /></button>
                     </div>
 
                     <nav class="sidebar-nav">
@@ -265,48 +266,48 @@
                         else
                         {
                         <NavLink href="/dashboard" class="nav-item" @onclick="() => _sidebarOpen = false">
-                            <span class="nav-icon">&#8962;</span>
+                            <span class="nav-icon"><Icon Name="house" /></span>
                             <span>Home</span>
                         </NavLink>
                         <NavLink href="/academic-advisor" class="nav-item" @onclick="() => _sidebarOpen = false">
-                            <span class="nav-icon">&#127891;</span>
+                            <span class="nav-icon"><Icon Name="graduation-cap" /></span>
                             <span>Academic Advisor</span>
                         </NavLink>
                         <NavLink href="/career-assistant" class="nav-item" @onclick="() => _sidebarOpen = false">
-                            <span class="nav-icon">&#128188;</span>
+                            <span class="nav-icon"><Icon Name="briefcase" /></span>
                             <span>Career Assistant</span>
                         </NavLink>
                         <NavLink href="/research-hub" class="nav-item" @onclick="() => _sidebarOpen = false">
-                            <span class="nav-icon">&#128269;</span>
+                            <span class="nav-icon"><Icon Name="flask-conical" /></span>
                             <span>Research Hub</span>
                         </NavLink>
                         @if (_userRole is "Student" or "Graduate" or "Doctor")
                         {
                             <NavLink href="/university" class="nav-item" @onclick="() => _sidebarOpen = false">
-                                <span class="nav-icon">&#127979;</span>
+                                <span class="nav-icon"><Icon Name="landmark" /></span>
                                 <span>My University</span>
                             </NavLink>
                         }
                         <NavLink href="/student-services" class="nav-item" @onclick="() => _sidebarOpen = false">
-                            <span class="nav-icon">&#127974;</span>
+                            <span class="nav-icon"><Icon Name="life-buoy" /></span>
                             <span>Student Services</span>
                         </NavLink>
                         @if (_userRole is "Student" or "Graduate")
                         {
                             <NavLink href="/analytics" class="nav-item" @onclick="() => _sidebarOpen = false">
-                                <span class="nav-icon">&#128200;</span>
+                                <span class="nav-icon"><Icon Name="trending-up" /></span>
                                 <span>My Analytics</span>
                             </NavLink>
                         }
                         @if (_userRole == "Admin")
                         {
                             <NavLink href="/admin" class="nav-item" @onclick="() => _sidebarOpen = false">
-                                <span class="nav-icon">&#128202;</span>
+                                <span class="nav-icon"><Icon Name="chart-column" /></span>
                                 <span>Admin Panel</span>
                             </NavLink>
                         }
                         <NavLink href="/chat" class="nav-item" @onclick="() => _sidebarOpen = false">
-                            <span class="nav-icon">&#128241;</span>
+                            <span class="nav-icon"><Icon Name="bot" /></span>
                             <span>AI Assistant</span>
                         </NavLink>
                         }
@@ -315,23 +316,23 @@
                     <div class="sidebar-section sidebar-pinned">
                         <div class="sidebar-section-title">Quick Links</div>
                         <NavLink href="/profile" class="nav-item" @onclick="() => _sidebarOpen = false">
-                            <span class="nav-icon">&#128100;</span>
+                            <span class="nav-icon"><Icon Name="user-round" /></span>
                             <span>My Profile</span>
                         </NavLink>
                         <NavLink href="/notifications" class="nav-item" @onclick="() => _sidebarOpen = false">
-                            <span class="nav-icon">&#128276;</span>
+                            <span class="nav-icon"><Icon Name="bell" /></span>
                             <span>Notifications</span>
                         </NavLink>
                         <NavLink href="/settings" class="nav-item" @onclick="() => _sidebarOpen = false">
-                            <span class="nav-icon">&#9881;</span>
+                            <span class="nav-icon"><Icon Name="settings" /></span>
                             <span>Settings</span>
                         </NavLink>
                         <NavLink href="/help" class="nav-item" @onclick="() => _sidebarOpen = false">
-                            <span class="nav-icon">&#10067;</span>
+                            <span class="nav-icon"><Icon Name="circle-help" /></span>
                             <span>Help & Support</span>
                         </NavLink>
                         <button class="nav-item logout-btn sidebar-logout" @onclick="OpenLogoutModal" title="Log out" aria-label="Log out">
-                            <span class="nav-icon">&#128682;</span>
+                            <span class="nav-icon"><Icon Name="log-out" /></span>
                             <span>Logout</span>
                         </button>
                     </div>
@@ -391,6 +392,7 @@
     private bool _sidebarOpen = false;
     private string _searchQuery = "";
     private int _unreadCount = 0;
+    private Action _badgeSync = () => { };
     private string? _userAvatar;
     private string _userInitial = "?";
     private string? _userFullName;
@@ -424,6 +426,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Keep the same delegate instance so DisposeAsync can unsubscribe.
+        _badgeSync = () =>
+        {
+            _unreadCount = Badge.UnreadCount;
+            StateHasChanged();
+        };
+        Badge.Subscribe(_badgeSync);
         var user = await AuthService.GetUserAsync();
         if (user is not null)
         {
@@ -455,6 +464,7 @@
         {
             var count = await Http.GetFromJsonAsync<UniSphere.Api.Dtos.UnreadCountDto>("/api/notifications/unread-count");
             _unreadCount = count?.UnreadCount ?? 0;
+            Badge.Publish(_unreadCount);
         }
         catch
         {
@@ -557,6 +567,7 @@
         {
             var count = await Http.GetFromJsonAsync<UniSphere.Api.Dtos.UnreadCountDto>("/api/notifications/unread-count");
             _unreadCount = count?.UnreadCount ?? 0;
+            Badge.Publish(_unreadCount);
         }
         catch
         {
@@ -613,6 +624,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        Badge.Unsubscribe(_badgeSync);
         await StopBackGuardAsync();
         if (_guardModule is not null)
         {

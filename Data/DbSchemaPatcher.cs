@@ -225,6 +225,7 @@ public static class DbSchemaPatcher
                     NotifyFollowUps INTEGER NOT NULL DEFAULT 1,
                     MatchAlertThresholdPercent INTEGER NOT NULL DEFAULT 80,
                     ShowGpaOnProfile INTEGER NOT NULL DEFAULT 0,
+                    ThemePreference TEXT NOT NULL DEFAULT 'system',
                     CONSTRAINT FK_GraduateSettings_Users_UserId FOREIGN KEY (UserId) REFERENCES Users (Id) ON DELETE CASCADE
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_GraduateSettings_UserId ON GraduateSettings(UserId);
@@ -244,6 +245,65 @@ public static class DbSchemaPatcher
                 "ALTER TABLE Notifications ADD COLUMN Category TEXT NOT NULL DEFAULT 'System'");
             EnsureTableColumn(cmd, "Notifications", "DedupeKey",
                 "ALTER TABLE Notifications ADD COLUMN DedupeKey TEXT");
+            // Graduate preferences added after the settings row was introduced.
+            // Split joining the alert keywords/locations and the UI theme sync.
+            EnsureTableColumn(cmd, "GraduateSettings", "ThemePreference",
+                "ALTER TABLE GraduateSettings ADD COLUMN ThemePreference TEXT NOT NULL DEFAULT 'system'");
+            EnsureTableColumn(cmd, "GraduateSettings", "AlertKeywords",
+                "ALTER TABLE GraduateSettings ADD COLUMN AlertKeywords TEXT NULL");
+            EnsureTableColumn(cmd, "GraduateSettings", "AlertLocations",
+                "ALTER TABLE GraduateSettings ADD COLUMN AlertLocations TEXT NULL");
+            // Doctor module objects reintroduced alongside the graduate system:
+            // course assignments (join table), research-hub papers and the
+            // course-scoped announcement columns. All additive; existing rows
+            // are unaffected (CourseId stays NULL = university-wide).
+            EnsureTableColumn(cmd, "Announcements", "CourseId",
+                "ALTER TABLE Announcements ADD COLUMN CourseId INTEGER NULL");
+            EnsureTableColumn(cmd, "Users", "Address",
+                "ALTER TABLE Users ADD COLUMN Address TEXT NULL");
+            EnsureTableColumn(cmd, "CourseMaterials", "DeadlineUtc",
+                "ALTER TABLE CourseMaterials ADD COLUMN DeadlineUtc TEXT NULL");
+
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS CourseAssignments (
+                    Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    DoctorUserId INTEGER NOT NULL,
+                    CourseId INTEGER NOT NULL,
+                    AssignedByUserId INTEGER,
+                    AssignedAtUtc TEXT NOT NULL,
+                    DisplayTitle TEXT,
+                    FOREIGN KEY (CourseId) REFERENCES Courses (Id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS IX_CourseAssignments_DoctorUserId ON CourseAssignments(DoctorUserId);
+                CREATE INDEX IF NOT EXISTS IX_CourseAssignments_CourseId ON CourseAssignments(CourseId);
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_CourseAssignments_DoctorUserId_CourseId
+                    ON CourseAssignments(DoctorUserId, CourseId);
+
+                CREATE TABLE IF NOT EXISTS DoctorResearches (
+                    Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    DoctorUserId INTEGER NOT NULL,
+                    UniversityId INTEGER NOT NULL,
+                    Title TEXT NOT NULL,
+                    Abstract TEXT NOT NULL,
+                    Authors TEXT NOT NULL,
+                    Keywords TEXT NOT NULL,
+                    Year INTEGER NOT NULL,
+                    Field TEXT NOT NULL,
+                    PdfPath TEXT,
+                    DoiOrUrl TEXT,
+                    CreatedAtUtc TEXT NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL,
+                    IsPublished INTEGER NOT NULL,
+                    FOREIGN KEY (DoctorUserId) REFERENCES Users (Id) ON DELETE RESTRICT
+                );
+                CREATE INDEX IF NOT EXISTS IX_DoctorResearches_DoctorUserId ON DoctorResearches(DoctorUserId);
+                CREATE INDEX IF NOT EXISTS IX_DoctorResearches_UniversityId ON DoctorResearches(UniversityId);
+                CREATE INDEX IF NOT EXISTS IX_DoctorResearches_Year ON DoctorResearches(Year);
+                CREATE INDEX IF NOT EXISTS IX_DoctorResearches_Title ON DoctorResearches(Title);
+                CREATE INDEX IF NOT EXISTS IX_DoctorResearches_IsPublished ON DoctorResearches(IsPublished);
+                CREATE INDEX IF NOT EXISTS IX_Announcements_CourseId ON Announcements(CourseId);
+                """;
+            cmd.ExecuteNonQuery();
             // Partial unique index: NULL keys never collide, generated career
             // rows do. Runs on every startup (no-op when it already exists).
             using (var idx = conn.CreateCommand())

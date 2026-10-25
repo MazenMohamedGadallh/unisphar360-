@@ -1,11 +1,12 @@
 @page "/graduate/settings"
 @inherits UniSphere.Api.Components.GradPageBase
+@inject UniSphere.Api.Services.ThemeService Theme
 
 <PageTitle>Settings - UniSphere 360+</PageTitle>
 
 <div class="page-header">
     <h1>Settings</h1>
-    <p>Control career notifications and what shows on your profile</p>
+    <p>Account preferences, appearance, and how career alerts reach you</p>
 </div>
 
 @if (_error is not null)
@@ -18,51 +19,138 @@ else if (_loading)
 }
 else if (_settings is not null)
 {
-    <div class="card" style="max-width:620px;">
-        <div class="card-header"><h3>Career notifications</h3></div>
+    @* ---------- Account ---------- *@
+    <div class="card" style="max-width:680px;">
+        <div class="card-header">
+            <h3><Icon Name="user-round" Size="18" /> Account</h3>
+        </div>
         <div class="grad-list">
-            <div class="form-group" style="display:flex; align-items:center; gap:10px;">
+            <div class="settings-row"><span class="settings-label">Full name</span><span>@_name</span></div>
+            <div class="settings-row"><span class="settings-label">Email</span><span>@_email</span></div>
+            <div class="settings-row"><span class="settings-label">Field</span><span>@(string.IsNullOrWhiteSpace(_major) ? "—" : _major)</span></div>
+            <div class="settings-row"><span class="settings-label">Role</span><span class="grad-badge">Graduate</span></div>
+        </div>
+        <p class="muted" style="margin:8px 0 0;">Personal details are managed on <a href="/graduate/profile">My Career Profile</a>. Email changes are not supported yet.</p>
+
+        <h4 style="margin:18px 0 8px;"><Icon Name="sun-moon" Size="16" /> Appearance</h4>
+        <div class="form-inline" role="group" aria-label="Theme">
+            @foreach (var (value, label) in Themes)
+            {
+                var active = Theme.Current == value;
+                <button type="button" class="btn @(active ? "btn-primary" : "btn-ghost")"
+                        aria-pressed="@active"
+                        @onclick='() => ChangeThemeAsync(value)'>@label</button>
+            }
+        </div>
+        <p class="muted" style="margin:6px 0 0;">Applies instantly and is saved with your account.</p>
+    </div>
+
+    @* ---------- Career notifications ---------- *@
+    <div class="card" style="max-width:680px; margin-top:16px;">
+        <div class="card-header">
+            <h3><Icon Name="bell" Size="18" /> Career notifications</h3>
+        </div>
+        <div class="grad-list">
+            <div class="settings-row settings-row-toggle">
+                <div>
+                    <label for="grNMatch">Notify me about strong new job matches</label>
+                    <p class="muted">Checked whenever the portal indexes jobs that fit your CV.</p>
+                </div>
                 <input id="grNMatch" type="checkbox" @bind="_matchToggle" />
-                <label for="grNMatch">Notify me in-app when strong new matches appear</label>
             </div>
-            <div class="form-group" style="display:flex; align-items:center; gap:10px;">
+            <div class="settings-row settings-row-toggle">
+                <div>
+                    <label for="grThreshold">Match alert threshold</label>
+                    <p class="muted">Only matches scoring at least this many percent notify you.</p>
+                    <input id="grThreshold" type="range" min="0" max="100" step="5" @bind="_threshold"
+                           disabled="@(!_matchToggle)" style="max-width:260px;" />
+                    <span class="grad-badge">≥ @_threshold%</span>
+                </div>
+            </div>
+            <div class="settings-row settings-row-toggle">
+                <div>
+                    <label for="grNFollow">Remind me about follow-ups</label>
+                    <p class="muted">Interviews, application deadlines, and their follow-up dates.</p>
+                </div>
                 <input id="grNFollow" type="checkbox" @bind="_followToggle" />
-                <label for="grNFollow">Remind me in-app about follow-ups (interviews, deadlines)</label>
             </div>
         </div>
 
-        <div class="form-inline" style="margin-top:10px;">
-            <div class="form-group">
-                <label for="grThreshold">Match alert threshold (%)</label>
-                <input id="grThreshold" type="number" min="0" max="100" @bind="_threshold" />
-            </div>
-            <div class="form-group" style="display:flex; align-items:center; gap:10px; margin-top:20px;">
-                <input id="grGpa" type="checkbox" @bind="_gpaToggle" />
-                <label for="grGpa">Show GPA on my profile</label>
-            </div>
+        <h4 style="margin:18px 0 8px;"><Icon Name="target" Size="16" /> Job alert targeting</h4>
+        <p class="muted" style="margin:0 0 8px;">Optional. Leave blank to be alerted about everything above your threshold.</p>
+        <div class="form-group">
+            <label for="grKeywords">Alert keywords <span class="muted">(comma-separated, matched against job title and company)</span></label>
+            <input id="grKeywords" type="text" placeholder="e.g. data analyst, fintech" @bind="_keywords" maxlength="300" />
         </div>
+        <div class="form-group">
+            <label for="grLocations">Alert locations <span class="muted">(comma-separated, matched against job location)</span></label>
+            <input id="grLocations" type="text" placeholder="e.g. Riyadh, remote" @bind="_locations" maxlength="300" />
+        </div>
+
         <button class="btn btn-primary" style="margin-top:12px;" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Saving..." : "Save settings")</button>
         @if (_savedMessage is not null)
         {
             <p><span class="grad-badge">@_savedMessage</span></p>
         }
     </div>
+
+    @* ---------- Where alerts live ---------- *@
+    <div class="card" style="max-width:680px; margin-top:16px;">
+        <div class="card-header">
+            <h3><Icon Name="inbox" Size="18" /> Where alerts appear</h3>
+        </div>
+        <p style="margin:0 0 8px;">Your alerts are in-app only, delivered to the notification center:</p>
+        <a class="btn btn-ghost" href="/notifications"><Icon Name="bell" Size="16" /> Open notifications</a>
+        <p class="muted" style="margin:8px 0 0;">
+            Email/SMS delivery and a separate language setting are not available yet, so no toggles
+            are shown for them here. GPA visibility was removed from settings; your GPA stays private.
+        </p>
+    </div>
 }
 
+<style>
+    .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border, #ececf0); }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-row-toggle > div { flex: 1; }
+    .settings-row-toggle label { font-weight: 600; }
+    .settings-label { color: var(--muted, #6b7280); min-width: 120px; }
+</style>
+
 @code {
+    private static readonly (string Value, string Label)[] Themes = { ("light", "Light"), ("dark", "Dark"), ("system", "System") };
+
     private GradSettingsModel? _settings;
     private bool _saving;
     private string? _savedMessage;
 
     private bool _matchToggle;
     private bool _followToggle;
-    private bool _gpaToggle;
     private int _threshold = 50;
+    private string _keywords = "";
+    private string _locations = "";
+    private string _name = "…";
+    private string _email = "";
+    private string _major = "";
 
     protected override async Task OnInitializedAsync()
     {
         if (!await GuardGraduateAsync()) return;
         await LoadAsync();
+    }
+
+    private async Task ChangeThemeAsync(string theme)
+    {
+        await Theme.SetAsync(theme);
+        // Persist with account settings lazily: the next Save carries themePreference.
+        if (_settings is null)
+        {
+            // Settings never loaded (GET failed): do NOT fabricate defaults
+            // that would silently overwrite the user's saved preferences.
+            return;
+        }
+        _settings.ThemePreference = theme;
+        var (value, error) = await PutJsonAsync<GradSettingsModel>("/api/grad/settings", BuildPayload(_settings));
+        if (error is null && value is not null) _settings = value;
     }
 
     private async Task LoadAsync()
@@ -76,28 +164,51 @@ else if (_settings is not null)
             _settings = settings;
             _matchToggle = settings.NotifyNewMatches;
             _followToggle = settings.NotifyFollowUps;
-            _gpaToggle = settings.ShowGpaOnProfile;
             _threshold = settings.MatchAlertThresholdPercent;
+            _keywords = settings.AlertKeywords ?? "";
+            _locations = settings.AlertLocations ?? "";
+        }
+        var user = await AuthService.GetUserAsync();
+        if (user is not null)
+        {
+            _name = user.FullName;
+            _email = user.Email;
+            _major = user.Major;
         }
         _loading = false;
         StateHasChanged();
     }
 
-    private async Task SaveAsync()
+    private object BuildPayload(GradSettingsModel s)
     {
-        _saving = true;
-        _savedMessage = null;
-        StateHasChanged();
-        var (value, error) = await PutJsonAsync<GradSettingsModel>("/api/grad/settings", new
+        var prefers = _settings?.ThemePreference ?? Theme.Current;
+        return new
         {
             notifyNewMatches = _matchToggle,
             notifyFollowUps = _followToggle,
             matchAlertThresholdPercent = _threshold,
-            showGpaOnProfile = _gpaToggle
-        });
+            showGpaOnProfile = s.ShowGpaOnProfile,
+            themePreference = prefers,
+            alertKeywords = _keywords,
+            alertLocations = _locations
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_settings is null) { await LoadAsync(); return; }
+        _saving = true;
+        _savedMessage = null;
+        StateHasChanged();
+        var (value, error) = await PutJsonAsync<GradSettingsModel>("/api/grad/settings", BuildPayload(_settings));
         _saving = false;
         if (error is not null) { _error = error; StateHasChanged(); return; }
-        if (value is not null) _settings = value;
+        if (value is not null)
+        {
+            _settings = value;
+            _keywords = value.AlertKeywords ?? "";
+            _locations = value.AlertLocations ?? "";
+        }
         _savedMessage = "Settings saved.";
         StateHasChanged();
     }

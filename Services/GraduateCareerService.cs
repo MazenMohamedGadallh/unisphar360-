@@ -150,20 +150,47 @@ public class GraduateCareerService(
         return settings;
     }
 
-    public async Task<GradSettingsDto> UpdateSettingsAsync(int userId, bool notifyNewMatches, bool notifyFollowUps, int threshold, bool showGpa)
+    public async Task<GradSettingsDto> UpdateSettingsAsync(
+        int userId, bool notifyNewMatches, bool notifyFollowUps, int threshold, bool showGpa,
+        string? theme = "system", string? alertKeywords = null, string? alertLocations = null)
     {
         var settings = await GetSettingsEntityAsync(userId);
         settings.NotifyNewMatches = notifyNewMatches;
         settings.NotifyFollowUps = notifyFollowUps;
         settings.MatchAlertThresholdPercent = Math.Clamp(threshold, 0, 100);
         settings.ShowGpaOnProfile = showGpa;
+        if (theme is not null)
+            settings.ThemePreference = theme is "light" or "dark" or "system" ? theme : "system";
+        if (alertKeywords is not null)
+            settings.AlertKeywords = TruncateAlertList(alertKeywords, 300);
+        if (alertLocations is not null)
+            settings.AlertLocations = TruncateAlertList(alertLocations, 300);
         await db.SaveChangesAsync();
-        return new GradSettingsDto(settings.NotifyNewMatches, settings.NotifyFollowUps, settings.MatchAlertThresholdPercent, settings.ShowGpaOnProfile);
+        return new GradSettingsDto(
+            settings.NotifyNewMatches, settings.NotifyFollowUps,
+            settings.MatchAlertThresholdPercent, settings.ShowGpaOnProfile,
+            settings.ThemePreference, settings.AlertKeywords, settings.AlertLocations);
     }
 
     public async Task<GradSettingsDto> GetSettingsAsync(int userId)
     {
         var s = await GetSettingsEntityAsync(userId);
-        return new GradSettingsDto(s.NotifyNewMatches, s.NotifyFollowUps, s.MatchAlertThresholdPercent, s.ShowGpaOnProfile);
+        return new GradSettingsDto(
+            s.NotifyNewMatches, s.NotifyFollowUps, s.MatchAlertThresholdPercent, s.ShowGpaOnProfile,
+            s.ThemePreference, s.AlertKeywords, s.AlertLocations);
+    }
+
+    /// <summary>Alert filters are free-form comma lists; store trimmed,
+    /// de-duplicated, capped values so regeneration stays predictable.</summary>
+    private static string? TruncateAlertList(string? raw, int max)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var items = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(i => i.Length > 40 ? i[..40] : i)
+            .GroupBy(i => i, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Key)
+            .ToList();
+        var joined = string.Join(", ", items);
+        return joined.Length == 0 ? null : joined.Length > max ? joined[..max].TrimEnd() + "…" : joined;
     }
 }

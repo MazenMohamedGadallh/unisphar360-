@@ -58,6 +58,24 @@ public class AcademicService
     // case-insensitively so hand-written values like "current" still match.
     private const string CurrentSemester = "current";
 
+    /// <summary>Institutional 4.0 scale (matches the seeded demo records:
+    /// B+ = 3.3, A- = 3.7, ...). Used when a letter is assigned without
+    /// explicit points so GPA and letter always agree.</summary>
+    public static double LetterToPoints(string letter) => letter.Trim().ToUpperInvariant() switch
+    {
+        "A" => 4.0,
+        "A-" => 3.7,
+        "B+" => 3.3,
+        "B" => 3.0,
+        "B-" => 2.7,
+        "C+" => 2.3,
+        "C" => 2.0,
+        "C-" => 1.7,
+        "D+" => 1.3,
+        "D" => 1.0,
+        _ => 0.0
+    };
+
     public async Task<int> GetUnreadCountAsync(int userId) =>
         await _db.Notifications.CountAsync(n => n.UserId == userId && !n.IsRead);
 
@@ -141,11 +159,20 @@ public class AcademicService
         var insights = new List<DashboardInsightDto>();
 
         var rows = await GetDashboardPerformanceAsync(userId, "Current");
-        var weakest = rows.OrderBy(r => r.GradePoints).ThenBy(r => r.AttendancePercent).FirstOrDefault();
-        if (weakest is not null && weakest.GradePoints < 3.0)
+        // Focus on graded courses only: an ungraded (in-progress) course has
+        // no grade yet, so "grade ()" warnings would be nonsense.
+        var weakest = rows
+            .Where(r => !string.IsNullOrWhiteSpace(r.GradeLetter))
+            .OrderBy(r => r.GradePoints).ThenBy(r => r.AttendancePercent)
+            .FirstOrDefault()
+            ?? rows.OrderBy(r => r.AttendancePercent).FirstOrDefault();
+        if (weakest is not null && (weakest.GradePoints < 3.0 || weakest.AttendancePercent < 90))
         {
+            var gradePart = string.IsNullOrWhiteSpace(weakest.GradeLetter)
+                ? "in progress"
+                : $"grade ({weakest.GradeLetter})";
             insights.Add(new DashboardInsightDto("Warning", $"{weakest.CourseName} needs attention",
-                $"Your grade ({weakest.GradeLetter}) and attendance ({weakest.AttendancePercent}%) in {weakest.CourseName} are below target. A focused study block this week can help.",
+                $"Your {gradePart} and attendance ({weakest.AttendancePercent}%) in {weakest.CourseName} are below target. A focused study block this week can help.",
                 "View study plan", "/study-planner"));
         }
 

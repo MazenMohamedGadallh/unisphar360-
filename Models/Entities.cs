@@ -26,6 +26,9 @@ public class User
     public string? Specialization { get; set; }   // doctor: field they teach
     public string? GraduatedFrom { get; set; }    // graduate: university/faculty
     public int? GraduationYear { get; set; }      // graduate
+    // Locked profile field: set at registration or by an admin only
+    // (administrators manage it via the admin user-management API).
+    public string? Address { get; set; }
 }
 
 public class ModuleItem
@@ -198,6 +201,7 @@ public class CourseMaterial
     public string Content { get; set; } = "";
     public string? FileUrl { get; set; }
     public int? UploadedByUserId { get; set; }
+    public DateTime? DeadlineUtc { get; set; }  // assignments: submission deadline
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 

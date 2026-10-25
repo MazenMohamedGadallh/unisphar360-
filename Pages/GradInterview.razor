@@ -153,7 +153,7 @@ else
         if (session is not null)
         {
             _selected = session;
-            foreach (var q in session.Questions)
+            foreach (var q in session.Questions ?? [])
             {
                 if (!_drafts.ContainsKey(q.Id)) _drafts[q.Id] = q.AnswerText ?? "";
             }
@@ -181,7 +181,7 @@ else
         if (error is not null) { _error = error; StateHasChanged(); return; }
         if (value is not null)
         {
-            var existing = session.Questions.FirstOrDefault(x => x.Id == value.Id);
+            var existing = session.Questions?.FirstOrDefault(x => x.Id == value.Id);
             if (existing is not null)
             {
                 existing.AnswerText = value.AnswerText;

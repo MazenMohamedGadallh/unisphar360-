@@ -1,6 +1,7 @@
 @page "/graduate/profile"
 @inherits UniSphere.Api.Components.GradPageBase
 @using System.Net
+@using System.Net.Http.Headers
 @using Microsoft.AspNetCore.Components.Forms
 
 <PageTitle>My Career Profile - UniSphere 360+</PageTitle>
@@ -29,7 +30,7 @@ else if (_profile is not null)
 
     <div class="grad-two-col">
         <div class="card">
-            <div class="card-header"><h3>Profile fields</h3></div>
+            <div class="card-header"><h3><Icon Name="user-round" Size="16" /> Profile fields</h3></div>
             <form @onsubmit="SaveAsync" class="profile-form">
                 <div class="form-group">
                     <label for="grHeadline">Professional headline</label>
@@ -103,7 +104,83 @@ else if (_profile is not null)
 
         <div>
             <div class="card" style="margin-bottom:14px;">
-                <div class="card-header"><h3>Skills (@_profile.Skills.Count)</h3></div>
+                <div class="card-header">
+                    <h3><Icon Name="graduation-cap" Size="16" /> Education &amp; account</h3>
+                </div>
+                <div class="grad-list">
+                    <div class="prof-row"><span class="prof-label">Field of study</span><span>@(Show(_profile.Major))</span></div>
+                    <div class="prof-row"><span class="prof-label">Department</span><span>@(Show(_profile.Department))</span></div>
+                    <div class="prof-row"><span class="prof-label">University</span><span>@(Show(_profile.UniversityName))</span></div>
+                    <div class="prof-row"><span class="prof-label">Graduated from</span><span>@(Show(_profile.GraduatedFrom))</span></div>
+                    <div class="prof-row"><span class="prof-label">Graduation year</span><span>@(_profile.GraduationYear?.ToString() ?? "—")</span></div>
+                </div>
+                <p class="muted" style="margin:8px 0 0;">Academic details are managed by the university. Contact support to correct them.</p>
+            </div>
+
+            <div class="card" style="margin-bottom:14px;">
+                <div class="card-header">
+                    <h3><Icon Name="target" Size="16" /> Profile completion</h3>
+                    <span class="grad-badge">@_profile.CompletionPercent%</span>
+                </div>
+                <div class="completion-bar" aria-label="@("Profile completion: " + _profile.CompletionPercent + "%")">
+                    <span style="width:@_profile.CompletionPercent%;"></span>
+                </div>
+                @if (_profile.MissingFields.Count == 0)
+                {
+                    <p class="muted" style="margin:10px 0 0;">Everything is filled in — well done.</p>
+                }
+                else
+                {
+                    <p class="muted" style="margin:10px 0 6px;">Still missing:</p>
+                    <div class="missing-chips">
+                        @foreach (var missing in _profile.MissingFields)
+                        {
+                            <span class="missing-chip">@missing</span>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="card" style="margin-bottom:14px;">
+                <div class="card-header">
+                    <h3><Icon Name="file-text" Size="16" /> CV &amp; Resume</h3>
+                    <a class="btn btn-small" href="/graduate/cv">Open CV Studio</a>
+                </div>
+                @if (_latestCv is null)
+                {
+                    <p class="muted" style="margin:4px 0 10px;">
+                        No CV on file yet. Upload one so AI matching, interview prep, and skill-gap analysis
+                        have real material to work with.
+                    </p>
+                }
+                else
+                {
+                    <div class="cv-latest">
+                        <Icon Name="file-text" Size="18" />
+                        <div class="cv-meta">
+                            <div class="cv-mname"><strong>@TruncateName(_latestCv.FileName)</strong> <span class="muted">&middot; @(_latestCv.SizeBytes / 1024) KB</span></div>
+                            <div class="muted">
+                                Uploaded @FormatUtc(_latestCv.UploadedAtUtc) &middot; @_latestCv.ParseStatus
+                                @if (_latestCv.HasAnalysis)
+                                {
+                                    <span class="grad-badge">AI analysis ready</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_latestCv.ParseError))
+                    {
+                        <p class="muted" style="margin:8px 0 0;">Extraction note: @_latestCv.ParseError. You can enter manual text in CV Studio.</p>
+                    }
+                }
+                <label class="app-file-upload" style="margin-top:10px;">
+                    <InputFile OnChange="@(e => UploadCvAsync(e.File))" accept=".pdf,.doc,.docx" />
+                    <span class="btn btn-primary btn-small">@(_uploadingCv ? "Uploading…" : "Upload CV (PDF or DOCX)")</span>
+                </label>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h3><Icon Name="star" Size="16" /> Skills (@_profile.Skills.Count)</h3></div>
                 @if (_profile.Skills.Count == 0)
                 {
                     <div class="empty-state">No skills added yet.</div>
@@ -130,7 +207,7 @@ else if (_profile is not null)
                         <label for="grSkillLevel">Level</label>
                         <input id="grSkillLevel" @bind="_skillLevel" placeholder="Intermediate" />
                     </div>
-                    <button class="btn btn-primary btn-small" @onclick="AddSkillAsync" disabled="@string.IsNullOrWhiteSpace(_skillName)">Add skill</button>
+                    <button class="btn btn-primary btn-small" @onclick="AddSkillAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_skillName))">@(_busy ? "Working..." : "Add skill")</button>
                 </div>
             </div>
 
@@ -193,7 +270,7 @@ else if (_profile is not null)
                         <label for="grEntryPeriod">Period</label>
                         <input id="grEntryPeriod" @bind="_entryPeriod" placeholder="2025 - 2026" />
                     </div>
-                    <button class="btn btn-primary btn-small" @onclick="AddEntryAsync" disabled="@string.IsNullOrWhiteSpace(_entryTitle)">Add</button>
+                    <button class="btn btn-primary btn-small" @onclick="AddEntryAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_entryTitle))">@(_busy ? "Working..." : "Add")</button>
                 </div>
             </div>
         </div>
@@ -204,6 +281,12 @@ else if (_profile is not null)
     private GradProfileModel? _profile;
     private bool _saving;
     private string? _savedMessage;
+    private bool _busy;
+
+    // CV widget
+    private List<GradCvModel> _cvs = [];
+    private GradCvModel? _latestCv;
+    private bool _uploadingCv;
 
     private string _editHeadline = "";
     private string _editSummary = "";
@@ -261,6 +344,12 @@ else if (_profile is not null)
             _profile = profile;
             FillFromProfile(profile);
         }
+        var cvs = await GetJsonAsync<List<GradCvModel>>("/api/grad/profile/cv");
+        if (cvs is not null)
+        {
+            _cvs = cvs.OrderByDescending(c => c.UploadedAtUtc).ToList();
+            _latestCv = _cvs.FirstOrDefault();
+        }
         _loading = false;
         StateHasChanged();
     }
@@ -294,9 +383,12 @@ else if (_profile is not null)
 
     private async Task AddSkillAsync()
     {
-        if (string.IsNullOrWhiteSpace(_skillName)) return;
+        if (string.IsNullOrWhiteSpace(_skillName) || _busy) return;
+        _busy = true;
+        StateHasChanged();
         var (value, error) = await PostJsonAsync<GradSkillModel>("/api/grad/profile/skills",
             new { name = _skillName, level = string.IsNullOrWhiteSpace(_skillLevel) ? null : (object?)_skillLevel });
+        _busy = false;
         if (error is not null) { _error = error; StateHasChanged(); return; }
         _skillName = "";
         _skillLevel = "";
@@ -305,19 +397,27 @@ else if (_profile is not null)
 
     private async Task RemoveSkillAsync(int id)
     {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        StateHasChanged();
         var error = await DeleteAsync($"/api/grad/profile/skills/{id}");
-        if (error is not null) _error = error;
+        _busy = false;
+        if (error is not null) { _error = error; _loading = false; StateHasChanged(); return; }
         await LoadAsync();
     }
 
     private async Task AddEntryAsync()
     {
-        if (string.IsNullOrWhiteSpace(_entryTitle)) return;
+        if (string.IsNullOrWhiteSpace(_entryTitle) || _busy) return;
+        _busy = true;
+        StateHasChanged();
         var (value, error) = await PostJsonAsync<ProfileEntryItemModel>("/api/grad/profile/entries", new
         {
             kind = _entryKind, title = _entryTitle,
             organization = _entryOrg, description = _entryDesc, period = _entryPeriod
         });
+        _busy = false;
         if (error is not null) { _error = error; StateHasChanged(); return; }
         _entryTitle = "";
         _entryOrg = "";
@@ -328,8 +428,61 @@ else if (_profile is not null)
 
     private async Task RemoveEntryAsync(int id)
     {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        StateHasChanged();
         var error = await DeleteAsync($"/api/grad/profile/entries/{id}");
-        if (error is not null) _error = error;
+        _busy = false;
+        if (error is not null) { _error = error; _loading = false; StateHasChanged(); return; }
         await LoadAsync();
     }
+
+    private async Task UploadCvAsync(IBrowserFile file)
+    {
+        if (file.Size > 10 * 1024 * 1024)
+        {
+            _error = "CV file is larger than the 10 MB limit.";
+            StateHasChanged();
+            return;
+        }
+        _uploadingCv = true;
+        _error = null;
+        StateHasChanged();
+        using var content = new MultipartFormDataContent();
+        content.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data") { Name = "file" };
+        await using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+        var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer);
+        buffer.Position = 0;
+        var fileContent = new StreamContent(buffer);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+        content.Add(fileContent, "file", file.Name);
+        var (value, error) = await PostMultipartAsync<GradCvModel>("/api/grad/profile/cv", content);
+        _uploadingCv = false;
+        if (error is not null)
+        {
+            _error = error;
+        }
+        else if (value is not null)
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            await LoadAsync();
+        }
+        StateHasChanged();
+    }
+
+    private static string Show(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
+
+    private static string TruncateName(string name)
+    {
+        var shown = System.IO.Path.GetFileName(name);
+        return shown.Length <= 42 ? shown : shown[..39] + "…";
+    }
+
+    private static string FormatUtc(DateTime utc) => utc.ToString("MMM dd, yyyy HH:mm 'UTC'");
 }

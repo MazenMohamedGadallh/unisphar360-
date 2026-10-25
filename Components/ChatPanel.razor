@@ -14,7 +14,7 @@
     @if (ShowConversations && !Compact)
     {
         <aside class="chat-side">
-            <button class="btn btn-primary btn-sm chat-new" @onclick="NewChatAsync" disabled="@_streaming">+ New chat</button>
+            <button class="btn btn-primary btn-sm chat-new" @onclick="NewChatAsync" disabled="@_streaming"><Icon Name="plus" Size="15" /> New chat</button>
             @if (_conversations is null)
             {
                 <div class="loading">Loading…</div>
@@ -37,8 +37,8 @@
                         else
                         {
                             <button class="chat-conv-title" @onclick="() => SelectConversationAsync(c.Id)" title="@c.Title">@c.Title</button>
-                            <button class="icon-btn" title="Rename" aria-label="Rename conversation" @onclick="() => StartRename(c)">&#9998;</button>
-                            <button class="icon-btn" title="Delete" aria-label="Delete conversation" @onclick="() => AskDelete(c.Id)">🗑</button>
+                            <button class="icon-btn" title="Rename" aria-label="Rename conversation" @onclick="() => StartRename(c)"><Icon Name="pencil" Size="15" /></button>
+                            <button class="icon-btn" title="Delete" aria-label="Delete conversation" @onclick="() => AskDelete(c.Id)"><Icon Name="trash-2" Size="15" Class="icon-danger" /></button>
                         }
                     </div>
                 }
@@ -139,7 +139,7 @@
         </div>
         @if (CanRegenerate)
         {
-            <button class="btn btn-sm btn-secondary" @onclick="() => SendAsync(true)" disabled="@_streaming">↻ Regenerate</button>
+            <button class="btn btn-sm btn-secondary" @onclick="() => SendAsync(true)" disabled="@_streaming"><Icon Name="refresh-cw" Size="14" /> Regenerate</button>
         }
         <p class="chat-note">AI can make mistakes. Check important information.</p>
     </section>

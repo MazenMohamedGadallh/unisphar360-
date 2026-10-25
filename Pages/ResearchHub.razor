@@ -18,10 +18,15 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 <!-- Search -->
 <div class="search-section">
     <div class="search-box-large">
-        <span class="search-icon">&#128269;</span>
+        <span class="search-icon"><Icon Name="search" /></span>
         <input type="text" placeholder="Search research papers..." @bind="_searchQuery" @bind:event="oninput" @onkeyup="HandleSearch" />
     </div>
 </div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadTrendingAsync">Retry</button></div>
+}
 
 <!-- Trending Papers -->
 @if (string.IsNullOrWhiteSpace(_searchQuery))
@@ -43,7 +48,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
             <div class="paper-list">
                 @foreach (var paper in _trending)
                 {
-                    <div class="paper-item" @onclick="() => _selectedPaper = paper">
+                    <div class="paper-item" @onclick="() => OpenPaper(paper)">
                         <div class="paper-title">@paper.Title</div>
                         <div class="paper-authors">@paper.Authors</div>
                         @if (!string.IsNullOrEmpty(paper.Abstract))
@@ -68,7 +73,7 @@ else
     <!-- Search Results -->
     <div class="card" style="margin-bottom: 24px;">
         <div class="card-header">
-            <h3>Search Results (@_searchResults?.Count ?? 0)</h3>
+            <h3>Search Results (@(_searchResults?.Count ?? 0))</h3>
         </div>
         @if (_searchResults is null)
         {
@@ -83,7 +88,7 @@ else
             <div class="paper-list">
                 @foreach (var paper in _searchResults)
                 {
-                    <div class="paper-item" @onclick="() => _selectedPaper = paper">
+                    <div class="paper-item" @onclick="() => OpenPaper(paper)">
                         <div class="paper-title">@paper.Title</div>
                         <div class="paper-authors">@paper.Authors</div>
                         @if (!string.IsNullOrEmpty(paper.Abstract))
@@ -94,7 +99,7 @@ else
                             <span class="paper-source">@paper.Source</span>
                             @if (paper.PublishedDate.HasValue)
                             {
-                                <span class="paper-date">@paper.PublishedDate.Value.ToString("MMM yyyy")}</span>
+                                <span class="paper-date">@paper.PublishedDate.Value.ToString("MMM yyyy")</span>
                             }
                         </div>
                     </div>
@@ -107,11 +112,11 @@ else
 <!-- Paper Detail Modal -->
 @if (_selectedPaper is not null)
 {
-    <div class="modal-overlay" @onclick="() => _selectedPaper = null">
+    <div class="modal-overlay" @onclick="ClosePaper">
         <div class="modal" @onclick:stopPropagation>
             <div class="modal-header">
                 <h3>@_selectedPaper.Title</h3>
-                <button class="modal-close" @onclick="() => _selectedPaper = null">&times;</button>
+                <button class="modal-close" @onclick="ClosePaper">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="paper-authors">@_selectedPaper.Authors</div>
@@ -120,13 +125,17 @@ else
                     <div class="paper-full-abstract">@_selectedPaper.Abstract</div>
                 }
                 <div class="paper-actions">
-                    <button class="btn btn-primary" @onclick="SummarizePaper">Summarize</button>
+                    <button class="btn btn-primary" @onclick="SummarizePaper" disabled="@_summarizing">@(_summarizing ? "Summarizing…" : "Summarize")</button>
                     @if (!string.IsNullOrEmpty(_selectedPaper.Url))
                     {
-                        <a href="@_selectedPaper.Url" target="_blank" class="btn btn-secondary">View Original</a>
+                        <a href="@_selectedPaper.Url" target="_blank" rel="noopener" class="btn btn-secondary">View Original</a>
                     }
                 </div>
-                @if (!string.IsNullOrEmpty(_summary))
+                @if (!string.IsNullOrEmpty(_summaryError))
+                {
+                    <div class="alert alert-error">@_summaryError <button class="btn btn-small" @onclick="SummarizePaper">Retry</button></div>
+                }
+                else if (_summaryFor == _selectedPaper.Id && !string.IsNullOrEmpty(_summary))
                 {
                     <div class="summary-result">
                         <h4>Summary</h4>
@@ -144,25 +153,86 @@ else
     private List<ResearchPaperDto>? _searchResults;
     private ResearchPaperDto? _selectedPaper;
     private string? _summary;
+    private int _summaryFor;
+    private bool _summarizing;
+    private string? _summaryError;
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
-        _trending = await Http.GetFromJsonAsync<List<ResearchPaperDto>>("/api/research/trending");
+        await LoadTrendingAsync();
+    }
+
+    private async Task LoadTrendingAsync()
+    {
+        _error = null;
+        try
+        {
+            _trending = await Http.GetFromJsonAsync<List<ResearchPaperDto>>("/api/research/trending");
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not load papers ({(ex.InnerException ?? ex).Message}).";
+        }
+        StateHasChanged();
     }
 
     private async Task HandleSearch(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_searchQuery))
+        if (e.Key != "Enter" || string.IsNullOrWhiteSpace(_searchQuery)) return;
+        _error = null;
+        try
         {
             _searchResults = await Http.GetFromJsonAsync<List<ResearchPaperDto>>($"/api/research/papers?q={Uri.EscapeDataString(_searchQuery)}");
         }
+        catch (Exception ex)
+        {
+            _searchResults = [];
+            _error = $"Search failed ({(ex.InnerException ?? ex).Message}).";
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Opens the modal for one paper. The cached summary is only
+    /// shown when it was generated FOR this paper, never for another.</summary>
+    private void OpenPaper(ResearchPaperDto paper)
+    {
+        _selectedPaper = paper;
+        _summaryError = null;
+        StateHasChanged();
+    }
+
+    private void ClosePaper()
+    {
+        _selectedPaper = null;
+        _summaryError = null;
+        StateHasChanged();
     }
 
     private async Task SummarizePaper()
     {
-        if (_selectedPaper is null) return;
-        var result = await Http.GetFromJsonAsync<SummaryResult>($"/api/research/summarize/{_selectedPaper.Id}");
-        _summary = result?.Summary;
+        if (_selectedPaper is null || _summarizing) return;
+        var paper = _selectedPaper;
+        _summarizing = true;
+        _summaryError = null;
+        StateHasChanged();
+        SummaryResult? result;
+        try
+        {
+            result = await Http.GetFromJsonAsync<SummaryResult>($"/api/research/summarize/{paper.Id}");
+        }
+        catch (Exception ex)
+        {
+            result = null;
+            _summaryError = $"Summary failed ({(ex.InnerException ?? ex).Message}).";
+        }
+        _summarizing = false;
+        if (result is not null && !string.IsNullOrEmpty(result.Summary))
+        {
+            _summary = result.Summary;
+            _summaryFor = paper.Id;
+        }
+        StateHasChanged();
     }
 }
 

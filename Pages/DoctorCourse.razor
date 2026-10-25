@@ -240,8 +240,8 @@ else
                             }
                         </div>
                     </div>
-                    <button class="btn btn-primary" @onclick="SaveMaterialAsync" disabled="@_saving">
-                        @(_saving ? "Saving..." : "Save Material")
+                    <button class="btn btn-primary" @onclick="SaveMaterialAsync" disabled="@(_saving || _uploadingFile)">
+                        @(_uploadingFile ? "Uploading file..." : _saving ? "Saving..." : "Save material")
                     </button>
                 </div>
             }
@@ -284,7 +284,7 @@ else
                                     </td>
                                     <td>@m.CreatedAtUtc.ToString("MMM d, yyyy")</td>
                                     <td>
-                                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteMaterialAsync(m.Id)">Delete</button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => AskDeleteMaterialAsync(m.Id)">Delete</button>
                                     </td>
                                 </tr>
                             }
@@ -342,11 +342,25 @@ else
                                 <span class="rec-track">@a.Body</span>
                                 <span class="rec-track">@(a.Category ?? "general") · @a.CreatedAtUtc.ToString("MMM d, yyyy")</span>
                             </div>
-                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteAnnouncementAsync(a.Id)">Delete</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => AskDeleteAnnouncementAsync(a.Id)">Delete</button>
                         </div>
                     }
                 </div>
             }
+        </div>
+    }
+
+    @if (_confirmDelete is not null)
+    {
+        <div class="modal-overlay" @onclick="CancelDelete">
+            <div class="modal" role="dialog" aria-modal="true" @onclick:stopPropagation="true" @onkeydown="ConfirmKeyDown">
+                <div class="modal-header"><h3>@_confirmDelete.Title</h3></div>
+                <div class="modal-body"><p>@_confirmDelete.Message</p></div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button class="btn btn-danger" @onclick="RunDeleteAsync" autofocus>Delete</button>
+                </div>
+            </div>
         </div>
     }
 
@@ -362,6 +376,7 @@ else
                     <div class="form-group">
                         <label>Letter grade</label>
                         <select @bind="_gradeLetter">
+                            <option value="">— no grade assigned</option>
                             @foreach (var g in GradeLetters)
                             {
                                 <option value="@g">@g</option>
@@ -546,11 +561,43 @@ else
         _success = null;
     }
 
+    private sealed record ConfirmDelete(string Title, string Message, Func<Task> Run);
+
+    private ConfirmDelete? _confirmDelete;
+
+    private void AskDeleteMaterialAsync(int id) => _confirmDelete = new ConfirmDelete(
+        "Delete material",
+        "Students can no longer open this material once deleted. Continue?",
+        () => DeleteMaterialAsync(id));
+
+    private void AskDeleteAnnouncementAsync(int id) => _confirmDelete = new ConfirmDelete(
+        "Delete announcement",
+        "Students will no longer see this announcement. Continue?",
+        () => DeleteAnnouncementAsync(id));
+
+    private void CancelDelete() => _confirmDelete = null;
+
+    private void ConfirmKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") CancelDelete();
+    }
+
+    private async Task RunDeleteAsync()
+    {
+        var run = _confirmDelete!.Run;
+        _confirmDelete = null;
+        await run();
+    }
+
+    private bool _uploadingFile;
+
     private async Task OnFileSelectedAsync(InputFileChangeEventArgs e)
     {
         _error = null;
         var file = e.File;
         if (file is null) return;
+        _uploadingFile = true;
+        StateHasChanged();
         try
         {
             using var content = new MultipartFormDataContent();
@@ -574,6 +621,13 @@ else
         catch (Exception ex)
         {
             _error = "Upload failed: " + ex.Message;
+        }
+        finally
+        {
+            // Save stays disabled until the upload finishes: a material must
+            // never be created without the file the user attached.
+            _uploadingFile = false;
+            StateHasChanged();
         }
     }
 
@@ -620,15 +674,22 @@ else
     private async Task DeleteMaterialAsync(int id)
     {
         _error = null; _success = null;
-        var resp = await Http.DeleteAsync($"/api/doctor/materials/{id}");
-        if (resp.IsSuccessStatusCode)
+        try
         {
-            _success = "Material deleted.";
-            await LoadTabAsync("materials");
+            var resp = await Http.DeleteAsync($"/api/doctor/materials/{id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _success = "Material deleted.";
+                await LoadTabAsync("materials");
+            }
+            else
+            {
+                _error = "Could not delete material.";
+            }
         }
-        else
+        catch
         {
-            _error = "Could not delete material.";
+            _error = "Could not delete material. Check your connection and try again.";
         }
     }
 
@@ -667,22 +728,31 @@ else
     private async Task DeleteAnnouncementAsync(int id)
     {
         _error = null; _success = null;
-        var resp = await Http.DeleteAsync($"/api/doctor/announcements/{id}");
-        if (resp.IsSuccessStatusCode)
+        try
         {
-            _success = "Announcement deleted.";
-            await LoadTabAsync("announcements");
+            var resp = await Http.DeleteAsync($"/api/doctor/announcements/{id}");
+            if (resp.IsSuccessStatusCode)
+            {
+                _success = "Announcement deleted.";
+                await LoadTabAsync("announcements");
+            }
+            else
+            {
+                _error = "Could not delete announcement.";
+            }
         }
-        else
+        catch
         {
-            _error = "Could not delete announcement.";
+            _error = "Could not delete announcement. Check your connection and try again.";
         }
     }
 
     private void EditStudentGrade(DoctorStudentDto s)
     {
         _gradeStudent = s;
-        _gradeLetter = string.IsNullOrWhiteSpace(s.GradeLetter) ? "A" : s.GradeLetter;
+        // Never default to "A": preselect the real grade (or the
+        // "no grade assigned" option) so a quick Save can't assign an A by accident.
+        _gradeLetter = string.IsNullOrWhiteSpace(s.GradeLetter) ? "" : s.GradeLetter;
     }
 
     private void CloseGradeModal() => _gradeStudent = null;
@@ -690,14 +760,19 @@ else
     private async Task SubmitGradeAsync()
     {
         if (_gradeStudent is null) return;
+        if (string.IsNullOrWhiteSpace(_gradeLetter))
+        {
+            _error = "Pick a letter grade first (or Cancel).";
+            StateHasChanged();
+            return;
+        }
         _saving = true;
         _error = null; _success = null;
         try
         {
             var resp = await Http.PutAsJsonAsync(
                 $"/api/enrollments/{_gradeStudent.EnrollmentId}/grade",
-                new { GradeLetter = _gradeLetter });
-            if (resp.IsSuccessStatusCode)
+                new { GradeLetter = _gradeLetter });            if (resp.IsSuccessStatusCode)
             {
                 _success = $"Grade updated for {_gradeStudent.FullName}.";
                 _gradeStudent = null;

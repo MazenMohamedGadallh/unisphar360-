@@ -9,6 +9,11 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 
 <PageTitle>Student Services - UniSphere 360+</PageTitle>
 
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+
 <div class="page-header">
     <h1>Student Services</h1>
     <p>Events, announcements, FAQs, and support.</p>
@@ -70,8 +75,8 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                     </div>
                     <div class="event-info">
                         <h4>@evt.Title</h4>
-                        <p>&#128205; @evt.Location</p>
-                        <p>@evt.StartsAtUtc.ToString("hh:mm tt")</p>
+                        <p class="event-location"><Icon Name="map-pin" /> @evt.Location</p>
+                        <p class="event-time"><Icon Name="clock" /> @evt.StartsAtUtc.ToString("hh:mm tt")</p>
                     </div>
                 </div>
             }
@@ -95,7 +100,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
         </div>
         <div class="faq-item">
             <h4>How do I change my study plan?</h4>
-            <p>Navigate to the Study Planner page. You can add, edit, or delete study items. Changes are saved automatically.</p>
+            <p>Navigate to the Study Planner page. Add new study items with the form, tick them off as done, or delete them with the trash button on each card. Changes are saved automatically.</p>
         </div>
         <div class="faq-item">
             <h4>Who do I contact for academic support?</h4>
@@ -107,11 +112,29 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 @code {
     private List<AnnouncementDto>? _announcements;
     private List<EventDto>? _events;
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
-        _announcements = await Http.GetFromJsonAsync<List<AnnouncementDto>>("/api/admin/announcements");
-        _events = await Http.GetFromJsonAsync<List<EventDto>>("/api/events?upcoming=true");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _announcements = null;
+        _events = null;
+        StateHasChanged();
+        try
+        {
+            _announcements = await Http.GetFromJsonAsync<List<AnnouncementDto>>("/api/admin/announcements");
+            _events = await Http.GetFromJsonAsync<List<EventDto>>("/api/events?upcoming=true");
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not load services data ({(ex.InnerException ?? ex).Message}).";
+        }
+        StateHasChanged();
     }
 }
 

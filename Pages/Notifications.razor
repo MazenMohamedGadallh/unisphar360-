@@ -1,19 +1,21 @@
 @page "/notifications"
 @using System.Net
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject UniSphere.Api.Services.SharedUnreadBadgeState Badge
+
+<PageTitle>Notifications - UniSphere 360+</PageTitle>
+
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
 localStorage JWT as a bearer header. /api stays [Authorize]-guarded
 and MainLayout bounces anonymous users to /login after auth resolves.
 *@
-@inject HttpClient Http
-@inject NavigationManager Nav
-
-<PageTitle>Notifications - UniSphere 360+</PageTitle>
 
 <div class="page-header">
     <h1>Notifications</h1>
-    <p>Stay updated with the latest announcements and reminders.</p>
+    <p>Announcements, career matches, and follow-up reminders in one place.</p>
 </div>
 
 @if (!string.IsNullOrEmpty(_error))
@@ -23,27 +25,68 @@ and MainLayout bounces anonymous users to /login after auth resolves.
         <button class="btn-sm btn btn-secondary" @onclick="LoadAsync">Retry</button>
     </div>
 }
+else if (!string.IsNullOrEmpty(_opError))
+{
+    <div class="alert alert-error" role="status">@_opError</div>
+}
 
 <div class="card">
     <div class="card-header">
         <h3>All Notifications</h3>
-        <button class="btn btn-sm btn-secondary" @onclick="MarkAllRead">Mark All as Read</button>
+        <button class="btn btn-sm btn-secondary" @onclick="MarkAllRead" disabled="@(_notifications is null || _unreadCount == 0)">
+            Mark all read
+        </button>
+    </div>
+
+    <div class="notif-filters" role="tablist" aria-label="Filter notifications">
+        <button role="tab" aria-selected="@(_filter == Filter.All)" class="chip @(_filter == Filter.All ? "chip-active" : "")" @onclick='() => SetFilter(Filter.All)'>
+            All <span class="chip-count">@(_notifications?.Count ?? 0)</span>
+        </button>
+        <button role="tab" aria-selected="@(_filter == Filter.Unread)" class="chip @(_filter == Filter.Unread ? "chip-active" : "")" @onclick='() => SetFilter(Filter.Unread)'>
+            Unread <span class="chip-count">@_unreadCount</span>
+        </button>
+        @foreach (var cat in _presentCategories)
+        {
+            var f = FilterForCategory(cat);
+            <button role="tab" aria-selected="@(_filter == f)" class="chip @(_filter == f ? "chip-active" : "")" @onclick='() => SetFilter(f)'>
+                <Icon Name="@IconForCategory(cat)" Size="13" /> @LabelForCategory(cat)
+            </button>
+        }
     </div>
 
     @if (_notifications is null)
     {
         <div class="loading">Loading notifications...</div>
     }
-    else if (!_notifications.Any())
+    else if (Filtered.Count == 0)
     {
-        <div class="empty-state">You have no notifications.</div>
+        <div class="empty-state">
+            @if (_notifications.Count == 0)
+            {
+                <div class="empty-icon"><Icon Name="bell-off" Size="28" /></div>
+                <p><strong>You're all caught up</strong></p>
+                <p class="muted">Alerts from career matches, follow-ups, and campus news will appear here.</p>
+            }
+            else if (_filter == Filter.Unread)
+            {
+                <div class="empty-icon"><Icon Name="check" Size="28" /></div>
+                <p><strong>No unread notifications</strong></p>
+                <p class="muted">Everything has been read. New alerts will show up as they arrive.</p>
+            }
+            else
+            {
+                <div class="empty-icon"><Icon Name="filter" Size="28" /></div>
+                <p><strong>Nothing in this category</strong></p>
+                <p class="muted">Try switching back to All.</p>
+            }
+        </div>
     }
     else
     {
         <div class="notification-list">
-            @foreach (var notification in _notifications)
+            @foreach (var notification in Filtered)
             {
-                <div class="notification-item @(notification.IsRead ? "" : "unread")" @onclick="() => MarkRead(notification.Id)">
+                <div class="notification-item @(notification.IsRead ? "" : "unread")" @onclick="() => OpenAsync(notification)">
                     <div class="notification-indicator">
                         @if (!notification.IsRead)
                         {
@@ -51,37 +94,141 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                         }
                     </div>
                     <div class="notification-content">
+                        <div class="notif-cat-row">
+                            <span class="notif-cat notif-cat-@SlugForCategory(notification.Category)">
+                                <Icon Name="@IconForCategory(notification.Category)" Size="12" /> @LabelForCategory(notification.Category)
+                            </span>
+                            <span class="notification-time">@FormatTime(notification.CreatedAtUtc)</span>
+                        </div>
                         <h4>@notification.Title</h4>
                         <p>@notification.Body</p>
-                        <span class="notification-time">@notification.CreatedAtUtc.ToString("MMM dd, yyyy HH:mm")</span>
                     </div>
-                    @if (!notification.IsRead)
-                    {
-                        <button class="btn btn-sm btn-link" @onclick:stopPropagation="true" @onclick="() => MarkRead(notification.Id)">Mark Read</button>
-                    }
+                    <div class="notif-actions">
+                        @if (!notification.IsRead)
+                        {
+                            <button class="btn btn-sm btn-link" title="Mark as read"
+                                    @onclick:stopPropagation="true" @onclick="() => MarkRead(notification.Id)">Mark read</button>
+                        }
+                        <button class="btn btn-sm btn-link notif-delete" title="Delete notification"
+                                @onclick:stopPropagation="true" @onclick="() => DeleteAsync(notification.Id)">
+                            <Icon Name="trash-2" Size="14" />
+                        </button>
+                    </div>
                 </div>
             }
         </div>
     }
 </div>
 
+<style>
+    .notif-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border, #ececf0); }
+    .notif-filters .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border, #e2e2ea); background: var(--surface, #fff); border-radius: 999px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
+    .notif-filters .chip-active { background: var(--accent, #eef3ff); border-color: var(--accent, #b9c8f7); font-weight: 600; }
+    .chip-count { font-size: 11px; font-weight: 700; background: var(--border, #eef0f4); border-radius: 999px; padding: 1px 7px; }
+    .notif-cat-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .notif-cat { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; border-radius: 6px; padding: 2px 7px; }
+    .notif-cat-career-match { color: var(--primary, #3651d4); background: color-mix(in srgb, var(--primary, #3651d4) 12%, transparent); }
+    .notif-cat-followup { color: var(--warning, #b45309); background: color-mix(in srgb, var(--warning, #f59e0b) 15%, transparent); }
+    .notif-cat-career-announcement { color: var(--success, #157347); background: color-mix(in srgb, var(--success, #22c55e) 13%, transparent); }
+    .notif-cat-system { color: var(--muted, #6b7280); background: var(--border, #eef0f4); }
+    .notif-actions { display: flex; align-items: center; gap: 2px; }
+    .notif-delete { color: var(--muted, #9ca3af); }
+    .notif-delete:hover { color: var(--danger, #dc2626); }
+    .empty-state { padding: 36px 16px; text-align: center; }
+    .empty-icon { color: var(--muted, #9ca3af); margin-bottom: 4px; }
+</style>
+
 @code {
+    private enum Filter { All, Unread, CareerMatch, FollowUp, CareerAnnouncement }
+
     private List<NotificationDto>? _notifications;
+    private Filter _filter = Filter.All;
     private string? _error;
+    private int _unreadCount;
+    private string? _opError;
+
+    private static readonly Dictionary<string, Filter> CategoryMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["careerMatch"] = Filter.CareerMatch,
+        ["followUp"] = Filter.FollowUp,
+        ["careerAnnouncement"] = Filter.CareerAnnouncement
+    };
+
+    private List<string> _presentCategories = [];
+
+    private List<NotificationDto> Filtered =>
+        _notifications?.Where(FilterMatches).ToList() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
     }
 
+    private bool FilterMatches(NotificationDto n) => _filter switch
+    {
+        Filter.All => true,
+        Filter.Unread => !n.IsRead,
+        _ => CategoryMap.TryGetValue(n.Category, out var f) && f == _filter
+    };
+
+    private static Filter FilterForCategory(string category) =>
+        CategoryMap.TryGetValue(category, out var f) ? f : Filter.All;
+
+    private static string IconForCategory(string category) => category.ToLowerInvariant() switch
+    {
+        "careerMatch" => "sparkles",
+        "followUp" => "calendar-clock",
+        "careerAnnouncement" => "megaphone",
+        _ => "bell"
+    };
+
+    private static string LabelForCategory(string category) => category.ToLowerInvariant() switch
+    {
+        "careerMatch" => "Job match",
+        "followUp" => "Follow-up",
+        "careerAnnouncement" => "Career news",
+        _ => "System"
+    };
+
+    private static string SlugForCategory(string category) => category.ToLowerInvariant() switch
+    {
+        "careerMatch" => "career-match",
+        "followUp" => "followup",
+        "careerAnnouncement" => "career-announcement",
+        _ => "system"
+    };
+
+    private static string FormatTime(DateTime utc) =>
+        utc.ToString("MMM dd, yyyy HH:mm 'UTC'");
+
+    private void SetFilter(Filter filter)
+    {
+        _filter = filter;
+    }
+
     private async Task LoadAsync()
     {
         _error = null;
         _notifications = null;
+        _presentCategories.Clear();
+        _opError = null;
         StateHasChanged();
         try
         {
-            _notifications = await Http.GetFromJsonAsync<List<NotificationDto>>("/api/notifications");
+            var list = await Http.GetFromJsonAsync<List<NotificationDto>>("/api/notifications");
+            if (list is not null)
+            {
+                _notifications = list;
+                foreach (var n in list)
+                {
+                    var slug = n.Category.ToLowerInvariant();
+                    if (CategoryMap.ContainsKey(slug) && !_presentCategories.Contains(slug, StringComparer.OrdinalIgnoreCase))
+                        _presentCategories.Add(slug);
+                }
+            }
+            var count = await Http.GetFromJsonAsync<UnreadCountDto>("/api/notifications/unread-count");
+            _unreadCount = count?.UnreadCount ?? 0;
+            Badge.Publish(_unreadCount);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
         {
@@ -96,39 +243,131 @@ and MainLayout bounces anonymous users to /login after auth resolves.
         StateHasChanged();
     }
 
-    private async Task MarkRead(int id)
+    /// <summary>Re-fetches notifications and recomputes the unread count when an
+    /// optimistic update turns out to have failed server-side, so the page never
+    /// shows a false read/deleted state.</summary>
+    private async Task ResyncAsync()
     {
         try
         {
-            await Http.PostAsync($"/api/notifications/{id}/read", null);
+            var list = await Http.GetFromJsonAsync<List<NotificationDto>>("/api/notifications");
+            if (list is not null)
+            {
+                _notifications = list;
+                _unreadCount = list.Count(n => !n.IsRead);
+            }
+            else
+                _unreadCount = 0;
         }
-        catch { /* keep UI feedback; badge refresh happens on next load */ }
+        catch
+        {
+            // Leave the current view; the retry button still works.
+        }
+        Badge.Publish(_unreadCount);
+        StateHasChanged();
+    }
+
+    private async Task OpenAsync(NotificationDto n)
+    {
+        if (!n.IsRead) await MarkRead(n.Id);
+        var route = n.Category.ToLowerInvariant() switch
+        {
+            "careerMatch" => "/graduate/jobs",
+            "followUp" => "/graduate/applications",
+            "careerAnnouncement" => "/graduate",
+            _ => (string?)null
+        };
+        if (route is not null) Nav.NavigateTo(route);
+        else StateHasChanged();
+    }
+
+    private async Task MarkRead(int id)
+    {
+        _opError = null;
+        bool ok = false;
+        try
+        {
+            using var resp = await Http.PostAsync($"/api/notifications/{id}/read", null);
+            ok = resp.IsSuccessStatusCode;
+        }
+        catch { /* treated as failure below: the row is NOT flipped locally */ }
+        if (!ok)
+        {
+            // Honest state: the server did not confirm the read. Refresh so
+            // the UI never shows "read" for a notification that isn't.
+            _opError = "Could not mark that notification as read. The page has been refreshed — please try again.";
+            await ResyncAsync();
+            return;
+        }
         if (_notifications is not null)
         {
-            var index = _notifications.FindIndex(n => n.Id == id);
-            if (index >= 0)
+            foreach (var n in _notifications.Where(n => n.Id == id && !n.IsRead).ToArray())
             {
-                var updated = _notifications[index] with { IsRead = true };
-                _notifications[index] = updated;
+                _notifications[_notifications.IndexOf(n)] = n with { IsRead = true };
+                _unreadCount = Math.Max(0, _unreadCount - 1);
+                Badge.Publish(_unreadCount);
             }
         }
+        StateHasChanged();
     }
 
     private async Task MarkAllRead()
     {
+        _opError = null;
+        bool ok = false;
         try
         {
-            await Http.PostAsync("/api/notifications/read-all", null);
+            using var resp = await Http.PostAsync("/api/notifications/read-all", null);
+            ok = resp.IsSuccessStatusCode;
         }
-        catch { /* same as above */ }
+        catch { /* treated as failure below */ }
+        if (!ok)
+        {
+            _opError = "Could not mark everything as read. The page has been refreshed — please try again.";
+            await ResyncAsync();
+            return;
+        }
         if (_notifications is not null)
         {
-            for (int i = 0; i < _notifications.Count; i++)
+            foreach (var n in _notifications.Where(n => !n.IsRead).ToArray())
             {
-                _notifications[i] = _notifications[i] with { IsRead = true };
+                _notifications[_notifications.IndexOf(n)] = n with { IsRead = true };
             }
         }
+        _unreadCount = 0;
+        Badge.Publish(0);
+        StateHasChanged();
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        _opError = null;
+        bool ok = false;
+        try
+        {
+            using var resp = await Http.DeleteAsync($"/api/notifications/{id}");
+            ok = resp.IsSuccessStatusCode;
+        }
+        catch { /* treated as failure below */ }
+        if (!ok)
+        {
+            _opError = "Could not delete that notification. The page has been refreshed — please try again.";
+            await ResyncAsync();
+            return;
+        }
+        if (_notifications is not null)
+        {
+            var removed = _notifications.FirstOrDefault(n => n.Id == id);
+            if (removed is not null)
+            {
+                _notifications.Remove(removed);
+                if (!removed.IsRead) { _unreadCount = Math.Max(0, _unreadCount - 1); Badge.Publish(_unreadCount); }
+            }
+        }
+        StateHasChanged();
     }
 }
 
-public record NotificationDto(int Id, string Title, string Body, DateTime CreatedAtUtc, bool IsRead);
+public record NotificationDto(int Id, string Title, string Body, DateTime CreatedAtUtc, bool IsRead, string Category);
+
+public record UnreadCountDto(int UnreadCount);

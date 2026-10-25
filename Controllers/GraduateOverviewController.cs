@@ -64,8 +64,12 @@ public class GraduateSettingsController(GraduateCareerService career) : Controll
     [HttpPut]
     public async Task<ActionResult<GradSettingsDto>> UpdateSettings([FromBody] GradSettingsUpdateRequest request) =>
         await career.UpdateSettingsAsync(UserId, request.NotifyNewMatches, request.NotifyFollowUps,
-            request.MatchAlertThresholdPercent, request.ShowGpaOnProfile);
+            request.MatchAlertThresholdPercent, request.ShowGpaOnProfile,
+            request.ThemePreference, request.AlertKeywords, request.AlertLocations);
 }
 
 public record GradSettingsUpdateRequest(
-    bool NotifyNewMatches, bool NotifyFollowUps, int MatchAlertThresholdPercent, bool ShowGpaOnProfile);
+    bool NotifyNewMatches, bool NotifyFollowUps, int MatchAlertThresholdPercent, bool ShowGpaOnProfile,
+    string ThemePreference = "system",
+    string? AlertKeywords = null,
+    string? AlertLocations = null);

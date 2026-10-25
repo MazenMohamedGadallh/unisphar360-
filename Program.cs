@@ -28,6 +28,9 @@ var builder = WebApplication.CreateBuilder(args);
 var secretPath = Path.Combine(builder.Environment.ContentRootPath, "secret.json");
 if (File.Exists(secretPath))
 {
+    // Collected for diagnostics: entries present in the local file, even when
+    // NOT adopted because another source (user-secrets/env) already set them.
+    var secretEntries = new List<(string Name, string Value)>();
     try
     {
         using var secretDoc = JsonDocument.Parse(File.ReadAllText(secretPath));
@@ -37,8 +40,50 @@ if (File.Exists(secretPath))
             var isAdoptable = Regex.IsMatch(property.Name,
                 @"^[A-Za-z0-9]+_(API_KEY|MODEL|BASE_URL|JWT_KEY)$");
             var hasValue = !string.IsNullOrWhiteSpace(property.Value.GetString());
+            if (isAdoptable && hasValue)
+                secretEntries.Add((property.Name, property.Value.GetString()!));
             if (isAdoptable && hasValue && string.IsNullOrEmpty(builder.Configuration[property.Name]))
                 builder.Configuration[property.Name] = property.Value.GetString();
+        }
+
+        // Stale-duplicate detection: when secret.json and another source define the
+        // same credential with DIFFERENT values, the other source silently wins and
+        // an outdated key can keep breaking AI calls. Surface that conflict (lengths
+        // only — credential material is never printed) instead of failing silently.
+        foreach (var (name, fileValue) in secretEntries)
+        {
+            var active = builder.Configuration[name];
+            if (string.IsNullOrWhiteSpace(active)) continue;
+            var trimmed = active.Trim();
+
+            if (name.EndsWith("_API_KEY", StringComparison.Ordinal))
+            {
+                if (trimmed != fileValue)
+                {
+                    Console.Error.WriteLine(
+                        $"[UniSphere AI] {name} is defined in secret.json AND another configuration source " +
+                        "(dotnet user-secrets or environment variables) with DIFFERENT values " +
+                        $"(lengths {fileValue.Length} vs {trimmed.Length}). The other source wins. " +
+                        "If AI calls fail with 'API key invalid', remove the stale entry from the other source " +
+                        "(e.g. 'dotnet user-secrets remove \"GEMINI_API_KEY\"') or update it to match secret.json.");
+                }
+                else if (trimmed.Contains(' ') || trimmed.Contains('"') ||
+                         trimmed.Equals("changeme", StringComparison.OrdinalIgnoreCase) ||
+                         trimmed.Equals("your-api-key", StringComparison.OrdinalIgnoreCase) ||
+                         trimmed.Equals("your-api-key-here", StringComparison.OrdinalIgnoreCase) ||
+                         trimmed.Contains("<", StringComparison.Ordinal) || trimmed.Contains(">", StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine(
+                        $"[UniSphere AI] {name} looks like a placeholder (length {trimmed.Length}); " +
+                        "replace it with the real key issued by the provider.");
+                }
+                if (name == "OPENROUTER_API_KEY" && !trimmed.StartsWith("sk-or-", StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine(
+                        "[UniSphere AI] OPENROUTER_API_KEY does not start with 'sk-or-' — OpenRouter keys always do, " +
+                        "so the active value is almost certainly invalid. Generate a new key at openrouter.ai/keys.");
+                }
+            }
         }
     }
     catch (Exception ex)
@@ -96,6 +141,11 @@ builder.Services.AddScoped<GraduationService>();
 builder.Services.AddScoped<GraduateProfileService>();
 builder.Services.AddScoped<CvFileService>();
 builder.Services.AddScoped<GraduateAiService>();
+// Doctor module
+builder.Services.AddScoped<DoctorAccessService>();
+builder.Services.AddScoped<DoctorService>();
+builder.Services.Configure<DoctorAiOptions>(builder.Configuration.GetSection("DoctorAi"));
+builder.Services.AddScoped<IDoctorAiService, DoctorAiService>();
 builder.Services.AddScoped<JobCatalogService>();
 builder.Services.AddScoped<JobMatchingService>();
 builder.Services.AddScoped<JobApplicationService>();
@@ -104,7 +154,9 @@ builder.Services.AddScoped<InterviewService>();
 builder.Services.AddScoped<GraduateCareerService>();
 builder.Services.AddScoped<GraduateNotificationService>();
 builder.Services.AddScoped<TokenService>();
-builder.Services.AddScoped<ThemeService>();builder.Services.AddSingleton(new PerformanceModelWeights());
+builder.Services.AddScoped<ThemeService>();
+builder.Services.AddScoped<SharedUnreadBadgeState>();
+builder.Services.AddSingleton(new PerformanceModelWeights());
 builder.Services.AddScoped<IPerformanceModel, WeightedPerformanceModel>();
 builder.Services.AddScoped<PerformanceAnalysisService>();
 
@@ -171,6 +223,20 @@ builder.Services.AddRateLimiter(opt =>
         {
             PermitLimit = limit,
             Window = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+
+    // Research Hub PDF uploads: max 10 uploads/updates per user per 10 minutes
+    // (brute-force upload protection; metadata edits like publish toggles don't count).
+    opt.AddPolicy("research-upload", context =>
+    {
+        var key = "research-user-" + (context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anon");
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(10),
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
             QueueLimit = 0
         });

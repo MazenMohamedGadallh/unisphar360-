@@ -25,6 +25,22 @@ public class ApiFactory : WebApplicationFactory<UniSphere.Api.Services.TokenServ
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Default"] = $"Data Source={_dbPath}",
+                // Hermetic AI provider state: no provider is configured in
+                // tests, regardless of the developer's local secret.json /
+                // env keys (otherwise "no provider → 503" tests can't rely
+                // on not having keys). OLLAMA_BASE_URL points at an
+                // unreachable port so a locally running Ollama is never
+                // picked up as an available candidate.
+                ["OPENAI_API_KEY"] = "",
+                ["ANTHROPIC_API_KEY"] = "",
+                ["GEMINI_API_KEY"] = "",
+                ["OPENROUTER_API_KEY"] = "",
+                ["OPENAI_MODEL"] = "",
+                ["ANTHROPIC_MODEL"] = "",
+                ["GEMINI_MODEL"] = "",
+                ["OPENROUTER_MODEL"] = "",
+                ["OLLAMA_MODEL"] = "",
+                ["OLLAMA_BASE_URL"] = "http://127.0.0.1:1/",
             });
         });
     }
@@ -56,6 +72,9 @@ public class ApiFactory : WebApplicationFactory<UniSphere.Api.Services.TokenServ
 
     public HttpClient GraduateClient => AuthedClient(
         LoginAsync("graduate@unisphere.edu", "Graduate123!").GetAwaiter().GetResult());
+
+    public HttpClient DoctorClient => AuthedClient(
+        LoginAsync("doctor@unisphere.edu", "Doctor123!").GetAwaiter().GetResult());
 
     protected override void Dispose(bool disposing)
     {

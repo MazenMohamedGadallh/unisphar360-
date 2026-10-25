@@ -427,6 +427,9 @@ public class GradSettingsModel
     public bool NotifyFollowUps { get; set; }
     public int MatchAlertThresholdPercent { get; set; }
     public bool ShowGpaOnProfile { get; set; }
+    public string ThemePreference { get; set; } = "system";
+    public string AlertKeywords { get; set; } = "";
+    public string AlertLocations { get; set; } = "";
 }
 
 public class GradSyncResultModel

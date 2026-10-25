@@ -24,7 +24,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             <h1>@_greeting, @_firstName!</h1>
             <p>Your academic journey matters. Let's make it better together.</p>
         </div>
-        <div class="welcome-decoration">&#127891;</div>
+        <div class="welcome-decoration"><Icon Name="graduation-cap" Size="56" /></div>
     </div>
 
     @if (!string.IsNullOrEmpty(_summaryError))
@@ -40,7 +40,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
     <!-- Academic Summary Cards -->
     <div class="summary-cards">
         <div class="card gpa-card">
-            <div class="card-icon">&#127942;</div>
+            <div class="card-icon"><Icon Name="award" /></div>
             <div class="card-info">
                 <span class="card-label">Current GPA</span>
                 <span class="card-value">@(_summary?.CurrentGpa.ToString("0.00") ?? "--")</span>
@@ -53,7 +53,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card courses-card">
-            <div class="card-icon">&#128218;</div>
+            <div class="card-icon"><Icon Name="book-open" /></div>
             <div class="card-info">
                 <span class="card-label">Completed Courses</span>
                 <span class="card-value">@(_summary?.CompletedCourses ?? 0)/@(_summary?.TotalCourses ?? 0)</span>
@@ -61,7 +61,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card attendance-card">
-            <div class="card-icon">&#128197;</div>
+            <div class="card-icon"><Icon Name="calendar-check" /></div>
             <div class="card-info">
                 <span class="card-label">Attendance Rate</span>
                 <span class="card-value">@(_summary?.AttendanceRate ?? 0)%</span>
@@ -74,7 +74,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card improve-card">
-            <div class="card-icon">&#128161;</div>
+            <div class="card-icon"><Icon Name="triangle-alert" /></div>
             <div class="card-info">
                 <span class="card-label">Subjects to Improve</span>
                 <span class="card-value">@(_summary?.SubjectsToImprove ?? 0)</span>
@@ -82,7 +82,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card recommended-card">
-            <div class="card-icon">&#127891;</div>
+            <div class="card-icon"><Icon Name="star" /></div>
             <div class="card-info">
                 <span class="card-label">Recommended Courses</span>
                 <span class="card-value">@(_summary?.RecommendedCoursesCount ?? 0)</span>
@@ -174,11 +174,11 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
                                     <button class="check-btn" title="Toggle done" @onclick="() => ToggleDayAsync(item)">
                                         @if (item.IsCompleted)
                                         {
-                                            <span class="check-icon">&#10003;</span>
+                                            <span class="check-icon"><Icon Name="check" /></span>
                                         }
                                         else
                                         {
-                                            <span class="check-empty">&#9711;</span>
+                                            <span class="check-empty"><Icon Name="circle" Size="18" /></span>
                                         }
                                     </button>
                                 }
@@ -300,19 +300,19 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         </div>
         <div class="quick-actions-grid">
             <NavLink href="/academic-advisor" class="quick-action tile-grades">
-                <span class="action-icon">&#9998;</span>
+                <span class="action-icon"><Icon Name="chart-column" /></span>
                 <span>Check My Grades</span>
             </NavLink>
             <NavLink href="/study-planner" class="quick-action tile-planner">
-                <span class="action-icon">&#128197;</span>
+                <span class="action-icon"><Icon Name="calendar" /></span>
                 <span>Plan My Study</span>
             </NavLink>
             <NavLink href="/courses" class="quick-action tile-courses">
-                <span class="action-icon">&#127891;</span>
+                <span class="action-icon"><Icon Name="book-open" /></span>
                 <span>Course Recommendations</span>
             </NavLink>
             <NavLink href="/academic-advisor" class="quick-action tile-insights">
-                <span class="action-icon">&#128161;</span>
+                <span class="action-icon"><Icon Name="trending-up" /></span>
                 <span>Academic Insights</span>
             </NavLink>
         </div>
@@ -376,7 +376,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
                     @foreach (var insight in _insights)
                     {
                         <div class="insight-item @insight.Type.ToLowerInvariant()">
-                            <div class="insight-icon">@GetInsightIcon(insight.Type)</div>
+                            <div class="insight-icon"><Icon Name="@GetInsightIcon(insight.Type)" /></div>
                             <div class="insight-content">
                                 <span class="insight-title">@insight.Title</span>
                                 <span class="insight-message">@insight.Message</span>
@@ -433,11 +433,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             return;
         // Graduates get a dedicated career dashboard: bounce before any
         // student-only card loads.
-        if ((await AuthService.GetUserAsync())?.Role == "Graduate")
-        {
-            Nav.NavigateTo("/graduate", replace: true);
-            return;
-        }
+        if (await RoleBounceAsync()) return;
         // Each card loads (and fails) independently: one bad call can never
         // freeze the whole dashboard on "Loading..." again.
         await LoadAllAsync();
@@ -454,15 +450,28 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
                 await AuthService.RestoreSessionAsync();
             if (AuthService.IsInitialized)
             {
-                if ((await AuthService.GetUserAsync())?.Role == "Graduate")
-                {
-                    Nav.NavigateTo("/graduate", replace: true);
-                    return;
-                }
+                if (await RoleBounceAsync()) return;
                 await LoadAllAsync();
                 StateHasChanged();
             }
         }
+    }
+
+    /// <summary>Students own /dashboard. Graduates, Doctors and Admins have
+    /// dedicated dashboards: bounce them before student-only cards load.</summary>
+    private async Task<bool> RoleBounceAsync()
+    {
+        var user = await AuthService.GetUserAsync();
+        var path = user?.Role switch
+        {
+            "Graduate" => "/graduate",
+            "Doctor" => "/doctor",
+            "Admin" => "/analytics",
+            _ => null
+        };
+        if (path is null) return false;
+        Nav.NavigateTo(path, replace: true);
+        return true;
     }
 
     private Task LoadAllAsync() => Task.WhenAll(
@@ -594,9 +603,9 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
 
     private static string GetInsightIcon(string type) => type.ToLowerInvariant() switch
     {
-        "warning" => "\u26A0\uFE0F",
-        "progress" => "\U0001F4C8",
-        "recommendation" => "\U0001F4A1",
-        _ => "\U0001F4A1"
+        "warning" => "triangle-alert",
+        "progress" => "trending-up",
+        "recommendation" => "lightbulb",
+        _ => "lightbulb"
     };
 }

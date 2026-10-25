@@ -22,7 +22,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 
 <div class="search-section">
     <div class="search-box-large">
-        <span class="search-icon">&#128269;</span>
+        <span class="search-icon"><Icon Name="search" /></span>
         <input type="text" placeholder="Type to search..." @bind="_query" @bind:event="oninput" @bind:after="SearchChangedAsync" autofocus aria-label="Search" />
     </div>
 </div>
@@ -54,7 +54,7 @@ else if (!string.IsNullOrWhiteSpace(_query))
                     @foreach (var result in group.Items)
                     {
                         <div class="search-result-item" @onclick="() => NavigateToResult(result)">
-                            <span class="result-type">@result.Icon @group.Type</span>
+                            <span class="result-type result-type-@group.Type"><Icon Name="@(IconSet.ResolveName(result.Icon))" Size="12" /> @group.Type</span>
                             <div class="result-info">
                                 <h4>@Highlight(result.Title)</h4>
                                 <p>@result.Subtitle</p>

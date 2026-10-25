@@ -19,6 +19,25 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     <p>@(_info?.UniversityName ?? "Course materials and summaries")</p>
 </div>
 
+@if (_upcoming is not null && _upcoming.Count > 0)
+{
+    <div class="upcoming-card" role="region" aria-label="Upcoming exams and deadlines">
+        <div class="upcoming-head">
+            <span class="upcoming-title"><Icon Name="calendar-days" Size="16" /> Upcoming exams &amp; deadlines</span>
+        </div>
+        <div class="upcoming-track">
+            @foreach (var u in _upcoming)
+            {
+                <a class="upcoming-tile @u.Type.ToLowerInvariant()" href="/university?materialId=@u.Id" title="Open this item">
+                    <span class="upcoming-type"><Icon Name="@IconForType(u.Type)" Size="14" /> @u.Type</span>
+                    <span class="upcoming-name">@u.Title</span>
+                    <span class="upcoming-course">@u.CourseName · @u.Date.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)</span>
+                </a>
+            }
+        </div>
+    </div>
+}
+
 @if (!string.IsNullOrEmpty(_error))
 {
     <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="ReloadAsync">Retry</button></div>
@@ -121,16 +140,43 @@ else
     }
 }
 
+<style>
+    .upcoming-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius, 12px); padding: 14px 16px; margin-bottom: 16px; }
+    .upcoming-head { margin-bottom: 10px; }
+    .upcoming-title { font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+    .upcoming-track { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+    .upcoming-tile { flex: 0 0 auto; min-width: 220px; max-width: 260px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; text-decoration: none; color: var(--text); display: flex; flex-direction: column; gap: 4px; background: var(--bg, #1a2233); }
+    .upcoming-tile:hover { border-color: var(--primary); }
+    .upcoming-tile.exam { border-left: 3px solid var(--danger, #f87171); }
+    .upcoming-tile.assignment { border-left: 3px solid var(--warning, #f59e0b); }
+    .upcoming-tile.announcement { border-left: 3px solid var(--success, #4ade80); }
+    .upcoming-type { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #9ca3af); display: inline-flex; align-items: center; gap: 4px; }
+    .upcoming-name { font-weight: 600; font-size: 14px; }
+    .upcoming-course { font-size: 12px; color: var(--muted, #9ca3af); }
+</style>
+
 @code {
     private static readonly string[] MaterialTypes =
         { "Summary", "Lecture", "Assignment", "Exam", "Announcement" };
+
+    private static string IconForType(string type) => type.ToLowerInvariant() switch
+    {
+        "exam" => "triangle-alert",
+        "assignment" => "clipboard-check",
+        "announcement" => "megaphone",
+        _ => "calendar-clock"
+    };
 
     private MyUniversityDto? _info;
     private List<UniversityCourseDto>? _courses;
     private List<MaterialDto>? _materials;
     private MaterialDto? _selected;
+    private List<UpcomingItemDto>? _upcoming;
     private string? _error;
     private bool _loading = true;
+
+    [Parameter, SupplyParameterFromQuery(Name = "materialId")]
+    public int? MaterialId { get; set; }
 
     private string _courseId = "";
     private string _type = "";
@@ -205,7 +251,18 @@ else
                 return;
             }
             _courses = await Http.GetFromJsonAsync<List<UniversityCourseDto>>("/api/university/me/courses") ?? new();
+            try
+            {
+                // Best-effort strip: exams/deadlines are shown when present,
+                // never blocking the materials list on this call.
+                _upcoming = await Http.GetFromJsonAsync<List<UpcomingItemDto>>("/api/university/me/upcoming?take=8") ?? new();
+            }
+            catch
+            {
+                _upcoming = null;
+            }
             await LoadMaterialsAsync();
+            await OpenDeepLinkedMaterialAsync();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
         {
@@ -284,4 +341,21 @@ else
     }
 
     private void CloseDetail() => _selected = null;
+
+    // Global search links to /university?materialId=N; open that material
+    // directly, then strip the query param so refresh doesn't re-open.
+    private async Task OpenDeepLinkedMaterialAsync()
+    {
+        if (!MaterialId.HasValue) return;
+        try
+        {
+            _selected = await Http.GetFromJsonAsync<MaterialDto>($"/api/university/me/materials/{MaterialId.Value}");
+        }
+        catch
+        {
+            _error = $"Material #{MaterialId.Value} could not be opened (it may be outside your university).";
+        }
+        // Replace the URL so F5 / back-navigation doesn't re-trigger the deep link.
+        Nav.NavigateTo("/university", replace: true);
+    }
 }

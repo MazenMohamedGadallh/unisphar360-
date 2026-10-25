@@ -15,13 +15,18 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     <p>Plan and track your weekly study activities.</p>
 </div>
 
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadPlanner">Retry</button></div>
+}
+
 <div class="card">
     <div class="card-header">
         <h3>Weekly Study Plan</h3>
         <div class="planner-nav">
-            <button class="btn btn-sm" @onclick="PreviousWeek">&larr; Prev</button>
+            <button class="btn btn-sm" @onclick="PreviousWeek" disabled="@_busy">&larr; Prev</button>
             <span class="week-label">@(_planner?.WeekLabel ?? "Loading...")</span>
-            <button class="btn btn-sm" @onclick="NextWeek">Next &rarr;</button>
+            <button class="btn btn-sm" @onclick="NextWeek" disabled="@_busy">Next &rarr;</button>
         </div>
     </div>
 
@@ -34,7 +39,8 @@ and MainLayout bounces anonymous users to /login after auth resolves.
         <div class="planner-grid">
             @foreach (var item in _planner.Days)
             {
-                <div class="planner-day @(item.IsDone ? "completed" : "")" @onclick="() => ToggleItem(item.Id)">
+                var itemId = item.Id;
+                <div class="planner-day @(item.IsDone ? "completed" : "")" @onclick="() => ToggleItemAsync(itemId)">
                     <div class="day-header">
                         <span class="day-name">@item.DayLabel</span>
                         <span class="day-date">@item.DayNumber</span>
@@ -50,13 +56,20 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                     <div class="day-status">
                         @if (item.IsDone)
                         {
-                            <span class="status-icon completed">&#10003;</span>
+                            <span class="status-icon completed"><Icon Name="check" /></span>
                         }
                         else
                         {
-                            <span class="status-icon">&#9675;</span>
+                            <span class="status-icon"><Icon Name="circle" /></span>
                         }
                     </div>
+                    @if (item.Id > 0)
+                    {
+                        <button class="planner-delete" title="Delete this study item" aria-label="Delete"
+                                @onclick:stopPropagation="true" @onclick="() => DeleteItemAsync(item.Id)">
+                            <Icon Name="trash-2" Size="13" />
+                        </button>
+                    }
                 </div>
             }
         </div>
@@ -68,6 +81,10 @@ and MainLayout bounces anonymous users to /login after auth resolves.
     <div class="card-header">
         <h3>Add Study Item</h3>
     </div>
+    @if (!string.IsNullOrEmpty(_addMessage))
+    {
+        <div class="alert alert-error" role="status">@_addMessage</div>
+    }
     <form @onsubmit="AddItem" class="form-inline">
         <div class="form-group">
             <label>Date</label>
@@ -85,17 +102,26 @@ and MainLayout bounces anonymous users to /login after auth resolves.
             <label>Note</label>
             <input type="text" @bind="_newNote" placeholder="Optional note..." />
         </div>
-        <button type="submit" class="btn btn-primary">Add</button>
+        <button type="submit" class="btn btn-primary" disabled="@_addingItem">@(_addingItem ? "Adding…" : "Add")</button>
     </form>
 </div>
 
+<style>
+    .planner-delete { position: absolute; right: 8px; top: 8px; border: none; background: transparent; color: var(--muted, #9ca3af); cursor: pointer; border-radius: 6px; padding: 3px; line-height: 0; }
+    .planner-delete:hover { color: var(--danger, #ef4444); background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent); }
+    .planner-day { position: relative; }
+</style>
+
 @code {
-    private StudyPlannerResponse? _planner;
-    private DateTime _currentWeekStart = DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek);
+    private StudyPlannerResponse? _planner;    private DateTime _currentWeekStart = DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek);
     private DateTime _newDate = DateTime.Today;
     private string _newTitle = "";
     private int _newHours = 1;
     private string? _newNote;
+    private string? _error;
+    private string? _addMessage;
+    private bool _busy;
+    private bool _addingItem;
 
     protected override async Task OnInitializedAsync()
     {
@@ -104,7 +130,20 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 
     private async Task LoadPlanner()
     {
-        _planner = await Http.GetFromJsonAsync<StudyPlannerResponse>($"/api/study-planner?weekStart={_currentWeekStart:yyyy-MM-dd}");
+        _error = null;
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            _planner = await Http.GetFromJsonAsync<StudyPlannerResponse>($"/api/study-planner?weekStart={_currentWeekStart:yyyy-MM-dd}");
+        }
+        catch (Exception ex)
+        {
+            _planner = null;
+            _error = $"Could not load the study plan ({(ex.InnerException ?? ex).Message}).";
+        }
+        _busy = false;
+        StateHasChanged();
     }
 
     private async Task PreviousWeek()
@@ -119,20 +158,77 @@ and MainLayout bounces anonymous users to /login after auth resolves.
         await LoadPlanner();
     }
 
-    private async Task ToggleItem(int id)
+    private async Task ToggleItemAsync(int id)
     {
-        await Http.PostAsync($"/api/study-planner/{id}/toggle", null);
+        _error = null;
+        try
+        {
+            using var resp = await Http.PostAsync($"/api/study-planner/{id}/toggle", null);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = "Could not update that study item. Reload and try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not update that study item ({(ex.InnerException ?? ex).Message}).";
+            StateHasChanged();
+            return;
+        }
+        await LoadPlanner();
+    }
+
+    private async Task DeleteItemAsync(int id)
+    {
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            using var resp = await Http.DeleteAsync($"/api/study-planner/{id}");
+            if (!resp.IsSuccessStatusCode && resp.StatusCode != System.Net.HttpStatusCode.NotFound)
+            {
+                _error = "Could not delete that study item. Try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not delete that study item ({(ex.InnerException ?? ex).Message}).";
+            StateHasChanged();
+            return;
+        }
         await LoadPlanner();
     }
 
     private async Task AddItem(EventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(_newTitle)) return;
-
-        await Http.PostAsJsonAsync("/api/study-planner", new CreateStudyItemRequest(
-            _newDate, _newTitle, _newHours, _newNote
-        ));
-
+        if (string.IsNullOrWhiteSpace(_newTitle) || _addingItem) return;
+        _addingItem = true;
+        _addMessage = null;
+        StateHasChanged();
+        HttpResponseMessage resp;
+        try
+        {
+            resp = await Http.PostAsJsonAsync("/api/study-planner", new CreateStudyItemRequest(
+                _newDate, _newTitle, _newHours, _newNote
+            ));
+        }
+        catch (Exception ex)
+        {
+            _addingItem = false;
+            _addMessage = $"Adding failed ({(ex.InnerException ?? ex).Message}). Your input is preserved — try again.";
+            StateHasChanged();
+            return;
+        }
+        _addingItem = false;
+        if (!resp.IsSuccessStatusCode)
+        {
+            var body = "";
+            try { body = await resp.Content.ReadAsStringAsync(); } catch { /* ignore */ }
+            _addMessage = $"Adding failed ({(body.Length > 160 ? body[..160] : body)})";
+            // Failure keeps the user's input; nothing is cleared.
+            StateHasChanged();
+            return;
+        }
         _newTitle = "";
         _newNote = null;
         await LoadPlanner();

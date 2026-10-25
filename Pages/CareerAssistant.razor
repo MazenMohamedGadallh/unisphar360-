@@ -6,9 +6,13 @@ localStorage JWT as a bearer header. /api stays [Authorize]-guarded
 and MainLayout bounces anonymous users to /login after auth resolves.
 *@
 @inject HttpClient Http
-@inject NavigationManager Nav
 
 <PageTitle>Career Assistant - UniSphere 360+</PageTitle>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
 
 <div class="page-header">
     <h1>Career Assistant</h1>
@@ -110,17 +114,28 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 @code {
     private List<CareerRecommendationDto>? _recommendations = null;
     private SkillGapAnalysis? _skillGaps = null;
+    private string? _error;
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _recommendations = null;
+        _skillGaps = null;
+        StateHasChanged();
         try
         {
             _recommendations = await Http.GetFromJsonAsync<List<CareerRecommendationDto>>("/api/career/recommendations");
             _skillGaps = await Http.GetFromJsonAsync<SkillGapAnalysis>("/api/career/skill-gaps");
         }
-        catch
+        catch (Exception ex)
         {
-            // Handle error
+            _error = $"Could not load career data ({(ex.InnerException ?? ex).Message}).";
         }
+        StateHasChanged();
     }
 }

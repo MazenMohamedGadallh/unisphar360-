@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Xunit;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace UniSphere.Api.Tests;
 
@@ -307,20 +308,21 @@ public class ResearchHubApiTests : IClassFixture<ApiFactory>
     private static async Task<string> ReadPdfHead(HttpResponseMessage resp)
         => await resp.Content.ReadAsStringAsync() ?? "";
 
-    private static string FindResearchDir()
+    private string FindResearchDir()
     {
-        // App_Data/research lives next to the API project - walk up from the
-        // test bin directory until UniSphere.Api.csproj is found.
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "UniSphere.Api.csproj")))
-            dir = dir.Parent;
-        Assert.NotNull(dir);
-        var path = Path.Combine(dir!.FullName, "App_Data", "research");
+        // App_Data/research lives next to the API project. Resolve it the same
+        // way ResearchHubController does: from the running app's
+        // IWebHostEnvironment.ContentRootPath, which is the repository root
+        // under WebApplicationFactory (works regardless of where the test
+        // binaries are built).
+        var root = _factory.Services.GetRequiredService<
+            Microsoft.AspNetCore.Hosting.IWebHostEnvironment>().ContentRootPath;
+        var path = Path.Combine(root, "App_Data", "research");
         Directory.CreateDirectory(path);
         return path;
     }
 
-    private static void AssertHasNoPdfFiles()
+    private void AssertHasNoPdfFiles()
     {
         var dir = FindResearchDir();
         var files = Directory.GetFiles(dir, "*.pdf");
