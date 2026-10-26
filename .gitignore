@@ -496,16 +496,16 @@ secret.json
 # Holds real secrets — never commit. See appsettings.Local.example.json for the shape.
 appsettings.Local.json
 
-# SQLite runtime journals and local database snapshots (never commit).
-# NOTE: the long-lived tracked files (unisphere-v6.db, unisphere-backup.db,
-# unisphere-backup-part1.db) stay tracked - these rules only cover journals
-# and timestamped local safety copies created by maintenance scripts.
+# Local SQLite databases, backups, and journals (never commit;
+# the app creates/updates unisphere-v6.db at runtime).
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
 *.db-wal
 *.db-shm
-unisphere-v6.backup-*.db*
-unisphere-v6.pre-*.db*
-unisphere-v6.db.bak
-unisphere-v6.db-*.bak-*
+*.db.bak
+*.db.bak-*
 
 .claude/
 

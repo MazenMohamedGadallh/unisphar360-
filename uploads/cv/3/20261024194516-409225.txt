@@ -1,1 +1,0 @@
-Volunteer mentor for first-year students; built small data cleaning scripts in Python; organized weekly study groups and tracked progress with Excel and reports for the faculty mentor.
