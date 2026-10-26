@@ -1,6 +1,0 @@
-Omar Hassan
-Backend Engineer
-Skills: C#, ASP.NET Core, SQL Server, Git, Docker, unit testing, REST APIs
-Experience: Junior .NET Developer at Nile Cloud (2023-2025) building REST APIs with ASP.NET Core, SQL Server queries, Git-based reviews, Docker deployments, xUnit tests.
-Education: BSc Computer Engineering, Cairo University.
-Projects: inventory REST service, salary reporting dashboard.
