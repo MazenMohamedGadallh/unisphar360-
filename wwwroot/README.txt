@@ -1,0 +1,1 @@
+This directory is reserved for backend-served static files and uploaded assets.
