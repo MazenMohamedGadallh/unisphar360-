@@ -161,6 +161,7 @@ builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<ThemeService>();builder.Services.AddSingleton(new PerformanceModelWeights());
 builder.Services.AddScoped<IPerformanceModel, WeightedPerformanceModel>();
 builder.Services.AddScoped<PerformanceAnalysisService>();
+builder.Services.AddScoped<StudyPlanGenerator>();
 builder.Services.AddScoped<ResearchFileStorage>();
 builder.Services.AddScoped<CourseMaterialFileStorage>();
 
@@ -179,6 +180,10 @@ builder.Services.AddHttpClient<IRagClient, RagClient>((sp, c) =>
         c.DefaultRequestHeaders.Add("X-RAG-Api-Key", rag.ApiKey);
 });
 builder.Services.AddScoped<RagChatProvider>();
+// Cached RAG health probe: the chat provider list hides "rag" (with a
+// reason in /providers/status) while the Python service is down, without
+// pinging it on every request. Singleton = one cache per app instance.
+builder.Services.AddSingleton<RagHealthCache>();
 builder.Services.AddScoped<IRagGroundingService, RagGroundingService>();
 
 // Doctor module: assignment-based course access, dashboard/students/analytics
@@ -190,6 +195,10 @@ builder.Services.Configure<DoctorAiOptions>(builder.Configuration.GetSection("Do
 builder.Services.AddScoped<IDoctorAiService, DoctorAiService>();
 builder.Services.AddScoped<IExamAssistantService, ExamAssistantService>();
 builder.Services.AddScoped<IExamGeneratorService, ExamGeneratorService>();
+// Publishes AI-generated doctor quizzes onto the shared exam infrastructure.
+builder.Services.AddScoped<IQuizPublishService, QuizPublishService>();
+// Persists + grades student attempts on published exams; doctor per-exam results.
+builder.Services.AddScoped<IExamAttemptsService, ExamAttemptsService>();
 
 // AI chat (keys come only from env vars, dotnet user-secrets, the optional
 // git-ignored secret.json, or per-provider paths in appsettings.Local.json —
@@ -355,6 +364,10 @@ builder.Services.AddCors(opt => opt.AddDefaultPolicy(p =>
     p.WithOrigins(allowedOrigins)
      .AllowAnyHeader()
      .AllowAnyMethod()
+     // The React chat UI reads this response header to learn the id of a
+     // conversation created by the first message (cross-origin responses
+     // hide custom headers unless they are explicitly exposed).
+     .WithExposedHeaders("X-Conversation-Id")
      .AllowCredentials()));
 
 var app = builder.Build();

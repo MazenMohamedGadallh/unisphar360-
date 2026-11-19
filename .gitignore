@@ -510,3 +510,6 @@ unisphere-v6.db-*.bak-*
 .claude/
 
 .claude/*settings.local.json
+
+# Tailwind standalone CLI binary (downloaded locally, checksum-verified; never commit)
+tools/tailwind/

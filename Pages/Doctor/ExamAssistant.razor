@@ -1,4 +1,5 @@
 @page "/doctor/exam-assistant"
+@attribute [Authorize(Roles = "Doctor")]
 @using System.Net
 @using System.Text.Json
 @using Microsoft.AspNetCore.Components
@@ -104,7 +105,7 @@
 
                 <div class="form-actions">
                     <button class="btn btn-primary" @onclick="GenerateAsync"
-                            disabled="@_generating || !_selectedCourseId.HasValue || _selectedMaterialIds.Count == 0">
+                            disabled="@(_generating || !_selectedCourseId.HasValue || _selectedMaterialIds.Count == 0)">
                         @(_generating ? T("Generating") : T("GenerateQuestions"))
                     </button>
                     @if (_selectedCourseId.HasValue && _selectedMaterialIds.Count == 0)

@@ -27,8 +27,15 @@ else
     @if (_statusChecked && !_available)
     {
         <div class="alert alert-error">
-            No AI provider is configured. Set an API key (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY,
-            OPENROUTER_API_KEY) or run a local Ollama instance, then reload this page.
+            @if (!string.IsNullOrWhiteSpace(_status?.Message))
+            {
+                @_status!.Message
+            }
+            else
+            {
+                <text>No AI provider is configured. Set an API key (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY,
+                OPENROUTER_API_KEY) or run a local Ollama instance, then reload this page.</text>
+            }
             <button class="btn btn-sm btn-secondary" @onclick="CheckStatusAsync">Retry</button>
         </div>
     }
@@ -124,6 +131,96 @@ else
                 }
             </div>
         </div>
+
+        @if (_quiz is not null)
+        {
+            <div class="card" style="margin-top: 16px;">
+                <div class="card-header"><h3>Publish to students</h3></div>
+                <div class="card-body">
+                    @if (_pubResult is not null)
+                    {
+                        <div class="alert alert-success">
+                            Quiz published successfully. @(_pubResult.NotifiedStudents == 1
+                                ? "1 student was notified."
+                                : $"{_pubResult.NotifiedStudents} students were notified.")
+                        </div>
+                        <div class="chart-container">
+                            <p><strong>@_pubResult.Title</strong></p>
+                            <p>Published exam ID: @_pubResult.ExamId ·
+                               @(_pubResult.QuestionCount == 1 ? "1 question" : $"{_pubResult.QuestionCount} questions") ·
+                               status: @_pubResult.Status</p>
+                            <p><NavLink href="/student/exams">Open My Exams (student view)</NavLink> — enrolled students see the quiz without correct answers.</p>
+                        </div>
+                        <p class="rec-track">Generate a new quiz to publish another one.</p>
+                    }
+                    else
+                    {
+                        <div class="form-inline" style="padding: 0;">
+                            <div class="form-group">
+                                <label>Quiz title</label>
+                                <input @bind="_quizPublishTitle" maxlength="150" placeholder="Quiz - ..." />
+                            </div>
+                            <div class="form-group">
+                                <label>Language</label>
+                                <select @bind="_quizPublishLanguage">
+                                    <option value="en">English</option>
+                                    <option value="ar">Arabic</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Total marks (optional)</label>
+                                <input type="number" min="1" max="1000" @bind="_quizPublishMarks" />
+                            </div>
+                        </div>
+                        <div class="form-inline" style="padding: 0; margin-top: 4px;">
+                            <div class="form-group">
+                                <label>Opens at (UTC, optional)</label>
+                                @* datetime-local inputs use value+onchange: the Razor
+                                   compiler forces a typed @bind converter here. *@
+                                <input type="datetime-local" value="@_pubOpensLocal" @onchange="OnOpensChanged" />
+                            </div>
+                            <div class="form-group">
+                                <label>Closes at (UTC, optional)</label>
+                                <input type="datetime-local" value="@_pubClosesLocal" @onchange="OnClosesChanged" />
+                            </div>
+                            <div class="form-group">
+                                <label>Duration (minutes, optional)</label>
+                                <input type="number" min="1" max="600" @bind="_pubDurationMinutes" />
+                            </div>
+                        </div>
+                        <label style="display: block; margin: 10px 0 0 0;">
+                            <input type="checkbox" @bind="_pubShowAnswers" />
+                            Show correct answers to students after they submit
+                        </label>
+                        <label style="display: block; margin: 10px 0;">
+                            <input type="checkbox" @bind="_quizReviewed" /> I reviewed these questions
+                        </label>
+                        <button class="btn btn-primary" @onclick="StartPublishQuiz"
+                                disabled="@(_pubBusy || !_quizReviewed)">
+                            @(_pubBusy ? "Publishing..." : "Publish to students")
+                        </button>
+                        <p class="rec-track" style="margin-top: 8px;">
+                            Publishing shows the quiz to the course's current, ungraded students and sends them notifications.
+                        </p>
+                        @if (_pubConfirm)
+                        {
+                            <div class="alert" style="margin-top: 12px;">
+                                <div><strong>Confirm publication?</strong> Eligible enrolled students will see this quiz in their My Exams page and receive a notification (students with notifications off or muted are skipped).</div>
+                                <div>Published exams currently cannot be edited or deleted.</div>
+                                <div style="margin-top: 8px;">
+                                    <button class="btn btn-primary" @onclick="PublishQuizConfirmedAsync" disabled="@_pubBusy">Yes, publish</button>
+                                    <button class="btn btn-secondary" @onclick='@(() => _pubConfirm = false)' disabled="@_pubBusy">Cancel</button>
+                                </div>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(_pubError))
+                        {
+                            <div class="alert alert-error" style="margin-top: 10px;">@_pubError</div>
+                        }
+                    }
+                </div>
+            </div>
+        }
     }
     else if (_tab == "summarize")
     {
@@ -203,8 +300,24 @@ else
     private bool _started;
     private bool _available;
     private bool _statusChecked;
+    private AiStatusDto? _status;
 
     private QuizGenerationResponse? _quiz;
+    private string _quizPublishTitle = "";
+    private string _quizPublishLanguage = "en";
+    private int? _quizPublishMarks;
+    // Optional exam window: datetime-local inputs bound as strings (Blazor
+    // nullable DateTime binding is fragile on empty inputs), interpreted as
+    // UTC so every client sees the same absolute open/close instant.
+    private string _pubOpensLocal = "";
+    private string _pubClosesLocal = "";
+    private int? _pubDurationMinutes;
+    private bool _pubShowAnswers;
+    private bool _quizReviewed;
+    private bool _pubBusy;
+    private bool _pubConfirm;
+    private string? _pubError;
+    private QuizPublishResponse? _pubResult;
     private LectureSummaryDto? _summary;
     private LectureAnswerDto? _answer;
 
@@ -261,11 +374,14 @@ else
     {
         try
         {
-            var status = await Http.GetFromJsonAsync<AiStatusDto>("/api/doctor/ai/status");
-            _available = status?.Available ?? false;
+            // Providers come back as name/display/model objects; binding them
+            // as strings used to throw and flip the banner on permanently.
+            _status = await Http.GetFromJsonAsync<AiStatusDto>("/api/doctor/ai/status");
+            _available = _status?.Available ?? false;
         }
         catch
         {
+            _status = null;
             _available = false;
         }
         finally
@@ -309,7 +425,28 @@ else
             var req = new QuizGenerationRequest(_courseId, _quizMaterialId > 0 ? _quizMaterialId : null, _questionCount);
             var resp = await Http.PostAsJsonAsync("/api/doctor/ai/quiz", req);
             if (resp.IsSuccessStatusCode)
+            {
                 _quiz = await resp.Content.ReadFromJsonAsync<QuizGenerationResponse>();
+                if (_quiz is not null)
+                {
+                    // Fresh quiz = fresh publish workflow (defaults re-derived).
+                    var course = _courses.FirstOrDefault(c => c.CourseId == _courseId);
+                    var materialTitle = _quizMaterialId > 0
+                        ? _materials.FirstOrDefault(m => m.Id == _quizMaterialId)?.Title
+                        : null;
+                    _quizPublishTitle = $"Quiz - {(course?.Code ?? "course")} - {(materialTitle ?? "Course material")}";
+                    _quizPublishLanguage = "en";
+                    _quizPublishMarks = null;
+                    _pubOpensLocal = "";
+                    _pubClosesLocal = "";
+                    _pubDurationMinutes = null;
+                    _pubShowAnswers = false;
+                    _quizReviewed = false;
+                    _pubConfirm = false;
+                    _pubError = null;
+                    _pubResult = null;
+                }
+            }
             else
                 _error = await AiErrorAsync(resp);
         }
@@ -358,6 +495,100 @@ else
         finally { _busy = false; }
     }
 
+    private void OnOpensChanged(ChangeEventArgs e) =>
+        _pubOpensLocal = e.Value?.ToString() ?? "";
+
+    private void OnClosesChanged(ChangeEventArgs e) =>
+        _pubClosesLocal = e.Value?.ToString() ?? "";
+
+    private void StartPublishQuiz()
+    {
+        // Window sanity before hitting the API: close must be in the future
+        // and after open (mirror of the server validation for fast feedback).
+        _pubError = null;
+        var opens = ParseUtcLocal(_pubOpensLocal);
+        var closes = ParseUtcLocal(_pubClosesLocal);
+        if (_pubDurationMinutes is < 1 or > 600)
+        {
+            _pubError = "Duration must be between 1 and 600 minutes.";
+            return;
+        }
+        if (closes is { } c && c <= DateTime.UtcNow)
+        {
+            _pubError = "The closing date must be in the future.";
+            return;
+        }
+        if (opens is { } o && closes is { } c2 && o >= c2)
+        {
+            _pubError = "The open date must come before the close date.";
+            return;
+        }
+        _pubConfirm = true;
+    }
+
+    /// <summary>datetime-local strings ("yyyy-MM-ddTHH:mm") are UTC here;
+    /// anything unparseable or empty becomes null ("always open").</summary>
+    private static DateTime? ParseUtcLocal(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (DateTime.TryParseExact(text.Trim(), "yyyy-MM-ddTHH:mm",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal |
+                System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var dt))
+            return dt;
+        return null;
+    }
+
+    private async Task PublishQuizConfirmedAsync()
+    {
+        if (_quiz is null || !_quizReviewed || _pubBusy) return;
+        _pubBusy = true;
+        _pubError = null;
+        try
+        {
+            var req = new QuizPublishRequest(
+                _courseId,
+                _quizMaterialId > 0 ? _quizMaterialId : null,
+                _quizPublishTitle,
+                _quizPublishLanguage,
+                _quizPublishMarks,
+                _quiz.Questions,
+                ParseUtcLocal(_pubOpensLocal),
+                ParseUtcLocal(_pubClosesLocal),
+                _pubDurationMinutes > 0 ? _pubDurationMinutes : null,
+                _pubShowAnswers);
+            var resp = await Http.PostAsJsonAsync("/api/doctor/ai/quiz/publish", req);
+            if (resp.IsSuccessStatusCode)
+            {
+                _pubResult = await resp.Content.ReadFromJsonAsync<QuizPublishResponse>();
+                _pubConfirm = false;
+            }
+            else
+            {
+                _pubConfirm = false;
+                _pubError = await QuizPublishErrorAsync(resp);
+            }
+        }
+        catch (Exception ex)
+        {
+            _pubError = "Unexpected error: " + ex.Message;
+        }
+        finally { _pubBusy = false; }
+    }
+
+    private static async Task<string> QuizPublishErrorAsync(HttpResponseMessage resp)
+    {
+        var body = await resp.Content.ReadAsStringAsync();
+        if (resp.StatusCode == HttpStatusCode.Conflict)
+            return "This exact quiz was published very recently. Generate a new quiz before publishing again.\n" + body;
+        if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+            return "You must be logged in as a doctor assigned to this course to publish quizzes.";
+        if (resp.StatusCode == HttpStatusCode.ServiceUnavailable)
+            return "No AI provider is available right now. Configure a provider and try again.";
+        return "The request failed: " + body;
+    }
+
     private static async Task<string> AiErrorAsync(HttpResponseMessage resp)
     {
         if (resp.StatusCode == HttpStatusCode.ServiceUnavailable)
@@ -367,5 +598,9 @@ else
         return "The request failed: " + await resp.Content.ReadAsStringAsync();
     }
 
-    private sealed record AiStatusDto(bool Available, List<string> Providers, string Message);
+    private sealed record AiStatusDto(bool Available, List<ProviderStatusDto> Providers, string Message);
+
+    /// <summary>The status endpoint returns provider objects (Name/DisplayName/Model),
+    /// not strings — this must mirror ChatProviderDto for correct binding.</summary>
+    private sealed record ProviderStatusDto(string Name, string DisplayName, string Model);
 }

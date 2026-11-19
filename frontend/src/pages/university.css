@@ -1,0 +1,503 @@
+/*
+ * My University page styles — page-scoped CSS in the approved
+ * "Premium, Friendly Academic SaaS" system (same pattern as
+ * dashboard.css / login.css / register.css). Colors come from the
+ * React design tokens in app.css; dark-theme overrides use the
+ * [data-theme="dark"] pattern approved on the Dashboard.
+ */
+
+/* ---------- Page scaffold ---------- */
+
+.university {
+    width: 100%;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 16px;
+    animation: uni-fade-in 0.2s ease-out;
+}
+
+@keyframes uni-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* ---------- Page header ---------- */
+
+.uni-header {
+    margin-bottom: 20px;
+    animation: uni-rise-in 0.4s ease-out both;
+}
+
+@keyframes uni-rise-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.uni-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 2px;
+}
+
+.uni-subtitle {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    margin: 0;
+}
+
+.uni-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.uni-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-surface);
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.uni-chip .ui-icon { font-size: 13px; color: var(--color-primary); }
+
+/* ---------- Cards ---------- */
+
+.uni-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    margin-bottom: 20px;
+    overflow: hidden;
+    animation: uni-rise-in 0.4s 0.05s ease-out both;
+}
+
+.uni-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 20px 0;
+}
+
+.uni-card-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin: 0;
+}
+
+.uni-card-count {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.uni-card-body { padding: 16px 20px 20px; }
+
+/* ---------- Filter bars ---------- */
+
+.uni-filters {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+@media (min-width: 769px) {
+    .uni-filters { grid-template-columns: 1fr 1fr 1.4fr; }
+}
+
+.uni-field { display: flex; flex-direction: column; gap: 5px; }
+
+.uni-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+}
+
+.uni-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.uni-input:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+select.uni-input { cursor: pointer; }
+
+/* ---------- Status badges ---------- */
+
+.uni-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.uni-status.passed {
+    border-color: var(--color-success);
+    background: var(--color-success-light);
+    color: var(--color-success);
+}
+
+.uni-status.available {
+    border-color: var(--color-primary);
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+}
+
+.uni-status.in-progress {
+    border-color: var(--color-accent);
+    background: var(--color-accent-light);
+    color: var(--color-text);
+}
+
+.uni-status.locked { opacity: 0.75; }
+
+/* Match tag on courses matching the student's department/year. */
+.uni-match {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-accent);
+}
+
+/* ---------- Course list ---------- */
+
+.uni-course-list { display: flex; flex-direction: column; }
+
+.uni-course-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 0;
+    border-top: 1px solid var(--color-border);
+}
+
+.uni-course-item:first-child { border-top: 0; }
+
+.uni-course-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.uni-course-code {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+.uni-course-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.uni-course-track {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.uni-course-actions {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.uni-materials-count { font-size: 12px; color: var(--color-text-secondary); }
+
+/* ---------- Buttons ---------- */
+
+.uni-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.uni-btn:hover {
+    border-color: var(--color-primary);
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+}
+
+.uni-btn:disabled { cursor: not-allowed; opacity: 0.6; }
+
+.uni-btn-primary {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: #fff;
+}
+
+.uni-btn-primary:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
+    color: #fff;
+}
+
+/* ---------- Material rows ---------- */
+
+.uni-material-list { display: flex; flex-direction: column; }
+
+.uni-material-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-text);
+    text-align: start;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.uni-material-row:hover { border-color: var(--color-primary); }
+
+.uni-material-row.is-selected {
+    border-color: var(--color-primary);
+    background: var(--color-primary-light);
+    box-shadow: 0 0 0 1px var(--color-primary) inset;
+}
+
+.uni-material-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.uni-material-type {
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-accent);
+}
+
+.uni-material-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.uni-material-track {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.uni-material-actions { display: flex; flex: none; gap: 8px; }
+
+/* ---------- Pagination ---------- */
+
+.uni-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 14px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+/* ---------- Detail modal ---------- */
+
+.uni-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgb(15 23 42 / 0.55);
+    animation: uni-overlay-in 0.18s ease-out;
+}
+
+@keyframes uni-overlay-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.uni-modal {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 640px;
+    max-height: min(84vh, 720px);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card-lg);
+    animation: uni-modal-in 0.2s ease-out;
+}
+
+@keyframes uni-modal-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.uni-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px 0;
+}
+
+.uni-modal-title {
+    font-size: 17px;
+    font-weight: 700;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.uni-modal-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 15px;
+    transition: color 0.15s, background 0.15s;
+}
+
+.uni-modal-close:hover {
+    color: var(--color-text);
+    background: var(--color-bg);
+}
+
+.uni-modal-body {
+    padding: 12px 20px;
+    overflow-y: auto;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--color-text);
+}
+
+.uni-modal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.uni-modal-content {
+    margin-top: 10px;
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-bg);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.uni-modal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 0 20px 18px;
+}
+
+/* ---------- Loading / empty states ---------- */
+
+.uni-loading,
+.uni-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 28px 16px;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    text-align: center;
+}
+
+.uni-empty .ui-icon { font-size: 26px; color: var(--color-text-muted); }
+
+.uni-spin {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    border: 2px solid var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 999px;
+    animation: uni-spin 0.7s linear infinite;
+}
+
+@keyframes uni-spin {
+    to { transform: rotate(1turn); }
+}
+
+/* ---------- Dark theme ---------- */
+
+/* Solid primary surfaces flip to the tinted dark surface (approved pattern). */
+[data-theme="dark"] .uni-chip { background: var(--color-bg); }
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+    .uni-header,
+    .uni-card,
+    .uni-modal-overlay,
+    .uni-modal {
+        animation: none !important;
+    }
+
+    .uni-input,
+    .uni-btn,
+    .uni-material-row { transition: none !important; }
+}

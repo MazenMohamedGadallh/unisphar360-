@@ -53,6 +53,11 @@ public class AppDbContext : DbContext
     public DbSet<Exam> Exams => Set<Exam>();
     public DbSet<ExamQuestion> ExamQuestions => Set<ExamQuestion>();
 
+    // Published-exam attempts: one attempt per student per exam (unique
+    // index, configured below) plus the server-graded per-question answers.
+    public DbSet<ExamAttempt> ExamAttempts => Set<ExamAttempt>();
+    public DbSet<ExamAnswer> ExamAnswers => Set<ExamAnswer>();
+
     // User notification preferences (On / MuteUntil / Off).
     public DbSet<UserNotificationSetting> UserNotificationSettings => Set<UserNotificationSetting>();
 
@@ -285,6 +290,41 @@ public class AppDbContext : DbContext
             .HasOne(m => m.Course)
             .WithMany()
             .HasForeignKey(m => m.CourseId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Exam attempt persistence: exactly one attempt per student per exam
+        // and the graded per-question answers within it. Cascade rules keep
+        // the exam → attempts → answers chain consistent when an exam or
+        // user row is removed.
+        modelBuilder.Entity<ExamAttempt>()
+            .HasIndex(a => new { a.ExamId, a.StudentUserId })
+            .IsUnique();
+        modelBuilder.Entity<ExamAttempt>()
+            .HasIndex(a => a.StudentUserId);
+        modelBuilder.Entity<ExamAttempt>()
+            .HasOne(a => a.Exam)
+            .WithMany()
+            .HasForeignKey(a => a.ExamId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<ExamAttempt>()
+            .HasOne(a => a.StudentUser)
+            .WithMany()
+            .HasForeignKey(a => a.StudentUserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<ExamAnswer>()
+            .HasIndex(x => new { x.AttemptId, x.QuestionId })
+            .IsUnique();
+        modelBuilder.Entity<ExamAnswer>()
+            .HasIndex(x => x.QuestionId);
+        modelBuilder.Entity<ExamAnswer>()
+            .HasOne(x => x.Attempt)
+            .WithMany(a => a.Answers)
+            .HasForeignKey(x => x.AttemptId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<ExamAnswer>()
+            .HasOne(x => x.Question)
+            .WithMany()
+            .HasForeignKey(x => x.QuestionId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Seed roles if empty

@@ -458,3 +458,9 @@ public record UserNotificationSettingDto(
 /// <summary>Request to update a user's notification preference.</summary>
 public record UpdateUserNotificationSettingRequest(
     string Preference, DateTime? MutedUntilUtc);
+
+// ---- Personal study plan (/api/study-planner/suggestion)
+public record StudyPlanCourseDto(string Course, int WeeklyHours, string Priority, double DifficultyPercent, string Reason);
+public record StudyPlanSessionDto(DateTime Date, string Course, int Hours);
+public record StudyPlanSuggestionDto(DateTime WeekStart, int TotalHours,
+    IReadOnlyList<StudyPlanCourseDto> Courses, IReadOnlyList<StudyPlanSessionDto> Sessions);

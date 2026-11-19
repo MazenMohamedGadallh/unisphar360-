@@ -42,6 +42,7 @@
         <div class="exam-list">
             @foreach (var e in _exams.OrderByDescending(e => e.PublishedAtUtc))
             {
+                var chip = StatusChipFor(e.Id);
                 <div class="exam-list-item">
                     <div class="exam-list-info">
                         <div class="exam-list-title">@e.Title</div>
@@ -53,6 +54,10 @@
                                 <span>@T("Marks"): @e.Marks</span>
                             }
                             <span>@FormatDate(e.PublishedAtUtc ?? e.CreatedAtUtc)</span>
+                            @if (chip is not null)
+                            {
+                                <span class="@chip.Value.Cls">@chip.Value.Text</span>
+                            }
                         </div>
                     </div>
                     <div class="exam-list-actions">
@@ -77,11 +82,142 @@
                     }
                     <span>@FormatDate(_selectedExam.PublishedAtUtc ?? _selectedExam.CreatedAtUtc)</span>
                 </div>
+                @if (_state is not null && (_state.OpensAtUtc is not null || _state.ClosesAtUtc is not null || _state.DurationMinutes is not null))
+                {
+                    <div class="exam-detail-meta">
+                        @if (_state.OpensAtUtc is { } opensAt)
+                        {
+                            <span>Opens: @FormatDate(opensAt) (UTC)</span>
+                        }
+                        @if (_state.ClosesAtUtc is { } closesAt)
+                        {
+                            <span>Closes: @FormatDate(closesAt) (UTC)</span>
+                        }
+                        @if (_state.DurationMinutes is { } duration)
+                        {
+                            <span>Duration: @duration min</span>
+                        }
+                    </div>
+                }
             </div>
 
-            <div class="exam-detail-actions">
-                <button class="btn btn-primary" @onclick="() => _selectedExam = null">@T("Back")</button>
-            </div>
+            @* ---- No attempt yet: read-only preview + start ---- *@
+            @if (_state is null || _state.Attempt is null)
+            {
+                @if (_selectedExam.Questions.Count > 0)
+                {
+                    <div class="exam-questions" style="margin-top: 10px;">
+                        @for (var qi = 0; qi < _selectedExam.Questions.Count; qi++)
+                        {
+                            var question = _selectedExam.Questions[qi];
+                            <div class="recommendation-item" style="display: block;">
+                                <div class="rec-title">@(qi + 1). @question.QuestionText</div>
+                                @if (!string.IsNullOrWhiteSpace(question.OptionsJson))
+                                {
+                                    <ul style="margin: 8px 0 0 20px;">
+                                        @foreach (var opt in ParseOptions(question.OptionsJson))
+                                        {
+                                            <li>@opt</li>
+                                        }
+                                    </ul>
+                                }
+                            </div>
+                        }
+                        <p class="rec-track">Answers are not shown for published exams — start the attempt to record your choices.</p>
+                    </div>
+                }
+                <div class="exam-detail-actions">
+                    <button class="btn btn-primary" @onclick="StartAttemptAsync" disabled="@_busy">
+                        @(_busy ? "Starting..." : "Start attempt")
+                    </button>
+                    <button class="btn btn-outline" @onclick="() => CloseExam()">@T("Back")</button>
+                </div>
+            }
+            @* ---- Active attempt: the take form (options only) ---- *@
+            else if (_state.Attempt.SubmittedAtUtc is null)
+            {
+                @if (_state.TakeQuestions is { Count: > 0 })
+                {
+                    <div class="exam-questions" style="margin-top: 10px;">
+                        <p class="rec-track">
+                            Attempt started @FormatDate(_state.Attempt.StartedAtUtc).
+                            @if (_state.ClosesAtUtc is { } closeAt)
+                            {
+                                <span>Submit before @FormatDate(closeAt) (UTC).</span>
+                            }
+                        </p>
+                        @for (var qi = 0; qi < _state.TakeQuestions.Count; qi++)
+                        {
+                            var question = _state.TakeQuestions[qi];
+                            var options = ParseOptions(question.OptionsJson ?? "[]");
+                            <div class="recommendation-item" style="display: block;">
+                                <div class="rec-title">@(qi + 1). @question.QuestionText</div>
+                                @if (options.Count > 0)
+                                {
+                                    <div style="margin: 8px 0 0 20px;">
+                                        @for (var oi = 0; oi < options.Count; oi++)
+                                        {
+                                            var idx = oi;
+                                            <label style="display: block; margin: 4px 0;">
+                                                <input type="radio"
+                                                       name="q_@question.QuestionId"
+                                                       value="@idx"
+                                                       checked="@(_selections.GetValueOrDefault(question.QuestionId, -1) == idx)"
+                                                       @onchange="@(e => Select(question.QuestionId, idx))" />
+                                                @options[oi]
+                                            </label>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                <div class="exam-detail-actions">
+                    <button class="btn btn-primary" @onclick="SubmitAttemptAsync" disabled="@_busy">
+                        @(_busy ? "Submitting..." : "Submit answers")
+                    </button>
+                    <button class="btn btn-outline" @onclick="() => CloseExam()">@T("Back")</button>
+                </div>
+            }
+            @* ---- Submitted: own score + (allowed) correctness review ---- *@
+            else
+            {
+                <div class="chart-container" style="margin-top: 10px;">
+                    <h4>Score: @(_state.Attempt.Score ?? 0) / @(_state.Attempt.MaxScore ?? _selectedExam.QuestionCount)</h4>
+                    <p>Submitted: @FormatDate(_state.Attempt.SubmittedAtUtc!.Value)</p>
+                    @if (!_state.ShowAnswersAfterSubmit)
+                    {
+                        <p class="rec-track">Correct answers are not shown for this exam.</p>
+                    }
+                    else if (_state.Review is { Count: > 0 })
+                    {
+                        <h4>Your answers</h4>
+                        @foreach (var r in _state.Review)
+                        {
+                            var options = ParseOptions(r.OptionsJson ?? "[]");
+                            <div class="recommendation-item" style="display: block;">
+                                <div class="rec-title">@r.QuestionText</div>
+                                <div style="margin: 6px 0 0 20px;">
+                                    <div>
+                                        <span class="@(r.IsCorrect == true ? "status-badge passed" : "status-badge needs-attention")">
+                                            @(r.IsCorrect == true ? "Correct" : r.SelectedOption is null && r.IsCorrect == false ? "Unanswered" : "Incorrect")
+                                        </span>
+                                    </div>
+                                    <div>Your answer: @(Label(options, r.SelectedOption) ?? "— unanswered —")</div>
+                                    @if (r.IsCorrect != true && r.CorrectOption is { } correctIdx)
+                                    {
+                                        <div>Correct answer: @(options.ElementAtOrDefault(correctIdx) ?? "?")</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="exam-detail-actions">
+                    <button class="btn btn-outline" @onclick="() => CloseExam()">@T("Back")</button>
+                </div>
+            }
         </div>
     }
 </RoleGate>
@@ -109,8 +245,13 @@
         _strings.TryGetValue(key, out var v) ? v : key;
 
     private List<StudentExamDto> _exams = new();
-    private StudentExamDto? _selectedExam;
+    private List<StudentAttemptListRowDto> _attempts = new();
+    private StudentExamDetailDto? _selectedExam;
+    private StudentExamAttemptStateDto? _state;
+    // questionId -> chosen option index (-1 = unanswered)
+    private Dictionary<int, int> _selections = new();
     private bool _loading;
+    private bool _busy;
     private string _error = "";
     private string _toast = "";
     private bool _toastIsError;
@@ -144,6 +285,18 @@
         {
             var resp = await Http.GetFromJsonAsync<List<StudentExamDto>>("/api/student/exams");
             _exams = resp ?? new();
+
+            // Own attempt rows (one per student per exam) drive the list
+            // chips: score + submission date once finished.
+            try
+            {
+                var rows = await Http.GetFromJsonAsync<List<StudentAttemptListRowDto>>("/api/student/exams/attempts");
+                _attempts = rows ?? new();
+            }
+            catch
+            {
+                _attempts = new();
+            }
         }
         catch (Exception ex)
         {
@@ -159,12 +312,28 @@
     {
         _loading = true;
         _error = "";
+        _state = null;
+        _selections = new();
         try
         {
-            var resp = await Http.GetFromJsonAsync<StudentExamDto>($"/api/student/exams/{examId}");
+            var resp = await Http.GetFromJsonAsync<StudentExamDetailDto>($"/api/student/exams/{examId}");
             if (resp is not null)
             {
                 _selectedExam = resp;
+            }
+
+            // Attempt state may 404 only for foreign exams — the detail call
+            // above would have already failed then. A missing attempt is a
+            // normal state (not started), not an error.
+            try
+            {
+                _state = await Http.GetFromJsonAsync<StudentExamAttemptStateDto>($"/api/student/exams/{examId}/attempt");
+                if (_state?.Attempt is not null && _state.Attempt.SubmittedAtUtc is null)
+                    _selections = new();
+            }
+            catch
+            {
+                _state = null;
             }
         }
         catch (Exception ex)
@@ -174,6 +343,150 @@
         finally
         {
             _loading = false;
+        }
+    }
+
+    async Task StartAttemptAsync()
+    {
+        if (_selectedExam is null || _busy) return;
+        _busy = true;
+        ClearToasts();
+        try
+        {
+            var resp = await Http.PostAsJsonAsync($"/api/student/exams/{_selectedExam.Id}/start", new { });
+            if (resp.IsSuccessStatusCode)
+            {
+                _toast = "Attempt started — pick your answers and submit before the exam closes.";
+                _state = await resp.Content.ReadFromJsonAsync<StudentExamAttemptStateDto>();
+            }
+            else
+            {
+                _toastIsError = true;
+                _toast = await AttemptErrorAsync(resp, "The attempt could not be started.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _toastIsError = true;
+            _toast = "Unexpected error: " + ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    async Task SubmitAttemptAsync()
+    {
+        if (_state?.TakeQuestions is null or { Count: 0 } || _busy) return;
+        _busy = true;
+        ClearToasts();
+        try
+        {
+            // Only the option CHOICE is sent; the server derives correctness.
+            var takeIds = _state.TakeQuestions.Select(q => q.QuestionId).ToHashSet();
+            var answers = takeIds.Select(id =>
+            {
+                var idx = _selections.TryGetValue(id, out var v) ? v : -1;
+                return new SubmitExamAnswerDto(id, idx >= 0 ? idx : null);
+            }).ToList();
+
+            var resp = await Http.PostAsJsonAsync(
+                $"/api/student/exams/{_state.ExamId}/submit",
+                new SubmitExamAttemptRequest(answers));
+            if (resp.IsSuccessStatusCode)
+            {
+                _state = await resp.Content.ReadFromJsonAsync<StudentExamAttemptStateDto>();
+                var score = _state?.Attempt?.Score ?? 0;
+                var max = _state?.Attempt?.MaxScore ?? takeIds.Count;
+                _toast = $"Submitted. Score: {score}/{max}";
+
+                // Refresh the list chips (score + submission date).
+                try
+                {
+                    var rows = await Http.GetFromJsonAsync<List<StudentAttemptListRowDto>>("/api/student/exams/attempts");
+                    _attempts = rows ?? new();
+                }
+                catch { /* chips refresh is best-effort */ }
+            }
+            else
+            {
+                _toastIsError = true;
+                _toast = await AttemptErrorAsync(resp, "The submission failed. Try again before the exam closes.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _toastIsError = true;
+            _toast = "Unexpected error: " + ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    void Select(int questionId, int optionIndex)
+    {
+        _selections[questionId] = optionIndex;
+    }
+
+    private (string Text, string Cls)? StatusChipFor(int examId)
+    {
+        var a = _attempts.FirstOrDefault(x => x.ExamId == examId);
+        if (a is null) return ("Not started", "status-badge available");
+        if (a.SubmittedAtUtc is not null)
+        {
+            var pct = a.MaxScore is > 0 ? (100.0 * (a.Score ?? 0) / a.MaxScore.Value) : 0;
+            return ($"Score {a.Score ?? 0}/{a.MaxScore} ({pct:0.#}%) · {FormatDate(a.SubmittedAtUtc.Value)}",
+                pct >= 50 ? "status-badge passed" : "status-badge needs-attention");
+        }
+        return ("Attempt in progress", "status-badge in-progress");
+    }
+
+    private static string? Label(List<string> options, int? index) =>
+        index is >= 0 && index < options.Count ? options[index.Value] : null;
+
+    private static async Task<string> AttemptErrorAsync(HttpResponseMessage resp, string fallback)
+    {
+        var body = await resp.Content.ReadAsStringAsync();
+        if (resp.StatusCode == HttpStatusCode.Conflict)
+        {
+            if (body.Contains("already submitted", StringComparison.OrdinalIgnoreCase))
+                return "You already submitted this exam. A second attempt is not allowed.";
+            if (body.Contains("not open yet", StringComparison.OrdinalIgnoreCase))
+                return "This exam is not open yet. Check the opens-at date.";
+            return "This exam's submission window is closed or the attempt is already submitted.";
+        }
+        return fallback + " " + body;
+    }
+
+    void CloseExam()
+    {
+        _selectedExam = null;
+        _state = null;
+        _selections = new();
+        ClearToasts();
+    }
+
+    void ClearToasts()
+    {
+        _toast = "";
+        _toastIsError = false;
+    }
+
+    /// <summary>Student-safe: exam questions only carry the option strings
+    /// (OptionsJson); correct answers never reach this page.</summary>
+    private static List<string> ParseOptions(string optionsJson)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(optionsJson)
+                ?? new List<string>();
+        }
+        catch
+        {
+            return new List<string>();
         }
     }
 

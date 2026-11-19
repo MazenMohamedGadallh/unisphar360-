@@ -8,8 +8,8 @@
    out on every F5 because the token had not been loaded yet. *@
 @if (_loading)
 {
-    <div class="auth-loading" role="status">
-        <span class="search-spinner" aria-hidden="true"></span>
+    <div class="flex min-h-[80vh] flex-col items-center justify-center gap-3.5 text-sm text-text-secondary" role="status">
+        <span class="h-[22px] w-[22px] flex-none animate-search-spin rounded-full border-2 border-border border-t-primary" aria-hidden="true"></span>
         <span>Loading&hellip;</span>
     </div>
 }

@@ -14,7 +14,7 @@
     }
     else if (Is("Doctor"))
     {
-        <NavLink href="/doctor" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="house" /></span><span>Home</span></NavLink>
+        <NavLink href="/doctor" Match="NavLinkMatch.All" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="house" /></span><span>Home</span></NavLink>
         <NavLink href="/doctor/courses" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="book-open" /></span><span>My Courses</span></NavLink>
         <NavLink href="/doctor/research" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="microscope" /></span><span>Research Hub</span></NavLink>
         <NavLink href="/doctor/profile" class="nav-item" @onclick="CloseSidebar"><span class="nav-icon"><UiIcon Name="user-round" /></span><span>Doctor Profile</span></NavLink>

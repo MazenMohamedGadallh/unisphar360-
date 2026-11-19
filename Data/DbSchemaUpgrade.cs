@@ -144,6 +144,51 @@ public static class DbSchemaUpgrade
                 CONSTRAINT "FK_UserNotificationSettings_Users_UserId" FOREIGN KEY ("UserId") REFERENCES "Users" ("Id") ON DELETE CASCADE
             );
             """);
+
+        // -------------------------------------------------------------
+        // Published-exam attempts: exam window columns + attempts/answers.
+        // Existing rows keep null dates (always open) and ShowAnswers=0.
+        // -------------------------------------------------------------
+        AddColumnIfMissing(db, "Exams", "OpensAtUtc", "TEXT NULL");
+        AddColumnIfMissing(db, "Exams", "ClosesAtUtc", "TEXT NULL");
+        AddColumnIfMissing(db, "Exams", "DurationMinutes", "INTEGER NULL");
+        AddColumnIfMissing(db, "Exams", "ShowAnswersAfterSubmit", "INTEGER NOT NULL DEFAULT 0");
+
+        db.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "ExamAttempts" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_ExamAttempts" PRIMARY KEY AUTOINCREMENT,
+                "ExamId" INTEGER NOT NULL,
+                "StudentUserId" INTEGER NOT NULL,
+                "StartedAtUtc" TEXT NOT NULL,
+                "SubmittedAtUtc" TEXT NULL,
+                "Score" INTEGER NULL,
+                "MaxScore" INTEGER NULL,
+                CONSTRAINT "FK_ExamAttempts_Exams_ExamId"
+                    FOREIGN KEY ("ExamId") REFERENCES "Exams" ("Id") ON DELETE CASCADE,
+                CONSTRAINT "FK_ExamAttempts_Users_StudentUserId"
+                    FOREIGN KEY ("StudentUserId") REFERENCES "Users" ("Id") ON DELETE CASCADE
+            );
+            """);
+        // The one-attempt-per-student-per-exam rule, mirrored in the model
+        // configuration so fresh EnsureCreated databases match this name.
+        db.Database.ExecuteSqlRaw("""CREATE UNIQUE INDEX IF NOT EXISTS "IX_ExamAttempts_ExamId_StudentUserId" ON "ExamAttempts" ("ExamId", "StudentUserId");""");
+        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_ExamAttempts_StudentUserId" ON "ExamAttempts" ("StudentUserId");""");
+
+        db.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "ExamAnswers" (
+                "Id" INTEGER NOT NULL CONSTRAINT "PK_ExamAnswers" PRIMARY KEY AUTOINCREMENT,
+                "AttemptId" INTEGER NOT NULL,
+                "QuestionId" INTEGER NOT NULL,
+                "SelectedOption" INTEGER NULL,
+                "IsCorrect" INTEGER NOT NULL,
+                CONSTRAINT "FK_ExamAnswers_ExamAttempts_AttemptId"
+                    FOREIGN KEY ("AttemptId") REFERENCES "ExamAttempts" ("Id") ON DELETE CASCADE,
+                CONSTRAINT "FK_ExamAnswers_ExamQuestions_QuestionId"
+                    FOREIGN KEY ("QuestionId") REFERENCES "ExamQuestions" ("Id") ON DELETE CASCADE
+            );
+            """);
+        db.Database.ExecuteSqlRaw("""CREATE UNIQUE INDEX IF NOT EXISTS "IX_ExamAnswers_AttemptId_QuestionId" ON "ExamAnswers" ("AttemptId", "QuestionId");""");
+        db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_ExamAnswers_QuestionId" ON "ExamAnswers" ("QuestionId");""");
     }
 
     private static void AddColumnIfMissing(AppDbContext db, string table, string column, string columnType)

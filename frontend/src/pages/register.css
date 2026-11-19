@@ -1,0 +1,518 @@
+/*
+ * Register page styles — "Premium, Friendly Academic SaaS" split-screen,
+ * consistent with the approved Login page. The brand panel reuses the
+ * LoginCampusScene component; its scene styling is re-scoped here under
+ * .register-brand so Register owns its copy and never depends on
+ * login.css being loaded (all Login files stay untouched).
+ *
+ * Desktop (>=1200px): brand panel on the left, form on the right.
+ * Below 1200px: single centered column with a compact brand header.
+ * Colors come from the React design tokens in app.css.
+ */
+
+/* ---------- Shell ---------- */
+
+.register-shell {
+    display: flex;
+    min-height: 100vh;
+    animation: register-fade-in 0.25s ease-out;
+}
+
+@keyframes register-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Brand panel (desktop only) ---------- */
+
+.register-brand {
+    display: none; /* narrow screens: a compact header is used instead */
+}
+
+@media (min-width: 1200px) {
+    .register-brand {
+        position: relative; /* anchors the scene/scrim/dots layers */
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        width: 34%;
+        flex: none;
+        padding: 44px 40px;
+        background: var(--color-primary);
+        color: #fff;
+    }
+}
+
+/* Campus scene (inline SVG, static poster under reduced motion). */
+.register-brand .login-scene-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    animation: register-scene-drift 48s ease-in-out infinite alternate;
+}
+
+@keyframes register-scene-drift {
+    from { transform: scale(1) translateY(0); }
+    to { transform: scale(1.06) translateY(-12px); }
+}
+
+.register-brand .cloud-a { animation: register-cloud-drift 26s ease-in-out infinite alternate; }
+
+.register-brand .cloud-b { animation: register-cloud-drift 34s ease-in-out infinite alternate-reverse; }
+
+@keyframes register-cloud-drift {
+    from { transform: translateX(-14px); }
+    to { transform: translateX(38px); }
+}
+
+/* Flat navy veil so the white overlay text stays readable. */
+.register-brand-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgb(10 25 62 / 0.42);
+    pointer-events: none;
+}
+
+/* Quiet dot texture — flat, not a gradient/glow. */
+.register-brand-dots {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgb(255 255 255 / 0.14) 1px, transparent 1px);
+    background-size: 22px 22px;
+    pointer-events: none;
+}
+
+.register-brand-inner {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+    animation: register-rise-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.register-brand-inner > :nth-child(2) { animation-delay: 0.08s; }
+
+.register-brand-inner > :nth-child(3) { animation-delay: 0.16s; }
+
+@keyframes register-rise-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.register-brand-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.register-brand-logo .ui-icon { font-size: 26px; }
+
+.register-brand-title {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.register-brand-heading {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.register-brand-sub {
+    font-size: 14px;
+    opacity: 0.85;
+    max-width: 360px;
+}
+
+.register-features {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.register-feature {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.register-feature-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    border-radius: 10px;
+    background: rgb(255 255 255 / 0.15);
+    font-size: 16px;
+    animation: register-icon-float 4.2s ease-in-out infinite alternate;
+}
+
+.register-feature:nth-child(1) .register-feature-icon { animation-delay: 0s; }
+.register-feature:nth-child(2) .register-feature-icon { animation-delay: 0.55s; }
+.register-feature:nth-child(3) .register-feature-icon { animation-delay: 1.1s; }
+
+@keyframes register-icon-float {
+    from { transform: translateY(0); }
+    to { transform: translateY(-3px); }
+}
+
+/* Accent tint on the middle icon — teal, the brand's secondary color. */
+.register-feature:nth-child(2) .register-feature-icon { background: var(--color-accent); }
+
+.register-feature small {
+    display: block;
+    font-size: 12px;
+    opacity: 0.75;
+}
+
+.register-brand-footer {
+    position: relative;
+    font-size: 12px;
+    opacity: 0.7;
+    animation: register-rise-in 0.55s 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ---------- Form panel ---------- */
+
+.register-panel {
+    position: relative;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    background: var(--color-bg);
+}
+
+/* Compact brand header on narrow screens. */
+.register-mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+@media (min-width: 1200px) {
+    .register-mobile-brand { display: none; }
+}
+
+.register-theme-toggle {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+}
+
+.register-card {
+    width: 100%;
+    max-width: 640px;
+    padding: 36px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card-lg);
+    animation: register-rise-in 0.4s ease-out both;
+}
+
+@media (max-width: 640px) {
+    .register-card { padding: 24px 20px; }
+}
+
+.register-heading {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    text-align: center;
+}
+
+.register-sub {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    margin-bottom: 24px;
+    text-align: center;
+}
+
+/* ---------- Sections, labels, helpers ---------- */
+
+.register-section-title {
+    margin: 0 0 12px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.register-section-title:not(:first-of-type) { margin-top: 20px; }
+
+.register-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.register-hint {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.register-field-error {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--color-danger);
+}
+
+/* ---------- Inputs, selects, eye buttons ---------- */
+
+.register-field { margin-bottom: 16px; }
+
+/* Two-column field grid on wide screens (parity with the old utilities). */
+.register-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr;
+    column-gap: 16px;
+}
+
+@media (min-width: 641px) {
+    .register-grid-2 { grid-template-columns: repeat(2, 1fr); }
+}
+
+.register-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.register-input-icon {
+    position: absolute;
+    left: 12px;
+    display: flex;
+    align-items: center;
+    font-size: 15px;
+    color: var(--color-text-muted);
+    pointer-events: none;
+}
+
+.register-input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+/* Inputs with a leading icon. */
+.register-input.has-icon { padding-left: 38px; }
+
+/* Inputs with a trailing eye button. */
+.register-input.has-eye { padding-right: 42px; }
+
+.register-input:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+/* Keep the browser's native select arrow; match input sizing. */
+select.register-input {
+    height: auto;
+    cursor: pointer;
+}
+
+.register-eye {
+    position: absolute;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 15px;
+    transition: color 0.15s, background 0.15s;
+}
+
+.register-eye:hover {
+    color: var(--color-text);
+    background: var(--color-bg);
+}
+
+/* ---------- Role cards ---------- */
+
+.register-role-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+@media (min-width: 641px) {
+    .register-role-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.register-role-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: inherit;
+    text-align: start;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.register-role-card:hover { border-color: var(--color-primary); }
+
+.register-role-card.is-selected {
+    border-color: var(--color-primary);
+    background: var(--color-primary-light);
+    box-shadow: 0 0 0 1px var(--color-primary) inset;
+}
+
+.register-role-icon {
+    display: flex;
+    align-items: center;
+    font-size: 18px;
+    color: var(--color-text-muted);
+    transition: color 0.15s;
+}
+
+.register-role-card.is-selected .register-role-icon { color: var(--color-primary); }
+
+.register-role-title {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.register-role-desc {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+/* ---------- Password checklist (display-only) ---------- */
+
+.register-pw-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.register-pw-chip {
+    padding: 3px 9px;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-bg);
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.register-pw-chip.met {
+    border-color: var(--color-accent);
+    background: var(--color-accent-light);
+    color: var(--color-text);
+}
+
+/* ---------- Submit + sign-in row ---------- */
+
+.register-submit {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 11px 20px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.register-submit:hover:not(:disabled) { background: var(--color-primary-hover); }
+
+.register-submit:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+/* Loading spinner: kept under reduced motion (essential feedback). */
+.register-spinner {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    border: 2px solid rgb(255 255 255 / 0.4);
+    border-top-color: #fff;
+    border-radius: 999px;
+    animation: register-spin 0.7s linear infinite;
+}
+
+@keyframes register-spin {
+    to { transform: rotate(1turn); }
+}
+
+.register-signin {
+    margin-top: 18px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+.register-signin a {
+    font-weight: 600;
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+.register-signin a:hover { text-decoration: underline; }
+
+/* ---------- Reduced motion: freeze everything ---------- */
+
+/*
+ * With motion disabled the page becomes fully static: the scene acts as
+ * its own poster and entrances render in their final state. The submit
+ * spinner keeps spinning — it is essential state feedback, not decor.
+ */
+@media (prefers-reduced-motion: reduce) {
+    .register-shell,
+    .register-brand-inner,
+    .register-brand-footer,
+    .register-card,
+    .register-brand .login-scene-svg,
+    .register-brand .cloud-a,
+    .register-brand .cloud-b,
+    .register-feature-icon {
+        animation: none !important;
+    }
+}
