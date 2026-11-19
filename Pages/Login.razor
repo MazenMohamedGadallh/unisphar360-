@@ -1,0 +1,273 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@layout EmptyLayout
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Login - UniSphere 360+</PageTitle>
+
+<div class="login-shell hub @(_portal ? "is-portal" : "")">
+    <div class="login-scene" aria-hidden="true"></div>
+    <canvas id="login-aurora" class="login-aurora" aria-hidden="true"></canvas>
+    <div class="login-aurora-veil" aria-hidden="true"></div>
+
+    <header class="hub-nav">
+        <div class="login-brand-logo">
+            <span class="logo-mark brand-sphere"><img src="/images/unisphar-sphere.png" alt="UniSphere sphere logo" /></span>
+            <span class="hub-brand">
+                <span class="login-brand-name">UniSphere <span class="logo-plus">360+</span></span>
+                <small>Learn &middot; Grow &middot; Achieve</small>
+            </span>
+        </div>
+        <nav class="hub-links" aria-label="Site">
+            <NavLink href="/register" class="hub-cta">Get Started</NavLink>
+        </nav>
+    </header>
+
+    <main class="hub-main">
+        <section class="hub-hero">
+            <h1 class="hub-title">Your University Journey<span class="hub-title-accent">Starts Here</span></h1>
+            <p class="hub-tag">Study <i>&bull;</i> Connect <i>&bull;</i> Build Your Future</p>
+            <ul class="hub-badges" aria-label="What you get">
+                <li><span><UiIcon Name="graduation-cap" /></span>Courses</li>
+                <li><span><UiIcon Name="sparkles" /></span>AI Assistant</li>
+                <li><span><UiIcon Name="briefcase" /></span>Careers</li>
+                <li><span><UiIcon Name="microscope" /></span>Research</li>
+            </ul>
+        </section>
+
+        <div class="login-panel">
+            <div class="login-card">
+                <div class="login-header">
+                    <h1>Welcome Back</h1>
+                    <p>Sign in to your account</p>
+                </div>
+
+                @if (Expired == "1")
+                {
+                    <div class="alert alert-error">Session expired. Please sign in again.</div>
+                }
+                @if (!string.IsNullOrEmpty(_info))
+                {
+                    <div class="alert alert-info">@_info</div>
+                }
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <div class="alert alert-error">@_error</div>
+                }
+
+                <form @onsubmit="HandleLogin">
+                    <div class="form-group field-icon">
+                        <label for="email" class="sr-only">Email Address</label>
+                        <span class="field-ico"><UiIcon Name="mail" /></span>
+                        <input type="email" id="email" @bind="_email" placeholder="Email Address" autocomplete="username" required />
+                    </div>
+                    <div class="form-group field-icon">
+                        <label for="password" class="sr-only">Password</label>
+                        <span class="field-ico"><UiIcon Name="lock" /></span>
+                        <input type="@(_showPw ? "text" : "password")" id="password" @bind="_password" placeholder="Password" autocomplete="current-password" required />
+                        <button type="button" class="field-eye" @onclick="() => _showPw = !_showPw" aria-label="@(_showPw ? "Hide password" : "Show password")">
+                            <UiIcon Name="@(_showPw ? "eye-off" : "eye")" />
+                        </button>
+                    </div>
+                    <div class="login-row">
+                        <label class="remember"><input type="checkbox" @bind="_remember" /> Remember me</label>
+                        <a href="/login" @onclick:preventDefault @onclick="ForgotPassword">Forgot Password?</a>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block login-submit" disabled="@(_loading || _portal)">
+                        @if (_loading)
+                        {
+                            <span class="search-spinner btn-spinner" aria-hidden="true"></span>
+                            <span>Signing in…</span>
+                        }
+                        else
+                        {
+                            <span>Login</span>
+                            <span class="login-arrow"><UiIcon Name="arrow-right" /></span>
+                        }
+                    </button>
+                </form>
+
+                <div class="auth-switch">
+                    <span>Don't have an account? <NavLink href="/register">Sign Up</NavLink></span>
+                </div>
+
+                <div class="login-footer">
+                    <div class="demo-accounts-label"><span>Demo accounts</span><small>Tap to fill</small></div>
+                    <div class="demo-grid">
+                        @foreach (var account in DemoAccounts)
+                        {
+                            <button type="button" class="demo-btn" @onclick="(e) => FillDemo(account)">
+                                <span class="demo-role demo-@(account.Role.ToLowerInvariant())"><UiIcon Name="@RoleIcon(account.Role)" /></span>
+                                <span class="demo-meta"><strong>@account.Role</strong></span>
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="hub-foot">Empowering Students&hellip; Building Tomorrow</footer>
+</div>
+
+@code {
+    private string _email = "";
+    private string _password = "";
+    private string? _error;
+    private bool _loading;
+    private string? _info;
+    private void ForgotPassword() { _error = null; _info = "Password resets are handled by your university administrator. Please contact them to regain access."; }
+    private bool _showPw;
+    private bool _remember = true;
+
+    private sealed record DemoUser(string Role, string Email, string Password);
+
+    // Matches the README "Demo Accounts" table exactly: one demo account per
+    // role — Student, Graduate, Doctor and Admin.
+    private static readonly DemoUser[] DemoAccounts =
+    [
+        new("Student", "mazenmohamed@unisphere.edu", "Password123!"),
+        new("Graduate", "graduate@unisphere.edu", "Graduate123!"),
+        new("Doctor", "doctor@unisphere.edu", "Doctor123!"),
+        new("Admin", "admin@unisphere.edu", "Admin123!")
+    ];
+
+    private static string RoleIcon(string role) => role switch
+    {
+        "Student" => "graduation-cap",
+        "Graduate" => "briefcase",
+        "Doctor" => "microscope",
+        "Admin" => "shield-check",
+        _ => "user-round"
+    };
+
+    private void FillDemo(DemoUser account)
+    {
+        _email = account.Email;
+        _password = account.Password;
+        _error = null;
+    }
+
+    [SupplyParameterFromQuery(Name = "expired")]
+    public string? Expired { get; set; }
+
+    // Deep links (or an F5 on a protected nested route) arrive here with a
+    // returnUrl courtesy of the auth challenge redirect in Program.cs.
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    /// <summary>Only navigate to local app paths. Rejects protocol URLs,
+    /// protocol-relative hosts (//evil.com), backslashes and control
+    /// characters so returnUrl can never act as an open redirect.</summary>
+    private static bool IsSafeReturnUrl(string? url) =>
+        !string.IsNullOrEmpty(url)
+        && url.StartsWith('/')
+        && !url.StartsWith("//")
+        && !url.StartsWith("/\\")
+        && !url.Contains('\\')
+        && url.All(c => !char.IsControl(c))
+        && url != "/login";
+
+    private string LandingPath =>
+        IsSafeReturnUrl(ReturnUrl) ? ReturnUrl!
+        // Role-aware landing (this project's RoleRoutes): doctors go to their
+        // dashboard, admins to the admin panel, graduates to /graduate.
+        : (Fetch?.Role is null ? "/dashboard" : UniSphere.Api.Services.RoleRoutes.HomeFor(Fetch.Role));
+
+    private AuthUserDto? Fetch { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Already signed in (typed URL / Back / link): don't show the form.
+        var user = await AuthService.GetUserAsync();
+        if (user is not null)
+        {
+            Fetch = user;
+            Nav.NavigateTo(LandingPath, replace: true);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Full reload (F5): the scoped auth service starts empty, so the
+        // persisted token can only be read once JS interop is available
+        // (OnAfterRenderAsync — never during prerender). Restore it here:
+        // a signed-in user should land on their destination, not the form.
+        if (firstRender)
+        {
+            try
+            {
+                _fx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/login-fx.js");
+                await _fx.InvokeVoidAsync("startAurora", "login-aurora");
+            }
+            catch { /* decorative only */ }
+
+            if (await AuthService.RestoreSessionAsync())
+                Nav.NavigateTo(LandingPath, replace: true);
+        }
+    }
+
+    private IJSObjectReference? _fx;
+    private bool _portal;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_fx is null) return;
+        try
+        {
+            await _fx.InvokeVoidAsync("stopAurora");
+            await _fx.DisposeAsync();
+        }
+        catch { /* circuit gone */ }
+    }
+
+    private async Task HandleLogin(EventArgs e)
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var token = await AuthService.LoginAsync(_email, _password);
+            if (token is not null)
+            {
+                // Client-side navigation keeps the same circuit, so the
+                // in-memory JWT stored by BlazorAuthService survives.
+                // forceLoad: true would reload the page, drop the token,
+                // and bounce straight back to /login.
+                var user = await AuthService.GetUserAsync();
+                Fetch = user;
+                var target = IsSafeReturnUrl(ReturnUrl)
+                    ? ReturnUrl!.Trim()
+                    : user is not null && string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase)
+                        ? "/admin"
+                        : UniSphere.Api.Services.RoleRoutes.HomeFor(user?.Role ?? "Student");
+                // Creative transition: logo -> obsidian core -> portal -> workspace.
+                _portal = true;
+                await InvokeAsync(StateHasChanged);
+                try
+                {
+                    _fx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/login-fx.js");
+                    await _fx.InvokeVoidAsync("playPortal");
+                }
+                catch { /* fall through to a plain redirect */ }
+                Nav.NavigateTo(target);
+            }
+            else
+            {
+                _error = "Invalid email or password.";
+            }
+        }
+        catch
+        {
+            _error = "Login failed. Please try again.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

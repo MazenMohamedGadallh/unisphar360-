@@ -1,0 +1,30 @@
+@namespace UniSphere.Api.Components
+
+@* Creative duotone icon: a soft lavender gradient "ghost" layer sits offset
+   behind a crisp current-colour stroke layer, so every glyph reads two-tone
+   with a little depth. The gradient (#ui-duo) is defined once in App.razor. *@
+<svg class="ui-icon @Class"
+     xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 24 24"
+     width="1em"
+     height="1em"
+     fill="none"
+     stroke="currentColor"
+     stroke-width="1.75"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     aria-hidden="true"
+     focusable="false">
+    <g class="duo-back" transform="translate(1.4 1.4)">@((MarkupString)_paths)</g>
+    <g class="duo-front">@((MarkupString)_paths)</g>
+</svg>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Name { get; set; } = "circle";
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    private string _paths => UiIconPaths.Resolve(Name);
+}

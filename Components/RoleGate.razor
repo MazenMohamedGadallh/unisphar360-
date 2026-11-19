@@ -1,0 +1,73 @@
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+@inject NavigationManager Nav
+
+@if (_allowed)
+{
+    @ChildContent
+}
+else if (_loading)
+{
+    <div class="auth-loading" role="status">
+        <span class="search-spinner" aria-hidden="true"></span>
+        <span>Checking access&hellip;</span>
+    </div>
+}
+
+@code {
+    /// <summary>Comma-separated roles, e.g. "Doctor,Admin". Empty = any signed-in user.</summary>
+    [Parameter] public string Roles { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _allowed;
+    private bool _loading = true;
+    private bool _checked;
+    private bool _redirected;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthService.IsInitialized)
+            await CheckAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !AuthService.IsInitialized)
+        {
+            await AuthService.RestoreSessionAsync();
+            await CheckAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckAsync()
+    {
+        if (_checked) return;
+        _checked = true;
+
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            _loading = false;
+            if (!_redirected && AuthService.GetToken() is null)
+            {
+                _redirected = true;
+                Nav.NavigateTo("/login", replace: true);
+            }
+            return;
+        }
+
+        if (!UniSphere.Api.Services.RoleRoutes.RoleAllowed(user.Role, Roles))
+        {
+            _loading = false;
+            if (!_redirected)
+            {
+                _redirected = true;
+                Nav.NavigateTo(UniSphere.Api.Services.RoleRoutes.HomeFor(user.Role), replace: true);
+            }
+            return;
+        }
+
+        _allowed = true;
+        _loading = false;
+    }
+}

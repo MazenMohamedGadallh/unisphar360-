@@ -1,0 +1,33 @@
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+@inject NavigationManager Nav
+
+<div class="auth-loading" role="status">
+    <span class="search-spinner" aria-hidden="true"></span>
+    <span>Opening your workspace&hellip;</span>
+</div>
+
+@code {
+    private bool _redirected;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthService.IsInitialized)
+            await RedirectAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _redirected) return;
+        await AuthService.RestoreSessionAsync();
+        if (AuthService.IsInitialized)
+            await RedirectAsync();
+    }
+
+    private async Task RedirectAsync()
+    {
+        if (_redirected) return;
+        _redirected = true;
+        var user = await AuthService.GetUserAsync();
+        Nav.NavigateTo(user is null ? "/login" : UniSphere.Api.Services.RoleRoutes.HomeFor(user.Role), replace: true);
+    }
+}

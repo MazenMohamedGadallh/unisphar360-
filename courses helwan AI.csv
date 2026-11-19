@@ -1,0 +1,72 @@
+Id,Code,Title,Description,Track,Credits,UniversityId,Department,AcademicYear,Semester,CourseType,CatalogImport
+600,HU 111,English I,Compulsory,General,2,3,HU,1,Term 1,Compulsory,1
+601,HU 112,English II,Compulsory,General,2,3,HU,1,Term 2,Compulsory,1
+602,ST 121,Probability and Statistics,Compulsory,General,3,3,ST,1,Term 1,Compulsory,1
+603,IT 111,Electronics,Compulsory,General,3,3,IT,1,Term 2,Compulsory,1
+604,CS 111,Introduction to Computers,Compulsory,General,3,3,CS,1,Term 1,Compulsory,1
+605,CS 112,Programming-1,Compulsory,General,3,3,CS,1,Term 2,Compulsory,1
+606,CS 251,Software Engineering-1,Compulsory,General,3,3,CS,1,Term 2,Compulsory,1
+607,MA 110,Mathematics-0,Compulsory,General,0,3,MA,1,Term 1,Compulsory,1
+608,MA 111,Mathematics-1,Compulsory,General,3,3,MA,1,Term 1,Compulsory,1
+609,MA 112,Discrete Mathematics,Compulsory,General,3,3,MA,1,Term 2,Compulsory,1
+610,PH 111,Physics,Compulsory,General,3,3,PH,1,Term 1,Compulsory,1
+611,HU 122,Fundamentals of Management,Elective,General,3,3,HU,1,Term 2,Elective,1
+612,ST 122,Probability and Statistics-2,Elective,General,3,3,ST,1,Term 2,Elective,1
+613,HU 121,Fundamentals of Economics,Elective,General,3,3,HU,1,Term 1,Elective,1
+614,HU 332,Creative Thinking,Elective,General,3,3,HU,1,Term 1,Elective,1
+615,HU 333,Mass Communication,Elective,General,3,3,HU,1,Term 2,Elective,1
+616,HU 313,Human Rights,Compulsory,General,2,3,HU,2,Term 1,Compulsory,1
+617,IT 221,Data Communication,Compulsory,General,3,3,IT,2,Term 1,Compulsory,1
+618,IT 222,Computer Networks-1,Compulsory,General,3,3,IT,2,Term 2,Compulsory,1
+619,IT 223,Internet Technology,Compulsory,General,3,3,IT,2,Term 2,Compulsory,1
+620,CS 213,Programming-2,Compulsory,General,3,3,CS,2,Term 1,Compulsory,1
+621,CS 214,Data Structures,Compulsory,General,3,3,CS,2,Term 1,Compulsory,1
+622,CS 221,Logic Design,Compulsory,General,3,3,CS,2,Term 1,Compulsory,1
+623,CS 241,Operating Systems-1,Compulsory,General,3,3,CS,2,Term 2,Compulsory,1
+624,CS 316,Algorithms,Compulsory,General,3,3,CS,2,Term 2,Compulsory,1
+625,MA 113,Mathematics-2,Compulsory,General,3,3,MA,2,Term 1,Compulsory,1
+626,IS 211,Database Systems-1,Compulsory,General,3,3,IS,2,Term 1,Compulsory,1
+627,IS 231,Fundamentals of Information Systems,Compulsory,General,3,3,IS,2,Term 1,Compulsory,1
+628,IS 240,Operations Research,Compulsory,General,3,3,IS,2,Term 1,Compulsory,1
+629,IS 351,Analysis and Design of Information Systems-1,Compulsory,General,3,3,IS,2,Term 2,Compulsory,1
+630,IT 211,Computer Maintenance,Elective,General,3,3,IT,2,Term 1,Elective,1
+631,IT 241,Signals and Systems,Elective,General,3,3,IT,2,Term 2,Elective,1
+632,CS 313,Programming-3,Elective,General,3,3,CS,2,Term 2,Elective,1
+633,IS 241,Modeling and Simulation,Elective,General,3,3,IS,2,Term 1,Elective,1
+634,IS 321,Projects Management,Elective,General,3,3,IS,2,Term 2,Elective,1
+635,IS 342,Simulation Languages,Elective,General,3,3,IS,2,Term 2,Elective,1
+636,HU 213,English III,Elective,General,3,3,HU,2,Term 1,Elective,1
+637,HU 323,Fundamentals of Accounting,Elective,General,3,3,HU,2,Term 1,Elective,1
+638,HU 331,Communication and Negotiation Skills,Elective,General,3,3,HU,2,Term 2,Elective,1
+639,HU 334,Professional Ethics,Elective,General,3,3,HU,2,Term 2,Elective,1
+640,AI 310,Artificial Intelligence,Compulsory,AI,3,3,AI,3,Term 1,Compulsory,1
+641,AI 320,Convex Optimization Theory,Compulsory,AI,3,3,AI,3,Term 1,Compulsory,1
+642,AI 330,Machine Learning,Compulsory,AI,3,3,AI,3,Term 1,Compulsory,1
+643,AI 335,Neural Networks and Deep Learning,Compulsory,AI,3,3,AI,3,Term 2,Compulsory,1
+644,AI 360,Natural Language Processing,Compulsory,AI,3,3,AI,3,Term 2,Compulsory,1
+645,AI 370,Advanced Machine Learning,Compulsory,AI,3,3,AI,3,Term 2,Compulsory,1
+646,IS 365,Big Data Technologies,Compulsory,AI,3,3,IS,3,Term 1,Compulsory,1
+647,IT 312,Microprocessor,Elective,AI,3,3,IT,3,Term 1,Elective,1
+648,IT 341,Digital Signal Processing,Elective,AI,3,3,IT,3,Term 1,Elective,1
+649,CS 471,Parallel Processing,Elective,AI,3,3,CS,3,Term 1,Elective,1
+650,AI 380,Human Computer Interaction,Elective,AI,3,3,AI,3,Term 2,Elective,1
+651,IS 312,Database Systems 2,Elective,AI,3,3,IS,3,Term 1,Elective,1
+652,IS 360,Introduction to Data Science,Elective,AI,3,3,IS,3,Term 2,Elective,1
+653,IT 441,Image Processing-1,Compulsory,AI,3,3,IT,4,Term 1,Compulsory,1
+654,AI 420,Evolutionary Algorithm,Compulsory,AI,3,3,AI,4,Term 1,Compulsory,1
+655,AI 430,Computational Intelligence,Compulsory,AI,3,3,AI,4,Term 1,Compulsory,1
+656,AI 460,Natural Language Understanding,Compulsory,AI,3,3,AI,4,Term 2,Compulsory,1
+657,AI 498-1,Project1,Compulsory,AI,3,3,AI,4,Term 1,Compulsory,1
+658,AI 498,Project,Compulsory,AI,3,3,AI,4,Term 2,Compulsory,1
+659,IT 414,Embedded Systems,Elective,AI,3,3,IT,4,Term 1,Elective,1
+660,IT 415,Robotics,Elective,AI,3,3,IT,4,Term 1,Elective,1
+661,IT 425,Embedded Internet of Things System,Elective,AI,3,3,IT,4,Term 2,Elective,1
+662,IT 443,Speech Processing,Elective,AI,3,3,IT,4,Term 2,Elective,1
+663,IT 444,Computer Vision,Elective,AI,3,3,IT,4,Term 1,Elective,1
+664,CS 416,Advanced Algorithms,Elective,AI,3,3,CS,4,Term 1,Elective,1
+665,CS 480,Cryptography,Elective,AI,3,3,CS,4,Term 1,Elective,1
+666,CS 460,Distributed Systems and Cloud Computing,Elective,AI,3,3,CS,4,Term 2,Elective,1
+667,AI 435,Spoken Language Processing,Elective,AI,3,3,AI,4,Term 2,Elective,1
+668,AI 457,Knowledge Representation,Elective,AI,3,3,AI,4,Term 1,Elective,1
+669,AI 490,Bioinformatics,Elective,AI,3,3,AI,4,Term 2,Elective,1
+670,AI 496,Selected Topics in Artificial Intelligence,Elective,AI,3,3,AI,4,Term 2,Elective,1
