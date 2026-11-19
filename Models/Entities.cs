@@ -309,6 +309,17 @@ public class Exam
     public DateTime? PublishedAtUtc { get; set; }
     public int? Marks { get; set; }                   // total marks for the exam
     public ICollection<ExamQuestion> Questions { get; set; } = new List<ExamQuestion>();
+
+    // Optional exam window (set at publish time for quiz/exam publication):
+    // OpensAtUtc gates starting an attempt, ClosesAtUtc is the hard
+    // server-side submit deadline, DurationMinutes is the advertised time
+    // budget (soft — displayed to students, not auto-enforced), and
+    // ShowAnswersAfterSubmit controls whether students see per-question
+    // correctness after their attempt is graded. Null dates = always open.
+    public DateTime? OpensAtUtc { get; set; }
+    public DateTime? ClosesAtUtc { get; set; }
+    public int? DurationMinutes { get; set; }
+    public bool ShowAnswersAfterSubmit { get; set; }
 }
 
 /// <summary>One question inside an exam, with its answer hidden behind a

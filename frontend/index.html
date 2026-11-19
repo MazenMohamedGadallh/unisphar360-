@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UniSphere 360+</title>
+    <script>
+      // Apply the saved (or system) theme before first paint: no white flash.
+      // React-only preference key ("unisphere.theme") — the Razor app's
+      // "theme" key is a separate preference and is never read here.
+      (function () {
+        try {
+          var stored = localStorage.getItem("unisphere.theme");
+          var theme = stored === "light" || stored === "dark"
+            ? stored
+            : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          document.documentElement.dataset.theme = theme;
+        } catch (e) { /* private mode: stay light */ }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

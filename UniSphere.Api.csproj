@@ -16,14 +16,38 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.8.1" />
   </ItemGroup>
 
-  <!-- The tests/ folder belongs to the test project, not this one. -->
+  <!-- The tests/ folder belongs to the test project, not this one. -->  <!-- The tests/ folder belongs to the test project, not this one. -->
   <ItemGroup>
-    <Compile Remove="tests\**\*.cs" />
+    <Compile Remove="tests\**" />
+    <Content Remove="tests\**" />
+    <None Remove="tests\**" />
+    <EmbeddedResource Remove="tests\**" />
   </ItemGroup>
 
   <!-- University catalog files are read at startup (university from file name). -->
   <ItemGroup>
     <Content Include="Data\courses-*.csv" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!--
+    Tailwind CSS generation (Phase 1).
+    Requires the standalone CLI at tools\tailwind\tailwindcss.exe (NOT committed;
+    download from https://github.com/tailwindlabs/tailwindcss/releases and verify
+    the published SHA256). Without the exe this target only prints a skip
+    notice - the build still succeeds using the committed app.generated.css.
+  -->
+  <Target Name="TailwindBuild" BeforeTargets="Build"
+          Inputs="wwwroot/css/app.css;**/*.razor;Components/**/*.cs"
+          Outputs="wwwroot/css/app.generated.css">
+    <Message Condition="!Exists('$(MSBuildProjectDirectory)\tools\tailwind\tailwindcss.exe')"
+             Importance="high"
+             Text="UniSphere: tools\tailwind\tailwindcss.exe NOT FOUND - skipping Tailwind generation. Using the committed wwwroot/css/app.generated.css. To regenerate styles, download the CLI per README/THIRD-PARTY-NOTICES and place it at tools\tailwind\tailwindcss.exe." />
+    <Exec Condition="Exists('$(MSBuildProjectDirectory)\tools\tailwind\tailwindcss.exe') And '$(Configuration)' != 'Release'"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          Command="tools\tailwind\tailwindcss.exe -i wwwroot/css/app.css -o wwwroot/css/app.generated.css" />
+    <Exec Condition="Exists('$(MSBuildProjectDirectory)\tools\tailwind\tailwindcss.exe') And '$(Configuration)' == 'Release'"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          Command="tools\tailwind\tailwindcss.exe -i wwwroot/css/app.css -o wwwroot/css/app.generated.css --minify" />
+  </Target>
 
 </Project>

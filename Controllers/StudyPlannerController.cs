@@ -14,12 +14,24 @@ public class StudyPlannerController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly AcademicService _academic;
+    private readonly StudyPlanGenerator _generator;
 
-    public StudyPlannerController(AppDbContext db, AcademicService academic)
+    public StudyPlannerController(AppDbContext db, AcademicService academic, StudyPlanGenerator generator)
     {
         _db = db;
         _academic = academic;
+        _generator = generator;
     }
+
+    /// <summary>Personal weekly plan from grades, class difficulty, credits and attendance.</summary>
+    [HttpGet("suggestion")]
+    public async Task<StudyPlanSuggestionDto> Suggestion() =>
+        await _generator.SuggestAsync(User.GetUserId());
+
+    /// <summary>Saves the suggested sessions into this week's planner.</summary>
+    [HttpPost("suggestion/apply")]
+    public async Task<IActionResult> ApplySuggestion() =>
+        Ok(new { added = await _generator.ApplyAsync(User.GetUserId()) });
 
     /// <summary>The week's plan. Optional ?weekStart=2026-10-04 (any date inside the wanted week).</summary>
     [HttpGet]

@@ -57,6 +57,71 @@ else
         </div>
     </div>
 
+    <!-- Personal weekly study plan (grades + class difficulty + credits + attendance) -->
+    <div class="card" style="margin-top: 24px;">
+        <div class="card-header">
+            <h3>Your study plan this week @(_plan is null ? "" : $"· {_plan.TotalHours}h")</h3>
+            @if (_plan is { Courses.Count: > 0 })
+            {
+                <button class="btn btn-primary btn-sm" @onclick="ApplyPlanAsync" disabled="@_savingPlan">
+                    <UiIcon Name="calendar-days" /> @(_savingPlan ? "Saving..." : "Add to my planner")
+                </button>
+            }
+        </div>
+        <div class="chart-container">
+            @if (_planMessage is not null)
+            {
+                <div class="alert @(_planSaved ? "alert-success" : "alert-error")">@_planMessage</div>
+            }
+            @if (_plan is null)
+            {
+                <div class="loading">Building your plan...</div>
+            }
+            else if (_plan.Courses.Count == 0)
+            {
+                <div class="empty-state">No current courses to plan for.</div>
+            }
+            else
+            {
+                <p class="factor-notes" style="margin-top: 0;">
+                    More hours go to courses where your grade is lowest, the course is hardest for the class,
+                    it has more credit hours, or your attendance is low.
+                </p>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead><tr><th>Course</th><th>Hours / week</th><th>Priority</th><th>Difficulty</th><th>Why</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in _plan.Courses)
+                            {
+                                <tr>
+                                    <td>@c.Course</td>
+                                    <td>@(c.WeeklyHours)h</td>
+                                    <td><span class="status-badge @PriorityBadgeClass(c.Priority)">@c.Priority</span></td>
+                                    <td>@c.DifficultyPercent%</td>
+                                    <td>@c.Reason</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 16px;">
+                    @foreach (var day in _plan.Sessions.GroupBy(s => s.Date.Date))
+                    {
+                        <div class="card" style="padding: 12px;">
+                            <strong>@day.Key.ToString("dddd d MMM")</strong>
+                            @foreach (var s in day)
+                            {
+                                <div style="display: flex; justify-content: space-between; gap: 8px; margin-top: 6px;">
+                                    <span>@s.Course</span><span>@(s.Hours)h</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
     <div class="two-column" style="margin-top: 24px;">
         <!-- Grades & attendance chart -->
         <div class="card">
@@ -258,7 +323,7 @@ else
         _error = null;
         try
         {
-            await Task.WhenAll(LoadAnalysisAsync(), LoadPerformanceAsync(), LoadTrendAsync());
+            await Task.WhenAll(LoadAnalysisAsync(), LoadPerformanceAsync(), LoadTrendAsync(), LoadPlanAsync());
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
         {
@@ -285,6 +350,46 @@ else
 
     private async Task LoadTrendAsync() =>
         _trend = await Http.GetFromJsonAsync<List<GpaTrendPointDto>>("/api/analytics/me/gpa-trend") ?? new();
+
+    private StudyPlanSuggestionDto? _plan;
+    private bool _savingPlan;
+    private bool _planSaved;
+    private string? _planMessage;
+
+    private async Task LoadPlanAsync() =>
+        _plan = await Http.GetFromJsonAsync<StudyPlanSuggestionDto>("/api/study-planner/suggestion");
+
+    private async Task ApplyPlanAsync()
+    {
+        _savingPlan = true;
+        _planMessage = null;
+        try
+        {
+            var resp = await Http.PostAsync("/api/study-planner/suggestion/apply", null);
+            resp.EnsureSuccessStatusCode();
+            var result = await resp.Content.ReadFromJsonAsync<ApplyPlanResult>();
+            _planSaved = true;
+            _planMessage = $"Added {result?.Added ?? 0} study sessions to this week's planner.";
+        }
+        catch
+        {
+            _planSaved = false;
+            _planMessage = "Could not save the plan to your planner. Please try again.";
+        }
+        finally
+        {
+            _savingPlan = false;
+        }
+    }
+
+    private sealed record ApplyPlanResult(int Added);
+
+    private static string PriorityBadgeClass(string priority) => priority switch
+    {
+        "High" => "needs-attention",
+        "Medium" => "good",
+        _ => "excellent"
+    };
 
     private static string RiskLabel(string risk) => risk switch
     {

@@ -248,11 +248,13 @@ public class StudentExamsController : ControllerBase
         return Ok(exams);
     }
 
-    /// <summary>Get one published exam (questions only, no correct answers).</summary>
+    /// <summary>Get one published exam as a full detail view: metadata plus
+    /// its questions in the safe StudentExamQuestionDto shape (correct
+    /// answers and explanations are never selected server-side).</summary>
     [HttpGet("{examId:int}")]
-    public async Task<ActionResult<StudentExamDto>> Get(int examId, CancellationToken ct)
+    public async Task<ActionResult<StudentExamDetailDto>> Get(int examId, CancellationToken ct)
     {
-        var exam = await _examAssistant.GetStudentExamAsync(MeId, examId, ct);
+        var exam = await _examAssistant.GetStudentExamDetailAsync(MeId, examId, ct);
         if (exam is null) return NotFound();
         return Ok(exam);
     }

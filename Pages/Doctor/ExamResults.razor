@@ -1,0 +1,227 @@
+@page "/doctor/exam-results"
+@attribute [Authorize(Roles = "Doctor")]
+@using System.Net
+@using UniSphere.Api.Dtos
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject BlazorAuthService AuthService
+
+<PageTitle>Exam Results - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Doctor">
+    @if (_denied)
+    {
+        <div class="alert alert-error">This page is only available to doctors.</div>
+    }
+    else
+    {
+        <div class="page-header">
+            <h1>Exam Results</h1>
+            <p>Who took each of your published exams — server-graded scores, percentages and submission dates — plus enrolled students who have not taken it yet.</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-error">@_error</div>
+        }
+
+        <div class="card">
+            <div class="card-header"><h3>Select an exam</h3></div>
+            <div class="card-body">
+                @if (_loading)
+                {
+                    <div class="spinner">Loading...</div>
+                }
+                else if (!_publishedExams.Any())
+                {
+                    <div class="alert">No published exams yet. Publish an exam from the Exam Assistant or AI Assistant first.</div>
+                }
+                else
+                {
+                    <div class="form-group">
+                        <label>Exam</label>
+                        <select @bind="_selectedExamId" @bind:after="LoadResultsAsync">
+                            <option value="0">Select an exam...</option>
+                            @foreach (var exam in _publishedExams)
+                            {
+                                <option value="@exam.Id">@exam.Title (@exam.CourseCode)</option>
+                            }
+                        </select>
+                    </div>
+
+                    @if (_results is not null)
+                    {
+                        <div class="chart-container" style="margin-top: 12px;">
+                            <h3>@_results.ExamTitle</h3>
+                            <p class="rec-track">
+                                @_results.CourseTitle (@_results.CourseCode) ·
+                                @_results.QuestionCount questions ·
+                                @(_results.Marks.HasValue ? $"Marks: {_results.Marks} · " : "")status: @_results.Status
+                            </p>
+                            <p class="rec-track">
+                                @if (_results.OpensAtUtc is { } opensAt)
+                                {
+                                    <span>Opens: @FormatDate(opensAt) (UTC) · </span>
+                                }
+                                @if (_results.ClosesAtUtc is { } closesAt)
+                                {
+                                    <span>Closes: @FormatDate(closesAt) (UTC) · </span>
+                                }
+                                @if (_results.DurationMinutes is { } duration)
+                                {
+                                    <span>Duration: @duration min · </span>
+                                }
+                                @_results.EligibleCount eligible students
+                            </p>
+
+                            <h4>Students who took the exam (@_results.Takers.Count)</h4>
+                            @if (_results.Takers.Count == 0)
+                            {
+                                <div class="alert">No submissions yet.</div>
+                            }
+                            else
+                            {
+                                <div style="overflow-x: auto;">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Student</th>
+                                                <th>Score</th>
+                                                <th>Percent</th>
+                                                <th>Submitted</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var t in _results.Takers)
+                                            {
+                                                <tr>
+                                                    <td>@t.FullName</td>
+                                                    <td>@t.Score / @t.MaxScore</td>
+                                                    <td>@(t.Percent is null ? "—" : $"{t.Percent:0.#}%")</td>
+                                                    <td>@FormatDate(t.SubmittedAtUtc)</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+
+                            <h4 style="margin-top: 14px;">Did not take the exam (@_results.NonTakers.Count)</h4>
+                            @if (_results.NonTakers.Count == 0)
+                            {
+                                <div class="alert">Every eligible student submitted this exam.</div>
+                            }
+                            else
+                            {
+                                <ul style="margin: 8px 0 0 20px;">
+                                    @foreach (var n in _results.NonTakers)
+                                    {
+                                        <li>@n.FullName@(n.Email is not null ? $" – {n.Email}" : "")</li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    }
+                    else if (_selectedExamId > 0)
+                    {
+                        <div class="alert" style="margin-top: 12px;">No results available for this exam.</div>
+                    }
+                }
+            </div>
+        </div>
+    }
+</RoleGate>
+
+@code {
+    private bool _started;
+    private bool _denied;
+    private bool _loading;
+    private string _error = "";
+
+    private List<ExamListDto> _publishedExams = new();
+    private int _selectedExamId;
+    private DoctorExamResultsDto? _results;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized)
+            await AuthService.RestoreSessionAsync();
+        if (!AuthService.IsInitialized) return;
+        await GuardAndLoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_started)
+        {
+            _started = true;
+            if (!AuthService.IsInitialized)
+                await AuthService.RestoreSessionAsync();
+            if (AuthService.IsInitialized)
+            {
+                await GuardAndLoadAsync();
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task GuardAndLoadAsync()
+    {
+        _started = true;
+        var user = await AuthService.GetUserAsync();
+        if (user is null)
+        {
+            Nav.NavigateTo("/login", replace: true);
+            return;
+        }
+        if (user.Role != "Doctor")
+        {
+            _denied = true;
+            return;
+        }
+        await LoadExamsAsync();
+    }
+
+    private async Task LoadExamsAsync()
+    {
+        _loading = true;
+        _error = "";
+        try
+        {
+            var exams = await Http.GetFromJsonAsync<List<ExamListDto>>("/api/doctor/exam-assistant/exams") ?? new();
+            // Results exist only for published exams (draft exams have no attempts).
+            _publishedExams = exams.Where(e => e.Status == "Published").ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = "Could not load your exams: " + ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadResultsAsync()
+    {
+        _results = null;
+        if (_selectedExamId <= 0) return;
+        _error = "";
+        try
+        {
+            _results = await Http.GetFromJsonAsync<DoctorExamResultsDto>(
+                $"/api/doctor/exam-assistant/exams/{_selectedExamId}/results");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            // Not owned / unknown exam → treat as no data (never confirm ids).
+            _results = null;
+        }
+        catch (Exception ex)
+        {
+            _error = "Could not load results: " + ex.Message;
+        }
+    }
+
+    private static string FormatDate(DateTime dt) => dt.ToString("yyyy-MM-dd HH:mm");
+}

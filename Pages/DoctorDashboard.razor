@@ -36,21 +36,18 @@ else
     {
         <div class="summary-cards">
             <div class="card">
-                <div class="card-icon"><UiIcon Name="book-open" /></div>
                 <div class="card-info">
                     <span class="card-label">My Courses</span>
                     <span class="card-value">@_data.CourseCount</span>
                 </div>
             </div>
             <div class="card">
-                <div class="card-icon"><UiIcon Name="users" /></div>
                 <div class="card-info">
                     <span class="card-label">Enrolled Students</span>
                     <span class="card-value">@_data.StudentCount</span>
                 </div>
             </div>
             <div class="card">
-                <div class="card-icon"><UiIcon Name="award" /></div>
                 <div class="card-info">
                     <span class="card-label">Average Grade</span>
                     <span class="card-value">@(_data.AverageGradePoints?.ToString("0.00") ?? "—")</span>
@@ -58,14 +55,12 @@ else
                 </div>
             </div>
             <div class="card">
-                <div class="card-icon"><UiIcon Name="calendar-days" /></div>
                 <div class="card-info">
                     <span class="card-label">Average Attendance</span>
                     <span class="card-value">@(_data.AverageAttendance.HasValue ? $"{_data.AverageAttendance:0.#}%" : "—")</span>
                 </div>
             </div>
             <div class="card">
-                <div class="card-icon"><UiIcon Name="triangle-alert" /></div>
                 <div class="card-info">
                     <span class="card-label">Academic Alerts</span>
                     <span class="card-value">@_data.Alerts.Count</span>

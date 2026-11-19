@@ -96,6 +96,9 @@ public sealed class FakeDoctorAiService : IDoctorAiService
 
     public string GetModelName() => "fake-model";
 
+    public Task<(string Name, string Model)> ResolveActiveProviderAsync(CancellationToken ct) =>
+        Task.FromResult(("fake", "fake-model"));
+
     public Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken ct)
     {
         LastUserPrompt = userPrompt;

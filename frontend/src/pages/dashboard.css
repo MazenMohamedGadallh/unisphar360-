@@ -1,0 +1,540 @@
+/*
+ * Dashboard page styles — redesigned "Premium, Friendly Academic SaaS" skin.
+ * Same structure and behavior as Pages/Dashboard.razor (welcome banner, 5
+ * summary stats, performance table, study planner, recommendations,
+ * university, quick actions, activity, insights). Colors come from the React
+ * design tokens in app.css, so this file never hardcodes palette values.
+ * Imported only by Dashboard.tsx (same page-scope pattern as chat.css).
+ */
+
+/* ---------- Page scaffold ---------- */
+
+.dashboard {
+    width: 100%;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 16px;
+    animation: dash-fade-in 0.2s ease-out;
+}
+
+@keyframes dash-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Welcome banner (solid primary — no gradient) ---------- */
+
+.dash-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding: 28px 32px;
+    border-radius: var(--radius-card);
+    background: var(--color-primary);
+    color: #fff;
+    box-shadow: var(--shadow-card);
+}
+
+.dash-banner h1 {
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.dash-banner-sub {
+    font-size: 14px;
+    opacity: 0.85;
+}
+
+.dash-banner-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    flex: none;
+    border-radius: 50%;
+    background: rgb(255 255 255 / 0.15);
+    color: #fff;
+    font-size: 30px;
+}
+
+/* Dark theme: the light-mode primary is too bright for a full banner, so the
+   banner becomes a tinted surface instead. */
+[data-theme="dark"] .dash-banner {
+    background: var(--color-primary-light);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+}
+[data-theme="dark"] .dash-banner-sub {
+    color: var(--color-text-secondary);
+}
+[data-theme="dark"] .dash-banner-icon {
+    background: var(--color-primary);
+    color: #fff;
+}
+
+/* ---------- Summary stat cards ---------- */
+
+.dash-stats {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.dash-stat {
+    padding: 16px 20px;
+    border-radius: var(--radius-card);
+    background: var(--color-card);
+    border: 1px solid var(--color-border);
+    border-top: 3px solid var(--stat-accent, var(--color-primary));
+    box-shadow: var(--shadow-card);
+    transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dash-stat:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-card-lg);
+}
+
+/* Per-card accent (same color coding as the Razor dashboard). */
+.dash-stat.gpa { --stat-accent: var(--color-primary); }
+.dash-stat.courses { --stat-accent: var(--color-secondary); }
+.dash-stat.attendance { --stat-accent: var(--color-success); }
+.dash-stat.improve { --stat-accent: var(--color-danger); }
+.dash-stat.recommended { --stat-accent: var(--color-warning); }
+
+.dash-stat-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    margin-bottom: 10px;
+    border-radius: 10px;
+    font-size: 19px;
+}
+
+.dash-stat.gpa .dash-stat-icon { background: var(--color-primary-light); color: var(--color-primary); }
+.dash-stat.courses .dash-stat-icon { background: var(--color-secondary-light); color: var(--color-secondary); }
+.dash-stat.attendance .dash-stat-icon { background: var(--color-success-light); color: var(--color-success); }
+.dash-stat.improve .dash-stat-icon { background: var(--color-danger-light); color: var(--color-danger); }
+.dash-stat.recommended .dash-stat-icon { background: var(--color-warning-light); color: var(--color-warning); }
+
+.dash-stat-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+}
+
+.dash-stat-value {
+    display: block;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+    margin: 2px 0 4px;
+}
+
+.dash-stat-delta {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.dash-stat-delta.positive { color: var(--color-success); }
+.dash-stat-delta.negative { color: var(--color-danger); }
+
+/* ---------- Data table (Academic Performance) ---------- */
+
+.dash-table-wrap { overflow-x: auto; }
+
+.dash-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.dash-table th {
+    padding: 12px 20px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.dash-table td {
+    padding: 12px 20px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.dash-table tr:last-child td { border-bottom: none; }
+
+.dash-table tbody tr { transition: background 0.15s; }
+.dash-table tbody tr:hover { background: var(--color-bg); }
+
+.dash-num { font-variant-numeric: tabular-nums; }
+
+/* ---------- Two-column sections ---------- */
+
+.dash-two {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+    align-items: start;
+}
+
+/* ---------- Study planner ---------- */
+
+.dash-planner-week {
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-primary);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.dash-plan-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.dash-plan-item:last-child { border-bottom: none; }
+
+.dash-plan-item.done { opacity: 0.65; }
+.dash-plan-item.done .dash-plan-title { text-decoration: line-through; }
+.dash-plan-item.free .dash-plan-title {
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
+.dash-plan-date {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 44px;
+    padding: 5px 4px;
+    border-radius: var(--radius-control);
+    background: var(--color-bg);
+}
+
+.dash-plan-day {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+.dash-plan-num {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+}
+
+.dash-plan-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.dash-plan-title {
+    font-size: 14px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dash-plan-hours {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.dash-plan-check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    border: 1px solid var(--color-border);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.dash-plan-check:hover:not(:disabled) {
+    background: var(--color-success-light);
+    border-color: var(--color-success);
+    color: var(--color-success);
+}
+
+.dash-plan-check.on {
+    background: var(--color-success-light);
+    border-color: var(--color-success);
+    color: var(--color-success);
+}
+
+.dash-plan-check:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+/* ---------- Recommended courses ---------- */
+
+.dash-rec-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.dash-rec-item:last-child { border-bottom: none; }
+
+.dash-rec-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.dash-rec-name {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dash-rec-tag { font-size: 14px; font-weight: 500; }
+
+.dash-rec-meta {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
+.dash-rec-btn {
+    flex: none;
+    padding: 7px 16px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: var(--color-primary);
+    color: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.dash-rec-btn:hover { background: var(--color-primary-hover); }
+
+/* ---------- My University ---------- */
+
+.dash-uni-sub {
+    padding: 12px 20px;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.dash-uni-course {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.dash-uni-name {
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dash-uni-count {
+    flex: none;
+    min-width: 26px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.dash-mini-heading {
+    padding: 14px 20px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+/* ---------- Quick actions ---------- */
+
+.dash-actions-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    padding: 20px;
+}
+
+.dash-action {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 20px 12px;
+    border-radius: var(--radius-control);
+    background: var(--action-bg);
+    color: var(--action-color);
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+    text-decoration: none;
+    transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dash-action:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-card-lg);
+}
+
+.dash-action-icon { font-size: 26px; }
+
+/* Tile tints reuse the semantic token pairs, so they stay theme-aware. */
+.dash-action.tile-grades { --action-bg: var(--color-primary-light); --action-color: var(--color-primary); }
+.dash-action.tile-planner { --action-bg: var(--color-accent-light); --action-color: var(--color-accent); }
+.dash-action.tile-courses { --action-bg: var(--color-success-light); --action-color: var(--color-success); }
+.dash-action.tile-insights { --action-bg: var(--color-warning-light); --action-color: var(--color-warning); }
+
+/* ---------- Recent activity ---------- */
+
+.dash-activity-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.dash-activity-item:last-child { border-bottom: none; }
+
+.dash-activity-msg { font-size: 14px; }
+
+.dash-activity-time {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-top: 2px;
+}
+
+/* ---------- AI insights ---------- */
+
+.dash-insight-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.dash-insight-item:last-child { border-bottom: none; }
+
+.dash-insight-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    border-radius: 50%;
+    font-size: 16px;
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+}
+
+/* Same type coloring as the Razor page: warning=red, progress=green,
+   recommendation=amber. */
+.dash-insight-item.warning .dash-insight-icon { background: var(--color-danger-light); color: var(--color-danger); }
+.dash-insight-item.progress .dash-insight-icon { background: var(--color-success-light); color: var(--color-success); }
+.dash-insight-item.recommendation .dash-insight-icon { background: var(--color-warning-light); color: var(--color-warning); }
+
+.dash-insight-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.dash-insight-title { font-size: 14px; font-weight: 600; }
+
+.dash-insight-msg {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+.dash-insight-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-primary);
+    text-decoration: none;
+}
+
+.dash-insight-action:hover { text-decoration: underline; }
+
+/* ---------- Responsive (same breakpoints as the Razor app) ---------- */
+
+@media (max-width: 1200px) {
+    .dash-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .dash-actions-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 992px) {
+    .dash-two { grid-template-columns: 1fr; }
+    .dash-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+    .dashboard { padding: 16px 12px; }
+    .dash-stats,
+    .dash-actions-grid { grid-template-columns: 1fr; }
+    .dash-banner {
+        flex-direction: column;
+        text-align: center;
+        padding: 24px;
+    }
+}

@@ -202,8 +202,6 @@ public class SearchController : ControllerBase
             ("Announcements", "/doctor/announcements", new[] { "Doctor" }, "\U0001F4E2"),
             ("Doctor Profile", "/doctor/profile", new[] { "Doctor" }, "\U0001F464"),
             ("Doctor Research", "/doctor/research", new[] { "Doctor" }, "\U0001F50D"),
-            ("Doctor AI Assistant", "/doctor/ai", new[] { "Doctor" }, "\U0001F4F1"),
-            ("Exam Assistant", "/doctor/exam-assistant", new[] { "Doctor" }, "\U0001F4DA"),
             ("CV Analysis", "/graduate/cv", new[] { "Graduate" }, "\U0001F4C4"),
             ("AI Job Matches", "/graduate/matches", new[] { "Graduate" }, "\U0001F44D"),
             ("Graduated Events", "/graduate/events", new[] { "Graduate" }, "\U0001F389"),

@@ -46,7 +46,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
     <!-- Academic Summary Cards -->
     <div class="summary-cards">
         <div class="card stat-card">
-            <span class="stat-tile indigo"><UiIcon Name="award" /></span>
             <div class="card-info">
                 <span class="card-label">Current GPA</span>
                 <span class="card-value">@(_summary?.CurrentGpa.ToString("0.00") ?? "--")</span>
@@ -59,7 +58,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card stat-card">
-            <span class="stat-tile teal"><UiIcon Name="book-open" /></span>
             <div class="card-info">
                 <span class="card-label">Completed Courses</span>
                 <span class="card-value">@(_summary?.CompletedCourses ?? 0)/@(_summary?.TotalCourses ?? 0)</span>
@@ -67,7 +65,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card stat-card">
-            <span class="stat-tile green"><UiIcon Name="calendar-days" /></span>
             <div class="card-info">
                 <span class="card-label">Attendance Rate</span>
                 <span class="card-value">@(_summary?.AttendanceRate ?? 0)%</span>
@@ -80,7 +77,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card stat-card">
-            <span class="stat-tile rose"><UiIcon Name="lightbulb" /></span>
             <div class="card-info">
                 <span class="card-label">Subjects to Improve</span>
                 <span class="card-value">@(_summary?.SubjectsToImprove ?? 0)</span>
@@ -88,7 +84,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             </div>
         </div>
         <div class="card stat-card">
-            <span class="stat-tile amber"><UiIcon Name="graduation-cap" /></span>
             <div class="card-info">
                 <span class="card-label">Recommended Courses</span>
                 <span class="card-value">@(_summary?.RecommendedCoursesCount ?? 0)</span>

@@ -1,0 +1,189 @@
+/* ==========================================================================
+   UniSphere React — Tailwind CSS v4 SOURCE (styling entry point for the
+   React app). Regenerate with the existing standalone CLI (no npm dep):
+
+     tools\tailwind\tailwindcss.exe -i frontend\src\app.css -o frontend\src\app.generated.css
+
+   The compiled output is committed, so `npm run build` works without the exe.
+   This file is INDEPENDENT of the Razor app stylesheet (wwwroot/css/*):
+   the Razor design system is untouched; the React app uses its own
+   "Premium, Friendly Academic SaaS" palette below.
+
+   Identity: Primary blue #2563EB, Accent teal #14B8A6, light + dark themes
+   driven by [data-theme=dark] on <html> (see useTheme.ts).
+   ========================================================================== */
+
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* Dark theme keys off [data-theme=dark] (no .dark class), same mechanism
+   the Razor app uses — but the PREFERENCE lives in a React-only
+   localStorage key ("unisphere.theme"), never the Razor "theme" key. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* React-only content sources (explicit, so Razor markup never leaks in). */
+@source "./main.tsx";
+@source "./App.tsx";
+@source "./UiIcon.tsx";
+@source "./pages/**/*.tsx";
+@source "./components/**/*.{tsx,ts}";
+
+@theme {
+    /* Legacy layout thresholds (992px drawer, 1200px wide screens). */
+    --breakpoint-lg: 992px;
+    --breakpoint-xl: 1200px;
+
+    --font-sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+    /* Brand — light theme. */
+    --color-primary: #2563EB;
+    --color-primary-hover: #1D4ED8;
+    --color-primary-light: #EFF6FF;
+    --color-accent: #14B8A6;
+    --color-accent-light: #F0FDFA;
+    --color-secondary: #0EA5E9;
+    --color-secondary-light: #E0F2FE;
+
+    /* Status. */
+    --color-success: #16A34A;
+    --color-success-light: #E8F7EE;
+    --color-warning: #D97706;
+    --color-warning-light: #FEF3E2;
+    --color-danger: #DC2626;
+    --color-danger-hover: #B91C1C;
+    --color-danger-light: #FDECEC;
+
+    /* Surfaces. */
+    --color-bg: #F6F8FB;
+    --color-surface: #FFFFFF;
+    --color-card: #FFFFFF;
+    --color-border: #E5EAF1;
+    --color-text: #0F172A;
+    --color-text-secondary: #55627A;
+    --color-text-muted: #8A94A6;
+
+    /* Shadows (dynamic: dark theme overrides them below). */
+    --shadow-card: 0 1px 2px rgb(15 23 42 / 0.06);
+    --shadow-card-lg: 0 8px 24px rgb(15 23 42 / 0.10);
+
+    /* Radii: cards 12px, controls 8px. */
+    --radius-card: 12px;
+    --radius-control: 8px;
+
+    /* Layout metrics (sidebar / topbar). */
+    --width-sidebar: 260px;
+    --height-topbar: 64px;
+
+    /* Spinner used by the shared loading state. */
+    --animate-search-spin: search-spin 0.7s linear infinite;
+
+    @keyframes search-spin {
+        to { transform: rotate(360deg); }
+    }
+}
+
+/* Dark theme values. */
+[data-theme="dark"] {
+    color-scheme: dark;
+    --color-primary: #5B8DEF;
+    --color-primary-hover: #74A3F5;
+    --color-primary-light: #16233D;
+    --color-accent: #2DD4BF;
+    --color-accent-light: #0E2E2B;
+    --color-secondary: #38BDF8;
+    --color-secondary-light: #16344F;
+    --color-success: #34D399;
+    --color-success-light: #0E2E22;
+    --color-warning: #FBBF24;
+    --color-warning-light: #3A2A0E;
+    --color-danger: #F87171;
+    --color-danger-hover: #FCA5A5;
+    --color-danger-light: #3A1519;
+    --color-bg: #0B1220;
+    --color-surface: #111A2C;
+    --color-card: #111A2C;
+    --color-border: #223049;
+    --color-text: #E7EDF7;
+    --color-text-secondary: #9AA8C2;
+    --color-text-muted: #6B7A94;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.45);
+    --shadow-card-lg: 0 8px 24px rgb(0 0 0 / 0.5);
+}
+
+@layer base {
+    /* Minimal global reset. */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    html {
+        color-scheme: light;
+    }
+
+    body {
+        font-family: var(--font-sans);
+        background: var(--color-bg);
+        color: var(--color-text);
+        line-height: 1.5;
+    }
+
+    ::placeholder {
+        color: var(--color-text-muted);
+        opacity: 1;
+    }
+
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: var(--color-border);
+        border-radius: 5px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--color-text-muted);
+    }
+
+    /* Accessibility: visible keyboard focus ring. */
+    :focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
+    }
+
+    /* Shared inline-icon behavior (Lucide geometry via UiIcon.tsx). */
+    .ui-icon {
+        width: 1em;
+        height: 1em;
+        display: inline-block;
+        flex-shrink: 0;
+        vertical-align: -0.125em;
+        overflow: visible;
+        color: currentColor;
+    }
+
+    /* Chat typing dots (referenced by chat.css; emitted globally so the
+       chat page works even if no animate-* utility is used elsewhere). */
+    @keyframes chat-typing {
+        0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+        30% { opacity: 1; transform: translateY(-3px); }
+    }
+
+    /* Accessibility: respect reduced-motion. */
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        ::before,
+        ::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+    }
+}

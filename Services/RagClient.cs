@@ -77,7 +77,7 @@ public interface IRagClient
 }
 
 /// <summary>Typed server-side client for the existing RAG HTTP adapter. It is
-/// used only by the Student AI Assistant and the Doctor Exam Assistant.</summary>
+/// used by the shared AI Assistant (students, doctors, graduates) and the Doctor Exam Assistant.</summary>
 public sealed class RagClient : IRagClient
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)

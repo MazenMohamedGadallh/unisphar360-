@@ -6,9 +6,10 @@
     <meta name="color-scheme" content="light dark" />
     <title>UniSphere 360+</title>
     <base href="/" />
-    <link rel="stylesheet" href="css/app.css" />
-    <link rel="stylesheet" href="css/upgrade.css" />
+    <link rel="stylesheet" href="@($"css/app.legacy.css?v={Version("css/app.legacy.css")}")" />
+    <link rel="stylesheet" href="@($"css/app.generated.css?v={Version("css/app.generated.css")}")" />
     <link rel="icon" type="image/png" href="/images/unisphar-sphere-64.png" />
+    <component type="typeof(HeadOutlet)" rendermode="InteractiveServer" />
     <script>
         // Apply the saved (or system) theme before first paint: no white flash.
         (function () {
@@ -27,3 +28,11 @@
     <script src="_framework/blazor.web.js"></script>
 </body>
 </html>
+
+@code {
+    [Inject] private IWebHostEnvironment Env { get; set; } = default!;
+
+    // The file's own timestamp: browsers fetch a fresh copy whenever the CSS changes.
+    private string Version(string path) =>
+        File.GetLastWriteTimeUtc(Path.Combine(Env.WebRootPath, path)).Ticks.ToString();
+}

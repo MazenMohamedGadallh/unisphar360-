@@ -29,6 +29,12 @@ public interface IExamAssistantService
     Task<ExamDto> PublishExamAsync(
         int doctorUserId, ExamAssistantPublishRequest req, CancellationToken ct);
 
+    /// <summary>Publish a draft exam and return the number of students
+    /// actually notified (after their On/MuteUntil/Off settings). New callers
+    /// should prefer this one; <see cref="PublishExamAsync"/> delegates here.</summary>
+    Task<(ExamDto Exam, int NotifiedCount)> PublishExamWithNotifiedCountAsync(
+        int doctorUserId, ExamAssistantPublishRequest req, CancellationToken ct);
+
     /// <summary>List the doctor's exams (drafts and published).</summary>
     Task<IReadOnlyList<ExamListDto>> ListExamsAsync(int doctorUserId, CancellationToken ct);
 
@@ -48,6 +54,12 @@ public interface IExamAssistantService
 
     /// <summary>Get one published exam for a student (no correct answers).</summary>
     Task<StudentExamDto?> GetStudentExamAsync(
+        int studentUserId, int examId, CancellationToken ct);
+
+    /// <summary>One published exam for a student including its safe question
+    /// view (no correct answers/explanations). Visibility identical to
+    /// ListStudentExamsAsync.</summary>
+    Task<StudentExamDetailDto?> GetStudentExamDetailAsync(
         int studentUserId, int examId, CancellationToken ct);
 
     /// <summary>Get the caller's notification setting.</summary>
@@ -273,7 +285,7 @@ public class ExamAssistantService : IExamAssistantService
         return MapToDto(saved);
     }
 
-    public async Task<ExamDto> PublishExamAsync(
+    public async Task<(ExamDto Exam, int NotifiedCount)> PublishExamWithNotifiedCountAsync(
         int doctorUserId, ExamAssistantPublishRequest req, CancellationToken ct)
     {
         var exam = await _db.Exams.Include(e => e.Course).Include(e => e.Questions)
@@ -290,7 +302,7 @@ public class ExamAssistantService : IExamAssistantService
         exam.PublishedAtUtc = DateTime.UtcNow;
 
         // Get eligible students: Role=Student, same university as course,
-        // currently enrolled (Semester="Current" and no GradeLetter).
+        // currently enrolled (Semester="Current", graded or not).
         var course = await _db.Courses.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == exam.CourseId, ct)
             ?? throw new AiUnavailableException("Course not found.");
@@ -308,6 +320,7 @@ public class ExamAssistantService : IExamAssistantService
             ? (Title: titleAr, Body: bodyAr)
             : (Title: titleEn, Body: bodyEn);
 
+        var notifiedCount = 0;
         foreach (var studentId in eligibleStudentIds)
         {
             var setting = await GetNotificationSettingAsync(studentId, ct);
@@ -324,11 +337,16 @@ public class ExamAssistantService : IExamAssistantService
                 CreatedAtUtc = DateTime.UtcNow,
                 IsRead = false
             });
+            notifiedCount++;
         }
 
         await _db.SaveChangesAsync(ct);
-        return MapToDto(exam);
+        return (MapToDto(exam), notifiedCount);
     }
+
+    public async Task<ExamDto> PublishExamAsync(
+        int doctorUserId, ExamAssistantPublishRequest req, CancellationToken ct) =>
+        (await PublishExamWithNotifiedCountAsync(doctorUserId, req, ct)).Exam;
 
     // ------------------------------------------------------------------
     // CRUD (doctor)
@@ -414,11 +432,11 @@ public class ExamAssistantService : IExamAssistantService
         if (student is null || student.Role != UserRole.Student)
             return new List<StudentExamDto>();
 
-        // Eligible enrollments: current semester, no grade (not passed).
+        // Eligible enrollments: current semester. Current grades are in-progress
+        // marks, so a graded current enrollment still gets the quiz.
         var eligibleCourseIds = await _db.Enrollments.AsNoTracking()
             .Where(e => e.UserId == studentUserId
-                        && e.Semester == "Current"
-                        && string.IsNullOrWhiteSpace(e.GradeLetter))
+                        && e.Semester == "Current")
             .Select(e => e.CourseId)
             .ToListAsync(ct);
 
@@ -447,6 +465,29 @@ public class ExamAssistantService : IExamAssistantService
     {
         var exams = await ListStudentExamsAsync(studentUserId, ct);
         return exams.FirstOrDefault(e => e.Id == examId);
+    }
+
+    public async Task<StudentExamDetailDto?> GetStudentExamDetailAsync(
+        int studentUserId, int examId, CancellationToken ct)
+    {
+        var visible = await ListStudentExamsAsync(studentUserId, ct);
+        var summary = visible.FirstOrDefault(e => e.Id == examId);
+        if (summary is null) return null;
+
+        // Only the safe question columns are selected — CorrectAnswer and
+        // Explanation are never loaded into the student-facing response.
+        var questions = await _db.ExamQuestions.AsNoTracking()
+            .Where(q => q.ExamId == examId)
+            .OrderBy(q => q.OrderIndex)
+            .Select(q => new StudentExamQuestionDto(
+                q.Id, q.ExamId, q.QuestionText, q.QuestionType,
+                q.OptionsJson, q.OrderIndex, q.Marks))
+            .ToListAsync(ct);
+
+        return new StudentExamDetailDto(
+            summary.Id, summary.CourseId, summary.CourseCode, summary.CourseTitle,
+            summary.Title, summary.QuestionCount, summary.Marks,
+            summary.CreatedAtUtc, summary.PublishedAtUtc, questions);
     }
 
     // ------------------------------------------------------------------
@@ -499,8 +540,7 @@ public class ExamAssistantService : IExamAssistantService
 
         var enrollments = await _db.Enrollments.AsNoTracking()
             .Where(e => e.CourseId == courseId
-                        && e.Semester == "Current"
-                        && string.IsNullOrWhiteSpace(e.GradeLetter))
+                        && e.Semester == "Current")
             .Select(e => e.UserId)
             .ToListAsync(ct);
 

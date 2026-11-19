@@ -16,7 +16,13 @@ namespace UniSphere.Api.Controllers;
 public class DoctorAiController : ControllerBase
 {
     private readonly IDoctorAiService _ai;
-    public DoctorAiController(IDoctorAiService ai) => _ai = ai;
+    private readonly IQuizPublishService _quizPublish;
+
+    public DoctorAiController(IDoctorAiService ai, IQuizPublishService quizPublish)
+    {
+        _ai = ai;
+        _quizPublish = quizPublish;
+    }
 
     private int MeId => User.GetUserId();
 
@@ -49,6 +55,33 @@ public class DoctorAiController : ControllerBase
             });
 
         return await RunAsync(() => _ai.GenerateQuizAsync(MeId, req, ct));
+    }
+
+    /// <summary>Publish the generated quiz to eligible enrolled students by
+    /// reusing the exam infrastructure (draft + publish + notify, one
+    /// transaction). Course existence, doctor assignment and material
+    /// ownership are recomputed server-side; the draft rolls back if the
+    /// publication step fails.</summary>
+    [HttpPost("quiz/publish")]
+    public async Task<ActionResult<QuizPublishResponse>> PublishQuiz(
+        [FromBody] QuizPublishRequest req,
+        [FromServices] FluentValidation.IValidator<QuizPublishRequest> validator,
+        CancellationToken ct)
+    {
+        var validation = await validator.ValidateAsync(req, ct);
+        if (!validation.IsValid)
+            return BadRequest(new ValidationProblemDetails(validation.ToDictionary())
+            {
+                Title = "One or more validation errors occurred.",
+                Status = StatusCodes.Status400BadRequest
+            });
+
+        var outcome = await _quizPublish.PublishAsync(MeId, req, ct);
+        if (outcome.IsConflict)
+            return StatusCode(StatusCodes.Status409Conflict, new { message = outcome.Error });
+        if (!outcome.Ok)
+            return BadRequest(new { message = outcome.Error });
+        return Ok(outcome.Result);
     }
 
     [HttpPost("summarize")]

@@ -27,6 +27,8 @@ public interface IDoctorAiService
 {
     Task<IReadOnlyList<ChatProviderDto>> GetProvidersAsync(CancellationToken ct);
     string GetModelName();
+    /// <summary>The provider actually resolved for generation (name + model) —
+    /// used so responses can be labeled truthfully, not alphabetically-first.</summary>
     Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken ct);
     Task<QuizGenerationResponse> GenerateQuizAsync(int doctorUserId, QuizGenerationRequest req, CancellationToken ct);
     Task<LectureSummaryDto> SummarizeAsync(int doctorUserId, SummarizeRequest req, CancellationToken ct);
