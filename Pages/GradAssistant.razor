@@ -1,0 +1,36 @@
+@page "/graduate/assistant"
+@inherits UniSphere.Api.Components.GradPageBase
+
+<PageTitle>AI Career Assistant - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>AI Career Assistant</h1>
+    <p>Chat about your career — it knows your profile, target roles and job activity</p>
+</div>
+
+@if (_ready)
+{
+    <div class="card" style="height:640px; display:flex; flex-direction:column;">
+        <ChatPanel ElementId="grad-chat-messages" ShowConversations="false"
+                   Title="AI Career Assistant"
+                   ContextNote="Knows your profile, target roles and job activity"
+                   EmptyHint="Ask about applications, interviews, skills or your next career step."
+                   InputPlaceholder="Ask a career question…"
+                   Suggestions='new[] { "How can I improve my CV for SWE roles?", "What skills am I missing for my target role?", "Draft a follow-up email for an application", "Give me interview tips for my next stage" }' />
+    </div>
+}
+else if (_error is not null)
+{
+    <div class="alert alert-error">@_error</div>
+}
+
+@code {
+    private bool _ready;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await GuardGraduateAsync()) return;
+        _ready = true;
+        StateHasChanged();
+    }
+}

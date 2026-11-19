@@ -1,0 +1,173 @@
+@page "/settings"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+@inject UniSphere.Api.Services.ThemeService Theme
+
+<PageTitle>Settings - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>Settings</h1>
+    <p>Manage your account preferences.</p>
+</div>
+
+<div class="card" style="max-width: 600px;">
+    <div class="card-header">
+        <h3>Appearance</h3>
+    </div>
+    <p class="view-all" style="color: var(--muted); font-weight: 400; font-size: 13px; margin: 0 0 10px;">
+        Light, dark, or follow your system preference. Applies immediately and is remembered on this device.
+    </p>
+    <div class="form-inline" role="group" aria-label="Theme">
+        @foreach (var (value, label) in Themes)
+        {
+            var active = Theme.Current == value;
+            <button type="button" class="btn @(active ? "btn-primary" : "btn-ghost")"
+                    aria-pressed="@active"
+                    @onclick='() => SetTheme(value)'>@label</button>
+        }
+    </div>
+</div>
+
+<div class="card" style="max-width: 600px; margin-top: 24px;">
+    <div class="card-header">
+        <h3>Change Password</h3>
+    </div>
+    <form @onsubmit="ChangePassword" class="settings-form">
+        <div class="form-group">
+            <label>Current Password</label>
+            <input type="password" @bind="_currentPassword" required />
+        </div>
+        <div class="form-group">
+            <label>New Password</label>
+            <input type="password" @bind="_newPassword" required minlength="8" />
+        </div>
+        <div class="form-group">
+            <label>Confirm New Password</label>
+            <input type="password" @bind="_confirmPassword" required />
+        </div>
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert @(_isError ? "alert-error" : "alert-success")">@_message</div>
+        }
+        <button type="submit" class="btn btn-primary" disabled="@_saving">@(_saving ? "Updating..." : "Update Password")</button>
+    </form>
+</div>
+
+<div class="card" style="max-width: 600px; margin-top: 24px;">
+    <div class="card-header">
+        <h3>Account Actions</h3>
+    </div>
+    <div class="settings-actions">
+        <button class="btn btn-danger" @onclick="Logout">Logout</button>
+    </div>
+</div>
+
+@code {
+    private static readonly (string Value, string Label)[] Themes = { ("light", "Light"), ("dark", "Dark"), ("system", "System") };
+
+    private string _currentPassword = "";
+    private string _newPassword = "";
+    private string _confirmPassword = "";
+    private string? _message;
+    private bool _isError;
+    private bool _saving;
+
+    private async Task SetTheme(string value)
+    {
+        await Theme.SetAsync(value);
+        StateHasChanged();
+    }
+
+    private async Task ChangePassword(EventArgs e)
+    {
+        if (_saving) return;
+        _message = null;
+
+        if (_newPassword != _confirmPassword)
+        {
+            _message = "New passwords do not match.";
+            _isError = true;
+            return;
+        }
+
+        _saving = true;
+        StateHasChanged();
+        try
+        {
+            var response = await Http.PostAsJsonAsync("/api/auth/change-password", new
+            {
+                currentPassword = _currentPassword,
+                newPassword = _newPassword
+            });
+
+            if (response.IsSuccessStatusCode)
+            {
+                _message = "Password updated successfully.";
+                _isError = false;
+                _currentPassword = "";
+                _newPassword = "";
+                _confirmPassword = "";
+            }
+            else
+            {
+                _message = await DescribeFailure(response);
+                _isError = true;
+            }
+        }
+        catch
+        {
+            _message = "An error occurred. Please try again.";
+            _isError = true;
+        }
+        finally
+        {
+            _saving = false;
+        }
+        StateHasChanged();
+    }
+
+    private static async Task<string> DescribeFailure(HttpResponseMessage response)
+    {
+        var body = "";
+        try { body = await response.Content.ReadAsStringAsync(); } catch { /* body unavailable */ }
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                foreach (var key in new[] { "detail", "error", "title", "message" })
+                {
+                    if (root.TryGetProperty(key, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                    {
+                        var s = v.GetString();
+                        if (!string.IsNullOrWhiteSpace(s)) return s;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            if (!string.IsNullOrWhiteSpace(body) && body.Length < 200) return body.Trim();
+        }
+        return response.StatusCode switch
+        {
+            System.Net.HttpStatusCode.Unauthorized => "Your session expired. Please sign in again and retry.",
+            System.Net.HttpStatusCode.BadRequest => "Please check your current password and the new password rules.",
+            _ => "Failed to update the password. Please try again."
+        };
+    }
+
+    private async Task Logout()
+    {
+        await AuthService.LogoutAsync();
+        Nav.NavigateTo("/login", replace: true);
+    }
+}

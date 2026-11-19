@@ -1,0 +1,192 @@
+@page "/student/assistant"
+@using UniSphere.Api.Dtos
+@inject HttpClient Http
+@inject BlazorAuthService AuthService
+@inject NavigationManager Nav
+
+<PageTitle>AI Teaching Assistant - UniSphere 360+</PageTitle>
+
+<RoleGate Roles="Student">
+    <div class="page-header">
+        <h1>AI Teaching Assistant</h1>
+        <p>Study with grounded course context, practice questions and lecture-aware explanations.</p>
+    </div>
+
+    <div class="view-tabs">
+        <button class="@(_tab == "chat" ? "active" : "")" @onclick='() => _tab = "chat"'>Ask &amp; Explain</button>
+        <button class="@(_tab == "quiz" ? "active" : "")" @onclick='() => _tab = "quiz"'>Practice Quiz</button>
+    </div>
+
+    @if (_tab == "chat")
+    {
+        <ChatPanel ElementId="student-teaching-chat" Title="Student Teaching Assistant"
+                   ContextNote="Course learning workspace" ShowConversations="true"
+                   EmptyHint="Ask a course question, request an explanation, or summarize lecture material."
+                   Suggestions='new[] { "Explain my latest lecture topic", "Create a weekly revision plan", "Summarize my course materials", "Generate revision questions" }' />
+    }
+    else
+    {
+        <div class="setup-card">
+            <div class="review-controls">
+                <div class="form-group">
+                    <label>Course</label>
+                    <select class="form-select" value="@_courseId" @onchange="OnCourseChanged">
+                        <option value="0">Select a course</option>
+                        @foreach (var course in _courses)
+                        {
+                            <option value="@course.CourseId">@course.Code — @course.Title</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Lecture material</label>
+                    <select class="form-select" @bind="_materialId">
+                        <option value="0">All available material</option>
+                        @foreach (var material in _materials)
+                        {
+                            <option value="@material.Id">@material.Title</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Questions</label>
+                    <input class="form-input" type="number" min="1" max="15" @bind="_count" />
+                </div>
+                <button class="btn btn-primary" @onclick="GenerateQuizAsync" disabled="@(_busy || _courseId <= 0)">
+                    <UiIcon Name="sparkles" /> @(_busy ? "Generating…" : "Generate Quiz")
+                </button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-error">@_error</div>
+        }
+
+        @if (_quiz is not null && _index >= 0 && _index < _quiz.Questions.Count)
+        {
+            var question = _quiz.Questions[_index];
+            <div class="card review-card">
+                <div class="question-header">
+                    <span class="question-number">@(_index + 1)</span>
+                    <span class="question-type-badge">Multiple choice</span>
+                    <span class="muted">@(_index + 1) of @_quiz.Questions.Count</span>
+                </div>
+                <div class="completion-bar"><div style="width:@Progress%;"></div></div>
+                <h3 class="question-text" style="margin-top:14px;">@question.Question</h3>
+                <div class="mcq-options">
+                    @for (var i = 0; i < question.Options.Count; i++)
+                    {
+                        var optionIndex = i;
+                        <button type="button"
+                                class="mcq-option @(_answers.TryGetValue(_index, out var selected) && selected == optionIndex ? "selected" : "")"
+                                @onclick="() => SelectAnswer(optionIndex)">
+                            @question.Options[i]
+                        </button>
+                    }
+                </div>
+                @if (_showAnswer)
+                {
+                    <div class="answer-block">
+                        <strong>Answer:</strong> @question.Options[question.CorrectIndex]<br />
+                        <strong>Explanation:</strong> @question.Explanation
+                        @if (!string.IsNullOrWhiteSpace(question.Reference))
+                        {
+                            <div class="material-meta">Source: @question.Reference</div>
+                        }
+                    </div>
+                }
+                <div class="review-controls" style="margin-top:14px;">
+                    <button class="btn btn-outline" @onclick="Previous" disabled="@(_index == 0)">Previous</button>
+                    <button class="btn btn-secondary" @onclick="() => _showAnswer = true">Show Answer</button>
+                    @if (_index + 1 < _quiz.Questions.Count)
+                    {
+                        <button class="btn btn-primary" @onclick="Next">Next</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-primary" @onclick="Finish">View result</button>
+                    }
+                </div>
+            </div>
+        }
+        else if (_finished)
+        {
+            <div class="card review-card">
+                <h3>Quiz result</h3>
+                <p><strong>@_score</strong> of @(_quiz?.Questions.Count ?? 0) answered correctly.</p>
+                <button class="btn btn-primary" @onclick="Restart">Retry quiz</button>
+            </div>
+        }
+    }
+</RoleGate>
+
+@code {
+    private string _tab = "chat";
+    private List<DoctorCourseSummaryDto> _courses = [];
+    private List<DoctorMaterialDto> _materials = [];
+    private int _courseId;
+    private int _materialId;
+    private int _count = 5;
+    private bool _busy;
+    private string _error = "";
+    private QuizGenerationResponse? _quiz;
+    private int _index;
+    private bool _showAnswer;
+    private bool _finished;
+    private int _score;
+    private readonly Dictionary<int, int> _answers = [];
+
+    private int Progress => _quiz is null || _quiz.Questions.Count == 0 ? 0 : ((_index + 1) * 100) / _quiz.Questions.Count;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!AuthService.IsInitialized) await AuthService.RestoreSessionAsync();
+        if (AuthService.IsInitialized) await LoadCoursesAsync();
+    }
+
+    private async Task LoadCoursesAsync()
+    {
+        try { _courses = await Http.GetFromJsonAsync<List<DoctorCourseSummaryDto>>("/api/student/ai/courses") ?? []; }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task OnCourseChanged(ChangeEventArgs e)
+    {
+        _courseId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        _materialId = 0;
+        _materials.Clear();
+        if (_courseId <= 0) { StateHasChanged(); return; }
+        try { _materials = await Http.GetFromJsonAsync<List<DoctorMaterialDto>>($"/api/student/ai/courses/{_courseId}/materials") ?? []; }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task GenerateQuizAsync()
+    {
+        _busy = true; _error = ""; _finished = false; _showAnswer = false; _index = 0; _answers.Clear();
+        try
+        {
+            var response = await Http.PostAsJsonAsync("/api/student/ai/quiz", new QuizGenerationRequest(_courseId,
+                _materialId == 0 ? null : _materialId, _count));
+            if (!response.IsSuccessStatusCode)
+            {
+                _error = await response.Content.ReadAsStringAsync();
+                return;
+            }
+            _quiz = await response.Content.ReadFromJsonAsync<QuizGenerationResponse>();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private void SelectAnswer(int optionIndex) => _answers[_index] = optionIndex;
+    private void Previous() { if (_index > 0) { _index--; _showAnswer = false; } }
+    private void Next() { if (_quiz is not null && _index + 1 < _quiz.Questions.Count) { _index++; _showAnswer = false; } }
+    private void Finish()
+    {
+        if (_quiz is null) return;
+        _score = _quiz.Questions.Select((q, i) => _answers.TryGetValue(i, out var selected) && selected == q.CorrectIndex ? 1 : 0).Sum();
+        _finished = true;
+    }
+    private void Restart() { _index = 0; _finished = false; _showAnswer = false; _answers.Clear(); }
+}

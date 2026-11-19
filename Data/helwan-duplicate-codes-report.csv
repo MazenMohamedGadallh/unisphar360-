@@ -1,0 +1,38 @@
+﻿Code,FirstRowId,SecondRowId,FirstTitle,SecondTitle,FirstTrack,SecondTrack,FirstYear,SecondYear,FirstSemester,SecondSemester,FirstPrerequisites,SecondPrerequisites_(this_one_wins),Differences
+HU 111,2,59,English-1,English I,General,General,1,1,Term 1,Term 1,,Compulsory,Title
+ST 121,6,61,Probability and Statistics-1,Probability and Statistics,General,General,1,1,Term 1,Term 1,,Compulsory,Title
+IT 111,9,62,Electronics-1,Electronics,General,General,1,1,Term 2,Term 2,,Compulsory,Title
+CS 111,1,63,Introduction to Computers,Introduction to Computers,General,General,1,1,Term 1,Term 1,,Compulsory,same course (only prerequisites differ)
+CS 112,12,64,Programming-1,Programming-1,General,General,1,1,Term 2,Term 2,CS 111,Compulsory,same course (only prerequisites differ)
+CS 251,26,65,Software Engineering-1,Software Engineering-1,General,General,2,1,Term 2,Term 2,CS 112,Compulsory,AcademicYear
+MA 111,4,67,Mathematics-1,Mathematics-1,General,General,1,1,Term 1,Term 1,,Compulsory,same course (only prerequisites differ)
+MA 112,8,68,Discrete Mathematics,Discrete Mathematics,General,General,1,1,Term 2,Term 2,,Compulsory,same course (only prerequisites differ)
+PH 111,5,69,Physics,Physics,General,General,1,1,Term 1,Term 1,,Compulsory,same course (only prerequisites differ)
+ST 122,13,71,Probability and Statistics-2,Probability and Statistics-2,General,General,1,1,Term 2,Term 2,ST 121,Elective,same course (only prerequisites differ)
+HU 313,17,75,Human Rights,Human Rights,General,General,2,2,Term 1,Term 1,,Compulsory,same course (only prerequisites differ)
+IT 221,15,76,Data Communication,Data Communication,General,General,2,2,Term 1,Term 1,ST 121,Compulsory,same course (only prerequisites differ)
+IT 222,22,77,Computer Networks-1,Computer Networks-1,General,General,2,2,Term 2,Term 2,IT 221,Compulsory,same course (only prerequisites differ)
+IT 223,10,78,Internet Technology,Internet Technology,General,General,1,2,Term 2,Term 2,,Compulsory,AcademicYear
+CS 213,19,79,Programming-2,Programming-2,General,General,2,2,Term 1,Term 1,CS 112,Compulsory,same course (only prerequisites differ)
+CS 214,16,80,Data Structures,Data Structures,General,General,2,2,Term 1,Term 1,CS 112,Compulsory,same course (only prerequisites differ)
+CS 221,18,81,Logic Design,Logic Design,General,General,2,2,Term 1,Term 1,,Compulsory,same course (only prerequisites differ)
+CS 241,24,82,Operating Systems-1,Operating Systems-1,General,General,2,2,Term 2,Term 2,CS 112,Compulsory,same course (only prerequisites differ)
+CS 316,21,83,Algorithms,Algorithms,General,General,2,2,Term 2,Term 2,CS 214,Compulsory,same course (only prerequisites differ)
+MA 113,11,84,Mathematics-2,Mathematics-2,General,General,1,2,Term 2,Term 1,MA 111,Compulsory,AcademicYear;Semester
+IS 211,14,85,Database System-1,Database Systems-1,General,General,2,2,Term 1,Term 1,,Compulsory,Title
+IS 231,3,86,Fundamentals of Information Systems,Fundamentals of Information Systems,General,General,1,2,Term 1,Term 1,,Compulsory,AcademicYear
+IS 240,23,87,Operations Research,Operations Research,General,General,2,2,Term 2,Term 1,,Compulsory,Semester
+IS 351,20,88,System Analysis and Design-1,Analysis and Design of Information Systems-1,General,General,2,2,Term 1,Term 2,IS 231,Compulsory,Title;Semester
+IT 241,25,90,Signals and Systems,Signals and Systems,General,General,2,2,Term 2,Term 2,MA 113,Elective,same course (only prerequisites differ)
+CS 313,38,91,Programming-3,Programming-3,"IS,CS,IT",General,3,2,Term 1,Term 2,CS 213,Elective,Track;AcademicYear;Semester
+IS 321,56,93,Projects Management,Projects Management,IS,General,4,2,Term 2,Term 2,IS 240,Elective,Track;AcademicYear
+HU 334,50,98,Professional Ethics,Professional Ethics,General,General,4,2,Term 1,Term 2,,Elective,AcademicYear;Semester
+AI 310,36,99,Artificial Intelligence,Artificial Intelligence,"IS,CS,IT,AI",AI,3,3,Term 1,Term 1,CS 316,Compulsory,Track
+AI 320,35,100,Convex Optimization Theory,Convex Optimization Theory,AI,AI,3,3,Term 1,Term 1,MA 113,Compulsory,same course (only prerequisites differ)
+AI 330,40,101,Machine Learning,Machine Learning,"CS,AI",AI,3,3,Term 1,Term 1,ST 122,Compulsory,Track
+IS 365,39,105,Big Data Technologies,Big Data Technologies,"IS,AI",AI,3,3,Term 1,Term 1,IS 211,Compulsory,Track
+IT 341,44,107,Digital Signal Processing,Digital Signal Processing,"AI,IT",AI,3,3,Term 1,Term 1,MA 112,Elective,Description;Track
+CS 471,41,108,Parallel Processing and High Performance Computing,Parallel Processing,"CS,AI",AI,3,3,Term 1,Term 1,CS 241,Elective,Title;Description;Track
+IS 312,37,110,Database Systems-2,Database Systems 2,"IS,CS,IT,AI",AI,3,3,Term 1,Term 1,IS 211,Elective,Title;Description;Track
+IS 360,53,111,Introduction to Data Science,Introduction to Data Science,IS,AI,4,3,Term 1,Term 2,IS 312,Elective,Description;Track;AcademicYear;Semester
+IT 441,43,112,Image Processing-1,Image Processing-1,"AI,IT",AI,3,4,Term 1,Term 1,IT 241,Compulsory,Track;AcademicYear

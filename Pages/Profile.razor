@@ -1,0 +1,263 @@
+@page "/profile"
+@*
+[Authorize] removed on purpose (see Dashboard.razor): the server
+challenges every F5 to /login because the browser never sends the
+localStorage JWT as a bearer header. /api stays [Authorize]-guarded
+and MainLayout bounces anonymous users to /login after auth resolves.
+*@
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject UniSphere.Api.Services.BlazorAuthService AuthService
+@using Microsoft.AspNetCore.Components.Forms
+@using System.Net.Http.Headers
+
+<PageTitle>My Profile - UniSphere 360+</PageTitle>
+
+<div class="page-header">
+    <h1>My Profile</h1>
+    <p>View and edit your personal information.</p>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+}
+<div class="card" style="max-width: 600px;">
+    <div class="card-header">
+        <h3>Personal Information</h3>
+    </div>
+    @if (_loading)
+    {
+        <div class="loading">Loading profile...</div>
+    }
+    else if (_user is not null)
+    {
+        <form @onsubmit="SaveProfile" class="profile-form">
+            <div class="profile-avatar-editor">
+                @if (!string.IsNullOrWhiteSpace(_user.AvatarUrl))
+                {
+                    <img class="profile-avatar-large" src="@_user.AvatarUrl" alt="@_user.FullName" />
+                }
+                else
+                {
+                    <span class="profile-avatar-large profile-avatar-initial">@AvatarInitial</span>
+                }
+                <div>
+                    <label class="form-label">Profile image</label>
+                    <InputFile OnChange="UploadAvatarAsync" accept=".jpg,.jpeg,.png,.webp" class="form-control" />
+                    <p class="form-hint">JPG, PNG or WebP. Maximum 5 MB.</p>
+                    @if (_uploadingAvatar) { <div class="spinner">Uploading image…</div> }
+                    @if (!string.IsNullOrWhiteSpace(_user.AvatarUrl))
+                    {
+                        <button type="button" class="btn btn-small btn-danger" @onclick="RemoveAvatarAsync" disabled="@_uploadingAvatar">Remove photo</button>
+                    }
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Full Name</label>
+                <input type="text" @bind="_user.FullName" required />
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" value="@_user.Email" disabled />
+            </div>
+            <div class="form-group">
+                <label>@MajorLabel</label>
+                <input type="text" @bind="_user.Major" required />
+            </div>
+            <div class="form-group">
+                <label>Role</label>
+                <input type="text" value="@_user.Role" disabled />
+            </div>
+            <div class="form-group">
+                <label>Avatar URL</label>
+                <input type="url" @bind="_user.AvatarUrl" placeholder="https://..." />
+            </div>
+            @if (_message is not null)
+            {
+                <div class="alert @(_isError ? "alert-error" : "alert-success")" role="status">@_message</div>
+            }
+            <button type="submit" class="btn btn-primary" disabled="@_saving">@(_saving ? "Saving…" : "Save Changes")</button>
+        </form>
+    }
+</div>
+
+@code {
+    private ProfileUser? _user;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _error;
+    private string? _message;
+    private bool _isError;
+    private bool _uploadingAvatar;
+
+    private string AvatarInitial =>
+        string.IsNullOrWhiteSpace(_user?.FullName) ? "?" : _user.FullName.Trim()[0].ToString().ToUpperInvariant();
+
+    /// <summary>The same backend field means "major" for students but
+    /// "field/department of work or study" for doctors, graduates and admins
+    /// — the label reflects that instead of confusing everyone.</summary>
+    private string MajorLabel => _user?.Role switch
+    {
+        "Student" => "Major",
+        "Doctor" => "Field of teaching (department)",
+        "Graduate" => "Field of study",
+        _ => "Major"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _user = await Http.GetFromJsonAsync<ProfileUser>("/api/users/me");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            Nav.NavigateTo("/login?expired=1", replace: true);
+            return;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not load your profile ({(ex.InnerException ?? ex).Message}).";
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task UploadAvatarAsync(InputFileChangeEventArgs e)
+    {
+        if (_user is null || e.File is null) return;
+        _uploadingAvatar = true;
+        _message = null;
+        StateHasChanged();
+
+        try
+        {
+            await using var stream = e.File.OpenReadStream(5 * 1024 * 1024);
+            using var content = new MultipartFormDataContent();
+            var fileContent = new StreamContent(stream);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue(
+                string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType);
+            content.Add(fileContent, "file", e.File.Name);
+
+            var response = await Http.PostAsync($"/api/users/{_user.Id}/avatar", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                _message = await response.Content.ReadAsStringAsync();
+                _isError = true;
+            }
+            else
+            {
+                await LoadAsync();
+                AuthService.NotifyAvatarChanged(_user?.AvatarUrl);
+                _message = "Profile image updated.";
+                _isError = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _message = $"Avatar upload failed ({(ex.InnerException ?? ex).Message}).";
+            _isError = true;
+        }
+        finally
+        {
+            _uploadingAvatar = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RemoveAvatarAsync()
+    {
+        if (_user is null) return;
+        _uploadingAvatar = true;
+        try
+        {
+            var response = await Http.DeleteAsync($"/api/users/{_user.Id}/avatar");
+            if (response.IsSuccessStatusCode)
+            {
+                await LoadAsync();
+                AuthService.NotifyAvatarChanged(null);
+                _message = "Profile photo removed.";
+                _isError = false;
+            }
+            else
+            {
+                _message = await response.Content.ReadAsStringAsync();
+                _isError = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _message = $"Could not remove photo ({(ex.InnerException ?? ex).Message}).";
+            _isError = true;
+        }
+        finally { _uploadingAvatar = false; StateHasChanged(); }
+    }
+
+    private async Task SaveProfile(EventArgs e)
+    {
+        if (_user is null) return;
+        _saving = true;
+        _message = null;
+        StateHasChanged();
+        HttpResponseMessage response;
+        try
+        {
+            response = await Http.PutAsJsonAsync($"/api/users/{_user.Id}", new
+            {
+                fullName = _user.FullName,
+                major = _user.Major,
+                avatarUrl = _user.AvatarUrl
+            });
+        }
+        catch (Exception ex)
+        {
+            _message = $"Save failed ({(ex.InnerException ?? ex).Message}).";
+            _isError = true;
+            _saving = false;
+            StateHasChanged();
+            return;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = "";
+            try { body = await response.Content.ReadAsStringAsync(); } catch { /* ignore */ }
+            string reason = "Please check your input and try again.";
+            if (!string.IsNullOrWhiteSpace(body)) reason = body.Length > 200 ? body[..200] : body;
+            _message = $"Save failed ({reason})";
+            _isError = true;
+            _saving = false;
+            StateHasChanged();
+            return;
+        }
+
+        // Persisted server-side: reload the authoritative record.
+        await LoadAsync();
+        AuthService.NotifyAvatarChanged(_user?.AvatarUrl);
+        _message = "Profile updated.";
+        _isError = false;
+        StateHasChanged();
+    }
+}
+
+@code {
+public class ProfileUser
+{
+    public int Id { get; set; }
+    public string FullName { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string? AvatarUrl { get; set; }
+    public string Major { get; set; } = "";
+    public int RoleId { get; set; }
+    public string Role { get; set; } = "";
+}
+}
