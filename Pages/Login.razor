@@ -3,115 +3,91 @@
 @layout EmptyLayout
 @inject UniSphere.Api.Services.BlazorAuthService AuthService
 @inject NavigationManager Nav
-@inject IJSRuntime JS
-@implements IAsyncDisposable
 
-<PageTitle>Login - UniSphere 360+</PageTitle>
+<PageTitle>Sign in - UniSphere 360+</PageTitle>
 
-<div class="login-shell hub @(_portal ? "is-portal" : "")">
-    <div class="login-scene" aria-hidden="true"></div>
-    <canvas id="login-aurora" class="login-aurora" aria-hidden="true"></canvas>
-    <div class="login-aurora-veil" aria-hidden="true"></div>
+<div class="signin">
+    <aside class="signin-brand">
+        <a class="signin-logo" href="/login">
+            <img src="/images/unisphar-sphere-64.png" alt="" width="36" height="36" />
+            <span>UniSphere <b>360+</b></span>
+        </a>
 
-    <header class="hub-nav">
-        <div class="login-brand-logo">
-            <span class="logo-mark brand-sphere"><img src="/images/unisphar-sphere.png" alt="UniSphere sphere logo" /></span>
-            <span class="hub-brand">
-                <span class="login-brand-name">UniSphere <span class="logo-plus">360+</span></span>
-                <small>Learn &middot; Grow &middot; Achieve</small>
-            </span>
-        </div>
-        <nav class="hub-links" aria-label="Site">
-            <NavLink href="/register" class="hub-cta">Get Started</NavLink>
-        </nav>
-    </header>
-
-    <main class="hub-main">
-        <section class="hub-hero">
-            <h1 class="hub-title">Your University Journey<span class="hub-title-accent">Starts Here</span></h1>
-            <p class="hub-tag">Study <i>&bull;</i> Connect <i>&bull;</i> Build Your Future</p>
-            <ul class="hub-badges" aria-label="What you get">
-                <li><span><UiIcon Name="graduation-cap" /></span>Courses</li>
-                <li><span><UiIcon Name="sparkles" /></span>AI Assistant</li>
-                <li><span><UiIcon Name="briefcase" /></span>Careers</li>
-                <li><span><UiIcon Name="microscope" /></span>Research</li>
+        <div class="signin-pitch">
+            <h2>Your whole university life, in one place.</h2>
+            <p>Courses, grades, exams and advice for students, doctors and graduates.</p>
+            <ul>
+                <li><UiIcon Name="book-open" /> Lectures, materials and your study plan</li>
+                <li><UiIcon Name="clipboard-check" /> Exams, results and attendance</li>
+                <li><UiIcon Name="briefcase" /> Career help when you graduate</li>
             </ul>
-        </section>
+        </div>
 
-        <div class="login-panel">
-            <div class="login-card">
-                <div class="login-header">
-                    <h1>Welcome Back</h1>
-                    <p>Sign in to your account</p>
+        <small class="signin-note">&copy; @DateTime.Now.Year UniSphere 360+</small>
+    </aside>
+
+    <main class="signin-main">
+        <div class="signin-form">
+            <h1>Sign in</h1>
+            <p class="signin-sub">Use the email your university gave you.</p>
+
+            @if (Expired == "1")
+            {
+                <div class="alert alert-error">Your session expired. Please sign in again.</div>
+            }
+            @if (!string.IsNullOrEmpty(_info))
+            {
+                <div class="alert alert-info">@_info</div>
+            }
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <div class="alert alert-error">@_error</div>
+            }
+
+            <form @onsubmit="HandleLogin">
+                <div class="signin-field">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" @bind="_email" placeholder="name@university.edu" autocomplete="username" required />
                 </div>
-
-                @if (Expired == "1")
-                {
-                    <div class="alert alert-error">Session expired. Please sign in again.</div>
-                }
-                @if (!string.IsNullOrEmpty(_info))
-                {
-                    <div class="alert alert-info">@_info</div>
-                }
-                @if (!string.IsNullOrEmpty(_error))
-                {
-                    <div class="alert alert-error">@_error</div>
-                }
-
-                <form @onsubmit="HandleLogin">
-                    <div class="form-group field-icon">
-                        <label for="email" class="sr-only">Email Address</label>
-                        <span class="field-ico"><UiIcon Name="mail" /></span>
-                        <input type="email" id="email" @bind="_email" placeholder="Email Address" autocomplete="username" required />
+                <div class="signin-field">
+                    <div class="signin-label-row">
+                        <label for="password">Password</label>
+                        <a href="/login" @onclick:preventDefault @onclick="ForgotPassword">Forgot it?</a>
                     </div>
-                    <div class="form-group field-icon">
-                        <label for="password" class="sr-only">Password</label>
-                        <span class="field-ico"><UiIcon Name="lock" /></span>
-                        <input type="@(_showPw ? "text" : "password")" id="password" @bind="_password" placeholder="Password" autocomplete="current-password" required />
-                        <button type="button" class="field-eye" @onclick="() => _showPw = !_showPw" aria-label="@(_showPw ? "Hide password" : "Show password")">
+                    <div class="signin-password">
+                        <input type="@(_showPw ? "text" : "password")" id="password" @bind="_password" autocomplete="current-password" required />
+                        <button type="button" @onclick="() => _showPw = !_showPw" aria-label="@(_showPw ? "Hide password" : "Show password")">
                             <UiIcon Name="@(_showPw ? "eye-off" : "eye")" />
                         </button>
                     </div>
-                    <div class="login-row">
-                        <label class="remember"><input type="checkbox" @bind="_remember" /> Remember me</label>
-                        <a href="/login" @onclick:preventDefault @onclick="ForgotPassword">Forgot Password?</a>
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-block login-submit" disabled="@(_loading || _portal)">
-                        @if (_loading)
-                        {
-                            <span class="search-spinner btn-spinner" aria-hidden="true"></span>
-                            <span>Signing in…</span>
-                        }
-                        else
-                        {
-                            <span>Login</span>
-                            <span class="login-arrow"><UiIcon Name="arrow-right" /></span>
-                        }
-                    </button>
-                </form>
-
-                <div class="auth-switch">
-                    <span>Don't have an account? <NavLink href="/register">Sign Up</NavLink></span>
                 </div>
+                <label class="signin-remember"><input type="checkbox" @bind="_remember" /> Keep me signed in</label>
+                <button type="submit" class="btn btn-primary signin-submit" disabled="@_loading">
+                    @if (_loading)
+                    {
+                        <span class="search-spinner btn-spinner" aria-hidden="true"></span>
+                        <span>Signing in…</span>
+                    }
+                    else
+                    {
+                        <span>Sign in</span>
+                    }
+                </button>
+            </form>
 
-                <div class="login-footer">
-                    <div class="demo-accounts-label"><span>Demo accounts</span><small>Tap to fill</small></div>
-                    <div class="demo-grid">
-                        @foreach (var account in DemoAccounts)
-                        {
-                            <button type="button" class="demo-btn" @onclick="(e) => FillDemo(account)">
-                                <span class="demo-role demo-@(account.Role.ToLowerInvariant())"><UiIcon Name="@RoleIcon(account.Role)" /></span>
-                                <span class="demo-meta"><strong>@account.Role</strong></span>
-                            </button>
-                        }
-                    </div>
-                </div>
+            <p class="signin-switch">New here? <NavLink href="/register">Create an account</NavLink></p>
+
+            <div class="signin-demo">
+                <span>Try a demo account:</span>
+                @foreach (var account in DemoAccounts)
+                {
+                    <button type="button" @onclick="() => FillDemo(account)">@account.Role</button>
+                }
             </div>
         </div>
     </main>
-
-    <footer class="hub-foot">Empowering Students&hellip; Building Tomorrow</footer>
 </div>
+
 
 @code {
     private string _email = "";
@@ -134,15 +110,6 @@
         new("Doctor", "doctor@unisphere.edu", "Doctor123!"),
         new("Admin", "admin@unisphere.edu", "Admin123!")
     ];
-
-    private static string RoleIcon(string role) => role switch
-    {
-        "Student" => "graduation-cap",
-        "Graduate" => "briefcase",
-        "Doctor" => "microscope",
-        "Admin" => "shield-check",
-        _ => "user-round"
-    };
 
     private void FillDemo(DemoUser account)
     {
@@ -196,32 +163,8 @@
         // persisted token can only be read once JS interop is available
         // (OnAfterRenderAsync — never during prerender). Restore it here:
         // a signed-in user should land on their destination, not the form.
-        if (firstRender)
-        {
-            try
-            {
-                _fx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/login-fx.js");
-                await _fx.InvokeVoidAsync("startAurora", "login-aurora");
-            }
-            catch { /* decorative only */ }
-
-            if (await AuthService.RestoreSessionAsync())
-                Nav.NavigateTo(LandingPath, replace: true);
-        }
-    }
-
-    private IJSObjectReference? _fx;
-    private bool _portal;
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_fx is null) return;
-        try
-        {
-            await _fx.InvokeVoidAsync("stopAurora");
-            await _fx.DisposeAsync();
-        }
-        catch { /* circuit gone */ }
+        if (firstRender && await AuthService.RestoreSessionAsync())
+            Nav.NavigateTo(LandingPath, replace: true);
     }
 
     private async Task HandleLogin(EventArgs e)
@@ -245,15 +188,6 @@
                     : user is not null && string.Equals(user.Role, "Admin", StringComparison.OrdinalIgnoreCase)
                         ? "/admin"
                         : UniSphere.Api.Services.RoleRoutes.HomeFor(user?.Role ?? "Student");
-                // Creative transition: logo -> obsidian core -> portal -> workspace.
-                _portal = true;
-                await InvokeAsync(StateHasChanged);
-                try
-                {
-                    _fx ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/login-fx.js");
-                    await _fx.InvokeVoidAsync("playPortal");
-                }
-                catch { /* fall through to a plain redirect */ }
                 Nav.NavigateTo(target);
             }
             else

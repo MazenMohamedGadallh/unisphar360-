@@ -301,66 +301,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         }
     </div>
 
-    <!-- Quick Actions -->
-    <div class="card quick-actions-card">
-        <div class="card-header">
-            <h3>Quick Actions</h3>
-        </div>
-        <div class="quick-actions-grid">
-            <NavLink href="/academic-advisor" class="quick-action tile-grades">
-                <span class="action-icon"><UiIcon Name="pencil" /></span>
-                <span>Check My Grades</span>
-            </NavLink>
-            <NavLink href="/study-planner" class="quick-action tile-planner">
-                <span class="action-icon"><UiIcon Name="calendar-days" /></span>
-                <span>Plan My Study</span>
-            </NavLink>
-            <NavLink href="/courses" class="quick-action tile-courses">
-                <span class="action-icon"><UiIcon Name="graduation-cap" /></span>
-                <span>Course Recommendations</span>
-            </NavLink>
-            <NavLink href="/academic-advisor" class="quick-action tile-insights">
-                <span class="action-icon"><UiIcon Name="lightbulb" /></span>
-                <span>Academic Insights</span>
-            </NavLink>
-        </div>
-    </div>
-
-    <!-- Two-column section -->
-    <div class="two-column">
-        <!-- Recent Activity -->
-        <div class="card activity-card">
-            <div class="card-header">
-                <h3>Recent Activity</h3>
-            </div>
-            @if (!string.IsNullOrEmpty(_activityError))
-            {
-                <div class="alert alert-error">@_activityError <button class="btn btn-small" @onclick="LoadActivityAsync">Retry</button></div>
-            }
-            else if (_activity is null)
-            {
-                <div class="loading">Loading activity...</div>
-            }
-            else if (!_activity.Any())
-            {
-                <div class="empty-state"><div class="empty-icon"><UiIcon Name="history" /></div>No recent activity.</div>
-            }
-            else
-            {
-                <div class="activity-list">
-                    @foreach (var item in _activity)
-                    {
-                        <div class="activity-item">
-                            <div class="activity-content">
-                                <span class="activity-message">@item.Text</span>
-                                <span class="activity-time">@TimeAgo(item.CreatedAt)</span>
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-
         <!-- AI Insights -->
         <div class="card insights-card">
             <div class="card-header">
@@ -398,7 +338,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
                 </div>
             }
         </div>
-    </div>
 </div>
 
 
@@ -418,8 +357,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
     private string? _plannerError;
     private List<DashboardRecommendedCourseDto>? _recommended;
     private string? _recommendedError;
-    private List<DashboardActivityDto>? _activity;
-    private string? _activityError;
     private List<DashboardInsightDto>? _insights;
     private string? _insightsError;
     private MyUniversityDto? _university;
@@ -480,7 +417,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         LoadPerformanceAsync(),
         LoadPlannerAsync(),
         LoadRecommendedAsync(),
-        LoadActivityAsync(),
         LoadInsightsAsync(),
         LoadUniversityAsync());
 
@@ -537,11 +473,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         _recommended = await Http.GetFromJsonAsync<List<DashboardRecommendedCourseDto>>("/api/dashboard/recommended-courses") ?? new();
     }, e => _recommendedError = e, "recommendations");
 
-    private Task LoadActivityAsync() => TryLoadAsync(async () =>
-    {
-        _activity = await Http.GetFromJsonAsync<List<DashboardActivityDto>>("/api/dashboard/recent-activity?take=4") ?? new();
-    }, e => _activityError = e, "activity");
-
     private Task LoadInsightsAsync() => TryLoadAsync(async () =>
     {
         _insights = await Http.GetFromJsonAsync<List<DashboardInsightDto>>("/api/dashboard/insights") ?? new();
@@ -588,19 +519,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         }
     }
 
-    private static string TimeAgo(DateTime createdAtUtc)
-    {
-        var span = DateTime.UtcNow - createdAtUtc.ToUniversalTime();
-        if (span.TotalMinutes < 1) return "Just now";
-        if (span.TotalHours < 1) return $"{(int)span.TotalMinutes} minutes ago";
-        if (span.TotalHours < 24)
-        {
-            var h = (int)span.TotalHours;
-            return h == 1 ? "1 hour ago" : $"{h} hours ago";
-        }
-        var days = (int)span.TotalDays;
-        return days == 1 ? "Yesterday" : $"{days} days ago";
-    }
 
     private static string GetInsightIcon(string type) => type.ToLowerInvariant() switch
     {

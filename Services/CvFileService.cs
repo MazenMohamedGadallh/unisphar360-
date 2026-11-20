@@ -137,10 +137,22 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
         return await ToDtoAsync(doc);
     }
 
-    public async Task<string?> GetEffectiveTextAsync(CvDocument doc) =>
-        !string.IsNullOrWhiteSpace(doc.ManualText)
-            ? doc.ManualText
-            : string.IsNullOrWhiteSpace(doc.ExtractedText) ? null : doc.ExtractedText;
+    public async Task<string?> GetEffectiveTextAsync(CvDocument doc)
+    {
+        if (!string.IsNullOrWhiteSpace(doc.ManualText)) return doc.ManualText;
+        if (string.IsNullOrWhiteSpace(doc.ExtractedText) && File.Exists(doc.StoragePath))
+        {
+            // Re-read files whose earlier extraction failed (the extractor improves over
+            // time, and re-uploading the same file is deduplicated back to this record).
+            var (text, status, error) = ExtractText(doc.StoragePath, Path.GetExtension(doc.StoragePath).ToLowerInvariant());
+            if (text is not null)
+            {
+                (doc.ExtractedText, doc.ParseStatus, doc.ParseError) = (text, status, error);
+                await db.SaveChangesAsync();
+            }
+        }
+        return string.IsNullOrWhiteSpace(doc.ExtractedText) ? null : doc.ExtractedText;
+    }
 
     private async Task<CvDocumentDto> ToDtoAsync(CvDocument d)
     {
@@ -219,10 +231,11 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
         return sb.ToString();
     }
 
-    /// <summary>PDF best-effort: inflate FlateDecode streams and pull text shown
-    /// with Tj/TJ operators. Works for many simple text-based PDFs; scanned or
-    /// encrypted PDFs fail gracefully into ParseStatus=Failed.</summary>
-    internal static string ExtractPdf(string path)
+    /// <summary>PDF best-effort: decode ASCII85 + FlateDecode streams and pull text
+    /// shown with Tj/TJ operators, starting a new line on Td/TD/T*/ET. Works for
+    /// many simple text-based PDFs; scanned or encrypted PDFs fail gracefully into
+    /// ParseStatus=Failed.</summary>
+    public static string ExtractPdf(string path)
     {
         var bytes = File.ReadAllBytes(path);
         var pdf = Encoding.Latin1.GetString(bytes);
@@ -246,11 +259,13 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
             {
                 byte[] content = new byte[dataEnd - dataStart];
                 Array.Copy(bytes, dataStart, content, 0, content.Length);
+                // e.g. ReportLab writes /Filter [/ASCII85Decode /FlateDecode].
+                if (TryAscii85(content, out var unwrapped)) content = unwrapped;
                 if (TryInflate(content, out var decoded))
                 {
                     var ascii = Encoding.Latin1.GetString(decoded);
-                    foreach (Match m in Regex.Matches(ascii, "\\((?:\\\\.|[^\\\\)])*\\)\\s*(Tj|TJ|')\\s*", RegexOptions.Singleline))
-                        sb.Append(ParsePdfString(m.Value));
+                    foreach (Match m in Regex.Matches(ascii, "\\((?:\\\\.|[^\\\\)])*\\)\\s*(Tj|TJ|')|\\bT[dD\\*]|\\bET\\b", RegexOptions.Singleline))
+                        sb.Append(m.Value[0] == '(' ? ParsePdfString(m.Value) : "\n");
                     sb.Append(' ');
                 }
             }
@@ -265,6 +280,39 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
             sb.Append(' ');
         }
         return sb.ToString();
+    }
+
+    /// <summary>ASCII85 (Adobe "~>"-terminated) to bytes; false when the stream is not ASCII85.</summary>
+    internal static bool TryAscii85(byte[] input, out byte[] output)
+    {
+        output = [];
+        var s = Encoding.Latin1.GetString(input).Trim();
+        if (!s.EndsWith("~>", StringComparison.Ordinal)) return false;
+        s = s[..^2];
+        if (s.StartsWith("<~", StringComparison.Ordinal)) s = s[2..];
+
+        var result = new List<byte>(s.Length);
+        ulong value = 0;
+        var count = 0;
+        foreach (var c in s)
+        {
+            if (char.IsWhiteSpace(c)) continue;
+            if (c == 'z' && count == 0) { result.AddRange([0, 0, 0, 0]); continue; }
+            if (c < '!' || c > 'u') return false;
+            value = value * 85 + (ulong)(c - '!');
+            if (++count < 5) continue;
+            for (var shift = 24; shift >= 0; shift -= 8) result.Add((byte)(value >> shift));
+            value = 0;
+            count = 0;
+        }
+        if (count > 0)
+        {
+            // A final partial group is padded with 'u' (84) and yields count-1 bytes.
+            for (var i = count; i < 5; i++) value = value * 85 + 84;
+            for (var i = 0; i < count - 1; i++) result.Add((byte)(value >> (24 - 8 * i)));
+        }
+        output = [.. result];
+        return true;
     }
 
     private static bool TryInflate(byte[] input, out byte[] output)

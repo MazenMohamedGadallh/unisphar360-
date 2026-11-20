@@ -8,6 +8,10 @@
     <base href="/" />
     <link rel="stylesheet" href="@($"css/app.legacy.css?v={Version("css/app.legacy.css")}")" />
     <link rel="stylesheet" href="@($"css/app.generated.css?v={Version("css/app.generated.css")}")" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Source+Sans+3:wght@400;500;600;700&display=swap" />
+    <link rel="stylesheet" href="@($"css/theme.css?v={Version("css/theme.css")}")" />
     <link rel="icon" type="image/png" href="/images/unisphar-sphere-64.png" />
     <component type="typeof(HeadOutlet)" rendermode="InteractiveServer" />
     <script>
@@ -23,9 +27,17 @@
     </script>
 </head>
 <body>
-    <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><linearGradient id="ui-duo" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E4D9FF"/><stop offset="0.55" stop-color="#B9A2F8"/><stop offset="1" stop-color="#8F6CEB"/></linearGradient></defs></svg>
+    @* Moving campus photos: every image dropped into wwwroot/images/campus/ is used. *@
+    <div id="campus-bg" aria-hidden="true">
+        @foreach (var photo in CampusPhotos())
+        {
+            <div class="campus-slide" style="background-image:url('@photo')"></div>
+        }
+    </div>
+    <canvas id="live-bg" aria-hidden="true"></canvas>
     <Routes @rendermode="@RenderMode.InteractiveServer" />
     <script src="_framework/blazor.web.js"></script>
+    <script src="@($"js/live-bg.js?v={Version("js/live-bg.js")}")" defer></script>
 </body>
 </html>
 
@@ -35,4 +47,17 @@
     // The file's own timestamp: browsers fetch a fresh copy whenever the CSS changes.
     private string Version(string path) =>
         File.GetLastWriteTimeUtc(Path.Combine(Env.WebRootPath, path)).Ticks.ToString();
+
+    private static readonly string[] PhotoExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".avif" };
+
+    // Sorted by file name, so the order can be controlled with 01-, 02-, … prefixes.
+    private IEnumerable<string> CampusPhotos()
+    {
+        var dir = Path.Combine(Env.WebRootPath, "images", "campus");
+        if (!Directory.Exists(dir)) return Array.Empty<string>();
+        return Directory.EnumerateFiles(dir)
+            .Where(f => PhotoExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+            .Select(f => "images/campus/" + Uri.EscapeDataString(Path.GetFileName(f)));
+    }
 }
