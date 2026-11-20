@@ -37,18 +37,19 @@ public class AdminController : ControllerBase
         var totalCourses = await _db.Courses.CountAsync();
         var totalEnrollments = await _db.Enrollments.CountAsync();
 
+        // TotalCourses > 0 (here and below): skip the empty placeholder records created at sign-up/import, which dragged averages to ~0.
         var avgGpa = await _db.SemesterRecords
-            .Where(r => r.IsCurrent)
+            .Where(r => r.IsCurrent && r.TotalCourses > 0)
             .AverageAsync(r => (double?)r.Gpa) ?? 0;
 
         var avgAttendance = await _db.SemesterRecords
-            .Where(r => r.IsCurrent)
+            .Where(r => r.IsCurrent && r.TotalCourses > 0)
             .AverageAsync(r => (double?)r.AttendanceRate) ?? 0;
 
         // GPA distribution — fetch data and group in-memory (switch expressions
         // are not translatable to SQL by EF Core)
         var allRecords = await _db.SemesterRecords
-            .Where(r => r.IsCurrent)
+            .Where(r => r.IsCurrent && r.TotalCourses > 0)
             .ToListAsync();
 
         var gpaRanges = allRecords
@@ -245,7 +246,7 @@ public class AdminController : ControllerBase
             else onTrack++;
         }
 
-        var current = await _db.SemesterRecords.AsNoTracking().Where(r => r.IsCurrent).ToListAsync();
+        var current = await _db.SemesterRecords.AsNoTracking().Where(r => r.IsCurrent && r.TotalCourses > 0).ToListAsync();
 
         return new AdminOverviewDto(
             users.Count(u => u.Role == UserRole.Student),
@@ -626,7 +627,7 @@ public class AdminController : ControllerBase
         var students = await _db.Users.AsNoTracking()
             .Where(u => !u.IsDeleted && u.IsActive && (u.Role == UserRole.Student || u.Role == UserRole.Graduate))
             .ToListAsync();
-        var records = await _db.SemesterRecords.AsNoTracking().Where(r => r.IsCurrent).ToListAsync();
+        var records = await _db.SemesterRecords.AsNoTracking().Where(r => r.IsCurrent && r.TotalCourses > 0).ToListAsync();
 
         return students
             .GroupBy(u => string.IsNullOrWhiteSpace(u.Department) ? "Undeclared" : u.Department)

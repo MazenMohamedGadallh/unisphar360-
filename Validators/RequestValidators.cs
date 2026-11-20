@@ -180,7 +180,7 @@ public class CreateMaterialRequestValidator : AbstractValidator<CreateMaterialRe
         RuleFor(x => x.Description).MaximumLength(2000).When(x => !string.IsNullOrEmpty(x.Description));
         RuleFor(x => x.Content).MaximumLength(20000).When(x => !string.IsNullOrEmpty(x.Content));
         RuleFor(x => x.FileUrl).MaximumLength(500)
-            .Must(u => string.IsNullOrEmpty(u) || Uri.TryCreate(u, UriKind.Absolute, out _))
+            .Must(u => string.IsNullOrEmpty(u) || (DoctorMaterialValidator.IsSafeFileUrl(u) && !u.StartsWith("/")))
             .When(x => !string.IsNullOrEmpty(x.FileUrl))
             .WithMessage("FileUrl must be a valid absolute URL.");
     }
@@ -247,6 +247,18 @@ public class DoctorMaterialValidator : AbstractValidator<CreateDoctorMaterialReq
 {
     public static readonly string[] AllowedTypes = CreateMaterialRequestValidator.AllowedTypes;
 
+    /// <summary>An /uploads/ path with no ".." segments, or an http(s) URL. Blocks
+    /// javascript:/data: links (stored XSS in material links) and path traversal
+    /// (the AI assistant reads /uploads/ files from disk).</summary>
+    public static bool IsSafeFileUrl(string? u)
+    {
+        if (string.IsNullOrEmpty(u)) return true;
+        if (u.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+            return !u.Contains("..") && !u.Contains('\\');
+        return Uri.TryCreate(u, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    }
+
     public DoctorMaterialValidator()
     {
         RuleFor(x => x.Title).NotEmpty().WithMessage("Title is required.").MaximumLength(200);
@@ -256,9 +268,7 @@ public class DoctorMaterialValidator : AbstractValidator<CreateDoctorMaterialReq
         RuleFor(x => x.Description).MaximumLength(2000).When(x => !string.IsNullOrEmpty(x.Description));
         RuleFor(x => x.Content).MaximumLength(200000).When(x => !string.IsNullOrEmpty(x.Content));
         RuleFor(x => x.FileUrl).MaximumLength(500)
-            .Must(u => string.IsNullOrEmpty(u)
-                || u.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase)
-                || Uri.TryCreate(u, UriKind.Absolute, out _))
+            .Must(DoctorMaterialValidator.IsSafeFileUrl)
             .When(x => !string.IsNullOrEmpty(x.FileUrl))
             .WithMessage("FileUrl must be an uploaded file path or a valid absolute URL.");
     }
@@ -275,9 +285,7 @@ public class UpdateDoctorMaterialRequestValidator : AbstractValidator<UpdateDoct
         RuleFor(x => x.Description).MaximumLength(2000).When(x => !string.IsNullOrEmpty(x.Description));
         RuleFor(x => x.Content).MaximumLength(200000).When(x => !string.IsNullOrEmpty(x.Content));
         RuleFor(x => x.FileUrl).MaximumLength(500)
-            .Must(u => string.IsNullOrEmpty(u)
-                || u.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase)
-                || Uri.TryCreate(u, UriKind.Absolute, out _))
+            .Must(DoctorMaterialValidator.IsSafeFileUrl)
             .When(x => !string.IsNullOrEmpty(x.FileUrl))
             .WithMessage("FileUrl must be an uploaded file path or a valid absolute URL.");
     }
@@ -444,9 +452,7 @@ public class UpdateDoctorProfileRequestValidator : AbstractValidator<UpdateDocto
         // Only the editable field exists on the DTO; locked fields are
         // rejected by the controller before this validator runs.
         RuleFor(x => x.AvatarUrl).MaximumLength(500)
-            .Must(u => string.IsNullOrEmpty(u)
-                || u.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase)
-                || Uri.TryCreate(u, UriKind.Absolute, out _))
+            .Must(DoctorMaterialValidator.IsSafeFileUrl)
             .When(x => !string.IsNullOrEmpty(x.AvatarUrl))
             .WithMessage("Avatar must be an uploaded file path or a valid absolute URL.");
     }

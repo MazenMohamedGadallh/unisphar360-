@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.EntityFrameworkCore;
 using UniSphere.Api.Data;
 using UniSphere.Api.Dtos;
@@ -17,10 +18,16 @@ public class AuthController : ControllerBase
     private readonly AppDbContext _db;
     private readonly TokenService _tokens;
     private readonly IValidator<RegisterRequest> _registerValidator;
+    private readonly IMemoryCache _cache;
 
-    public AuthController(AppDbContext db, TokenService tokens, IValidator<RegisterRequest> registerValidator)
+    // Brute-force guard keyed by email: Blazor logs in server-side from 127.0.0.1, so an IP limit would lump every user together.
+    private const int MaxFailedLogins = 5;
+    private static readonly TimeSpan LockoutWindow = TimeSpan.FromMinutes(15);
+
+    public AuthController(AppDbContext db, TokenService tokens, IValidator<RegisterRequest> registerValidator, IMemoryCache cache)
     {
         _db = db;
+        _cache = cache;
         _tokens = tokens;
         _registerValidator = registerValidator;
     }
@@ -117,10 +124,18 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest req)
     {
         var email = (req.Email ?? "").Trim().ToLowerInvariant();
+        var failKey = "login-fail:" + email;
+        if (_cache.TryGetValue(failKey, out int fails) && fails >= MaxFailedLogins)
+            return StatusCode(StatusCodes.Status429TooManyRequests, "Too many failed sign-in attempts. Try again in 15 minutes.");
+
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == email);
 
         if (user is null || user.IsDeleted || string.IsNullOrEmpty(req.Password) || !PasswordService.Verify(req.Password, user.PasswordHash))
+        {
+            _cache.Set(failKey, fails + 1, LockoutWindow);
             return Unauthorized("Invalid email or password.");
+        }
+        _cache.Remove(failKey);
 
         if (!user.IsActive)
             return StatusCode(StatusCodes.Status403Forbidden, "This account has been deactivated. Contact an administrator.");

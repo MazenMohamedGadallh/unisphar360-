@@ -428,6 +428,8 @@
         {
             _conversations = new();
         }
+        // No conversation to open (new user / none yet): show the empty state, not "Loading messages…" forever.
+        if (_activeId is null) _messages ??= new();
     }
 
     private async Task SelectConversationAsync(int id)

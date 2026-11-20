@@ -251,6 +251,29 @@ public class AuthTests : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Login_TooManyFailures_LocksEmailEvenWithRightPassword()
+    {
+        var email = $"lockout-{Guid.NewGuid():N}@unisphere.edu";
+        (await _client.PostAsJsonAsync("/api/auth/register", ValidStudent(email))).EnsureSuccessStatusCode();
+
+        for (var i = 0; i < 5; i++)
+            Assert.Equal(HttpStatusCode.Unauthorized,
+                (await _client.PostAsJsonAsync("/api/auth/login", new { email, password = "wrong" })).StatusCode);
+
+        var locked = await _client.PostAsJsonAsync("/api/auth/login", new { email, password = "Password123!" });
+        Assert.Equal(HttpStatusCode.TooManyRequests, locked.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("javascript:alert(1)", false)]
+    [InlineData("data:text/html,x", false)]
+    [InlineData("/uploads/../../appsettings.Local.json", false)]
+    [InlineData("/uploads/doctor/course-1/a.pdf", true)]
+    [InlineData("https://example.com/a.pdf", true)]
+    public void MaterialFileUrl_OnlyUploadsOrHttp(string url, bool ok) =>
+        Assert.Equal(ok, UniSphere.Api.Validators.DoctorMaterialValidator.IsSafeFileUrl(url));
+
+    [Fact]
     public async Task Login_RoleMismatch_IsUnauthorized()
     {
         var response = await _client.PostAsJsonAsync("/api/auth/login",

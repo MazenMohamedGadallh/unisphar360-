@@ -142,6 +142,7 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 
 // Services
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IUniversityScope, UniversityScope>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<AcademicService>();
@@ -315,6 +316,9 @@ var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOp
 var jwtKey = Environment.GetEnvironmentVariable("UNISPHERE_JWT_KEY") ?? jwt.Key;
 if (jwtKey.Length < 32)
     throw new InvalidOperationException("JWT key must be at least 32 characters. Set UNISPHERE_JWT_KEY environment variable or update appsettings.json.");
+// The committed placeholder key is public: anyone with the repo could sign an Admin token.
+if (!builder.Environment.IsDevelopment() && jwtKey.StartsWith("CHANGE-ME", StringComparison.Ordinal))
+    throw new InvalidOperationException("Set UNISPHERE_JWT_KEY: the placeholder JWT key in appsettings.json is only allowed in Development.");
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
