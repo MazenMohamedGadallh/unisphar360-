@@ -4,10 +4,15 @@
 <PageTitle>Find Jobs - UniSphere 360+</PageTitle>
 
 <div class="page-header">
-    <h1>Find Jobs</h1>
+    <h1>Jobs</h1>
     <p>Search the catalog and sync fresh remote openings</p>
     <button class="btn btn-small" @onclick="SyncAsync" disabled="@_syncing">Sync jobs</button>
 </div>
+<nav class="admin-tabs" aria-label="Jobs">
+    <span class="admin-tab selected" aria-current="page">All jobs</span>
+    <NavLink href="/graduate/jobs/matches" class="admin-tab">AI matches</NavLink>
+    <NavLink href="/graduate/jobs/insights" class="admin-tab">Market insights</NavLink>
+</nav>
 
 <div style="display:flex; gap:8px; margin-bottom:14px;">
     <button class="btn btn-small @(_view == AllView ? "btn-primary" : "")" @onclick="() => SetViewAsync(AllView)">All jobs</button>

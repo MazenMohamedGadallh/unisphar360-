@@ -1,4 +1,5 @@
 @page "/doctor/exam-results"
+@page "/doctor/exam-assistant/results"
 @attribute [Authorize(Roles = "Doctor")]
 @using System.Net
 @using UniSphere.Api.Dtos
@@ -16,9 +17,13 @@
     else
     {
         <div class="page-header">
-            <h1>Exam Results</h1>
+            <h1>Exams</h1>
             <p>Who took each of your published exams — server-graded scores, percentages and submission dates — plus enrolled students who have not taken it yet.</p>
         </div>
+        <nav class="admin-tabs" aria-label="Exams">
+            <NavLink href="/doctor/exam-assistant" class="admin-tab" Match="NavLinkMatch.All">Create &amp; publish</NavLink>
+            <span class="admin-tab selected" aria-current="page">Results</span>
+        </nav>
 
         @if (!string.IsNullOrEmpty(_error))
         {

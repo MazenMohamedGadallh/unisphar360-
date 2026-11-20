@@ -1,5 +1,7 @@
 @page "/courses"
 @page "/courses/{Id:int}"
+@* Second home under My Courses so the sidebar item stays highlighted. *@
+@page "/university/browse"
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -16,7 +18,7 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 {
     <!-- Course Detail View -->
     <div class="page-header">
-        <NavLink href="/courses" class="back-link"><UiIcon Name="arrow-left" /> Back to Courses</NavLink>
+        <NavLink href="/university/browse" class="back-link"><UiIcon Name="arrow-left" /> Back to Courses</NavLink>
     </div>
 
     @if (_course is null)
@@ -48,9 +50,13 @@ else
 {
     <!-- Course List View -->
     <div class="page-header">
-        <h1>Courses</h1>
+        <h1>My Courses</h1>
         <p>Browse available courses and enroll.</p>
     </div>
+    <nav class="admin-tabs" aria-label="My Courses">
+        <NavLink href="/university" Match="NavLinkMatch.All" class="admin-tab">My courses &amp; materials</NavLink>
+        <span class="admin-tab selected" aria-current="page">Browse &amp; enroll</span>
+    </nav>
 
     <div class="search-section">
         <div class="search-box-large">

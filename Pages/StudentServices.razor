@@ -1,4 +1,6 @@
 @page "/student-services"
+@* Student Events was a subset of this page; its URL now lands here. *@
+@page "/events"
 @*
 [Authorize] removed on purpose (see Dashboard.razor): the server
 challenges every F5 to /login because the browser never sends the
@@ -7,12 +9,12 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 *@
 @inject HttpClient Http
 
-<PageTitle>Student Services - UniSphere 360+</PageTitle>
+<PageTitle>Campus - UniSphere 360+</PageTitle>
 <RoleGate Roles="Student">
 
 <div class="page-header">
-    <h1>Student Services</h1>
-    <p>Events, announcements, FAQs, and support.</p>
+    <h1>Campus</h1>
+    <p>Announcements, events and answers to common questions.</p>
 </div>
 
 <!-- Announcements -->
@@ -73,6 +75,10 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                         <h4>@evt.Title</h4>
                         <p><UiIcon Name="map-pin" /> @evt.Location</p>
                         <p><UiIcon Name="clock-3" /> @evt.StartsAtUtc.ToString("hh:mm tt")</p>
+                        @if (!string.IsNullOrWhiteSpace(evt.Description))
+                        {
+                            <p>@evt.Description</p>
+                        }
                     </div>
                 </div>
             }

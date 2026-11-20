@@ -1,4 +1,4 @@
-@* Graduate sidebar navigation — exact labels required by spec.
+@* Graduate sidebar navigation. Jobs, Skills and Campus pages carry their own tab bars.
    Used by MainLayout whenever the signed-in role is Graduate. *@
 @namespace UniSphere.Api.Components
 <nav class="min-h-0 flex-1 overflow-y-auto px-3 py-4">
@@ -6,29 +6,17 @@
         <span class="@Icon"><UiIcon Name="house" /></span>
         <span>Career Overview</span>
     </NavLink>
-    <NavLink href="/graduate/profile" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
-        <span class="@Icon"><UiIcon Name="user-round" /></span>
-        <span>My Career Profile</span>
-    </NavLink>
     <NavLink href="/graduate/cv" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
         <span class="@Icon"><UiIcon Name="file-text" /></span>
         <span>CV &amp; Resume Studio</span>
     </NavLink>
     <NavLink href="/graduate/jobs" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
         <span class="@Icon"><UiIcon Name="search" /></span>
-        <span>Find Jobs</span>
-    </NavLink>
-    <NavLink href="/graduate/matches" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
-        <span class="@Icon"><UiIcon Name="thumbs-up" /></span>
-        <span>AI Job Matches</span>
+        <span>Jobs</span>
     </NavLink>
     <NavLink href="/graduate/skill-gap" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
         <span class="@Icon"><UiIcon Name="target" /></span>
-        <span>Skill Gap Analysis</span>
-    </NavLink>
-    <NavLink href="/graduate/roadmap" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
-        <span class="@Icon"><UiIcon Name="map" /></span>
-        <span>Career Roadmap</span>
+        <span>Skills &amp; Roadmap</span>
     </NavLink>
     <NavLink href="/graduate/applications" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
         <span class="@Icon"><UiIcon Name="file-check-2" /></span>
@@ -40,15 +28,11 @@
     </NavLink>
     <NavLink href="/graduate/alumni" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
         <span class="@Icon"><UiIcon Name="landmark" /></span>
-        <span>Alumni &amp; University Services</span>
+        <span>Campus</span>
     </NavLink>
-    <NavLink href="/graduate/events" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
-        <span class="@Icon"><UiIcon Name="party-popper" /></span>
-        <span>Graduated Events</span>
-    </NavLink>
-    <NavLink href="/graduate/insights" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
-        <span class="@Icon"><UiIcon Name="chart-no-axes-combined" /></span>
-        <span>Career Insights</span>
+    <NavLink href="/graduate/assistant" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
+        <span class="@Icon"><UiIcon Name="sparkles" /></span>
+        <span>AI Assistant</span>
     </NavLink>
 </nav>
 

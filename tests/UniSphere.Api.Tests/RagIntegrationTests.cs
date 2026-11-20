@@ -72,30 +72,33 @@ public class RagIntegrationTests : IClassFixture<RagApiFactory>
     }
 
     [Fact]
-    public async Task GraduateAndDoctorChat_DoNotUseRag()
+    public async Task GraduateAndDoctorChat_UseRag_AdminDoesNot()
     {
         _factory.FakeRag.Reset();
 
-        var graduate = _factory.GraduateClient;
-        var graduateProviders = await graduate.GetFromJsonAsync<List<ChatProviderDto>>("/api/chat/providers");
-        Assert.NotNull(graduateProviders);
-        Assert.DoesNotContain(graduateProviders, p => p.Name == "rag");
+        foreach (var client in new[] { _factory.GraduateClient, _factory.DoctorClient })
+        {
+            var providers = await client.GetFromJsonAsync<List<ChatProviderDto>>("/api/chat/providers");
+            Assert.NotNull(providers);
+            Assert.Contains(providers, p => p.Name == "rag");
 
-        var graduateResponse = await graduate.PostAsJsonAsync(
-            "/api/chat/conversations/new/messages",
-            new { provider = "openai", content = "Career advice." });
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, graduateResponse.StatusCode);
+            var response = await client.PostAsJsonAsync(
+                "/api/chat/conversations/new/messages",
+                new { provider = "rag", content = "Summarize my material." });
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Contains("The test RAG answer", await response.Content.ReadAsStringAsync());
+        }
+        Assert.Equal(2, _factory.FakeRag.QueryCalls);
 
-        var doctor = _factory.DoctorClient;
-        var doctorProviders = await doctor.GetFromJsonAsync<List<ChatProviderDto>>("/api/chat/providers");
-        Assert.NotNull(doctorProviders);
-        Assert.DoesNotContain(doctorProviders, p => p.Name == "rag");
-
-        var doctorResponse = await doctor.PostAsJsonAsync(
+        // Picking another provider still never goes through RAG.
+        var other = await _factory.DoctorClient.PostAsJsonAsync(
             "/api/chat/conversations/new/messages",
             new { provider = "openai", content = "General question." });
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, doctorResponse.StatusCode);
-        Assert.Equal(0, _factory.FakeRag.QueryCalls);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, other.StatusCode);
+        Assert.Equal(2, _factory.FakeRag.QueryCalls);
+
+        var adminProviders = await _factory.AdminClient.GetFromJsonAsync<List<ChatProviderDto>>("/api/chat/providers");
+        Assert.DoesNotContain(adminProviders!, p => p.Name == "rag");
     }
 
     [Fact]

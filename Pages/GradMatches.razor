@@ -1,12 +1,18 @@
 @page "/graduate/matches"
+@page "/graduate/jobs/matches"
 @inherits UniSphere.Api.Components.GradPageBase
 
 <PageTitle>AI Job Matches - UniSphere 360+</PageTitle>
 
 <div class="page-header">
-    <h1>AI Job Matches</h1>
+    <h1>Jobs</h1>
     <p>Deterministic match scores based on your profile, CV and preferences</p>
 </div>
+<nav class="admin-tabs" aria-label="Jobs">
+    <NavLink href="/graduate/jobs" class="admin-tab" Match="NavLinkMatch.All">All jobs</NavLink>
+    <span class="admin-tab selected" aria-current="page">AI matches</span>
+    <NavLink href="/graduate/jobs/insights" class="admin-tab">Market insights</NavLink>
+</nav>
 
 @if (_error is not null)
 {

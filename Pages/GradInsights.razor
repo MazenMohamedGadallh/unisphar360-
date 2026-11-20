@@ -1,13 +1,19 @@
 @page "/graduate/insights"
+@page "/graduate/jobs/insights"
 @inherits UniSphere.Api.Components.GradPageBase
 
 <PageTitle>Career Insights - UniSphere 360+</PageTitle>
 
 <div class="page-header">
-    <h1>Career Insights</h1>
+    <h1>Jobs</h1>
     <p>What the job market looks like in your catalog right now</p>
     <button class="btn btn-secondary" @onclick="SyncAsync" disabled="@_loading">@(_loading ? "Syncing…" : "Sync & Refresh")</button>
 </div>
+<nav class="admin-tabs" aria-label="Jobs">
+    <NavLink href="/graduate/jobs" class="admin-tab" Match="NavLinkMatch.All">All jobs</NavLink>
+    <NavLink href="/graduate/jobs/matches" class="admin-tab">AI matches</NavLink>
+    <span class="admin-tab selected" aria-current="page">Market insights</span>
+</nav>
 
 @if (_error is not null)
 {

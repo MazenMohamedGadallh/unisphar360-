@@ -138,7 +138,7 @@ public class SearchController : ControllerBase
             .Take(take)
             .Select(m => new SearchItemDto(m.Id, m.Title, $"{m.Course?.Title} · {m.Type}",
                 user.Role == UserRole.Doctor
-                    ? "/doctor/materials"
+                    ? $"/doctor/courses/{m.CourseId}"
                     : $"/university?materialId={m.Id}", "\U0001F4C4"))
             .ToList();
         return new SearchGroupDto("material", "Summaries & materials", items);
@@ -186,25 +186,22 @@ public class SearchController : ControllerBase
         var pages = new (string Title, string Route, string[] Roles, string Icon)[]
         {
             ("Home", RoleRoutes.HomeFor(role), new[] { "Student", "Doctor", "Graduate", "Admin" }, "\U0001F3E0"),
-            ("My University", "/university", new[] { "Student" }, "\U0001F3DB"),
-            ("Academic Advisor", "/academic-advisor", new[] { "Student" }, "\U0001F393"),
+            ("My Courses", "/university", new[] { "Student" }, "\U0001F3DB"),
+            ("Study Plan", "/study-planner", new[] { "Student" }, "\U0001F393"),
             ("Career", "/career-assistant", new[] { "Student" }, "\U0001F4BC"),
             ("Research Hub", "/research-hub", new[] { "Student", "Graduate" }, "\U0001F50D"),
-            ("Student Services", "/student-services", new[] { "Student" }, "\U0001F3E2"),
-            ("My Analytics", "/analytics", new[] { "Student" }, "\U0001F4C8"),
+            ("Campus", "/student-services", new[] { "Student" }, "\U0001F3E2"),
+            ("Performance", "/analytics", new[] { "Student" }, "\U0001F4C8"),
             ("My Exams", "/student/exams", new[] { "Student" }, "\U0001F4DD"),
             ("AI Assistant", "/chat", new[] { "Student", "Doctor", "Graduate" }, "\U0001F4F1"),
-            ("Student Events", "/events", new[] { "Student" }, "\U0001F4C5"),
             ("Doctor Dashboard", "/doctor", new[] { "Doctor" }, "\U0001F3E0"),
             ("My Courses", "/doctor/courses", new[] { "Doctor" }, "\U0001F4DA"),
-            ("My Students", "/doctor/students", new[] { "Doctor" }, "\U0001F465"),
-            ("Materials", "/doctor/materials", new[] { "Doctor" }, "\U0001F4C4"),
-            ("Announcements", "/doctor/announcements", new[] { "Doctor" }, "\U0001F4E2"),
-            ("Doctor Profile", "/doctor/profile", new[] { "Doctor" }, "\U0001F464"),
+            ("Exams", "/doctor/exam-assistant", new[] { "Doctor" }, "📝"),
+            ("Exam Results", "/doctor/exam-assistant/results", new[] { "Doctor" }, "📊"),
             ("Doctor Research", "/doctor/research", new[] { "Doctor" }, "\U0001F50D"),
             ("CV Analysis", "/graduate/cv", new[] { "Graduate" }, "\U0001F4C4"),
-            ("AI Job Matches", "/graduate/matches", new[] { "Graduate" }, "\U0001F44D"),
-            ("Graduated Events", "/graduate/events", new[] { "Graduate" }, "\U0001F389"),
+            ("AI Job Matches", "/graduate/jobs/matches", new[] { "Graduate" }, "\U0001F44D"),
+            ("Campus", "/graduate/alumni", new[] { "Graduate" }, "\U0001F389"),
             ("Admin Panel", "/admin", new[] { "Admin" }, "\U0001F4CA"),
             ("My Profile", "/profile", new[] { "Student", "Graduate", "Doctor", "Admin" }, "\U0001F464"),
             ("Notifications", "/notifications", new[] { "Student", "Graduate", "Doctor", "Admin" }, "\U0001F514"),
@@ -236,9 +233,9 @@ public class SearchController : ControllerBase
 
         var route = user.Role switch
         {
-            UserRole.Graduate => "/graduate/events",
+            UserRole.Graduate => "/graduate/alumni",
             UserRole.Admin => "/admin",
-            _ => "/events"
+            _ => "/student-services"
         };
         var items = matches
             .OrderByDescending(e => e.Title.StartsWith(term, StringComparison.OrdinalIgnoreCase))

@@ -1,11 +1,15 @@
 @page "/doctor/courses"
+@* Old cross-course pages; their tools now live on each course page. *@
+@page "/doctor/students"
+@page "/doctor/materials"
+@page "/doctor/announcements"
 @using System.Net
 @using UniSphere.Api.Dtos
 @inject HttpClient Http
 @inject NavigationManager Nav
 @inject UniSphere.Api.Services.BlazorAuthService AuthService
 
-<PageTitle>My Course - UniSphere 360+</PageTitle>
+<PageTitle>My Courses - UniSphere 360+</PageTitle>
 
 @if (_denied)
 {
@@ -14,8 +18,8 @@
 else
 {
     <div class="page-header">
-        <h1>My Course</h1>
-        <p>Courses you are assigned to teach. Access is verified by the server on every request.</p>
+        <h1>My Courses</h1>
+        <p>Courses you teach. Open one to manage its students, materials and announcements.</p>
     </div>
 
     @if (!string.IsNullOrEmpty(_error))

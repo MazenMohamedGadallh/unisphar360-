@@ -1,12 +1,17 @@
 @page "/graduate/roadmap"
+@page "/graduate/skill-gap/roadmap"
 @inherits UniSphere.Api.Components.GradPageBase
 
 <PageTitle>Career Roadmap - UniSphere 360+</PageTitle>
 
 <div class="page-header">
-    <h1>Career Roadmap</h1>
+    <h1>Skills &amp; Roadmap</h1>
     <p>Your step-by-step plan. Add steps yourself or let AI suggest them.</p>
 </div>
+<nav class="admin-tabs" aria-label="Skills">
+    <NavLink href="/graduate/skill-gap" class="admin-tab" Match="NavLinkMatch.All">Skill gap</NavLink>
+    <span class="admin-tab selected" aria-current="page">Roadmap</span>
+</nav>
 
 @if (_progress is not null)
 {
