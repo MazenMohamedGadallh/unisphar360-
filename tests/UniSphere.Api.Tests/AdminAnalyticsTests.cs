@@ -50,6 +50,26 @@ public class AdminAnalyticsTests : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Admin_Overview_AverageGpa_IgnoresEmptyNewAccounts()
+    {
+        // Each sign-up adds an empty "Current semester" record (GPA 0, no courses).
+        for (var i = 0; i < 5; i++)
+        {
+            var email = $"empty-{Guid.NewGuid():N}@unisphere.edu";
+            (await _factory.CreateClient().PostAsJsonAsync("/api/auth/register", new
+            {
+                firstName = "Empty", lastName = "Student", phoneNumber = "01012345678", email,
+                gender = "Male", age = 20, role = "Student",
+                password = "Password123!", confirmPassword = "Password123!",
+                academicYear = 2, department = "Computer Science"
+            })).EnsureSuccessStatusCode();
+        }
+
+        var overview = await _factory.AdminClient.GetFromJsonAsync<Overview>("/api/admin/overview");
+        Assert.True(overview!.AverageGpa > 1.0, $"AverageGpa {overview.AverageGpa} counts empty accounts");
+    }
+
+    [Fact]
     public async Task Admin_UsersSearch_Paged()
     {
         var response = await _factory.AdminClient.GetAsync("/api/admin/users/search?page=1&pageSize=2");

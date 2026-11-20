@@ -273,11 +273,9 @@ mark { background: var(--highlight-light); color: var(--highlight); }
 .signin-brand {
     display: flex; flex-direction: column; justify-content: space-between; gap: 40px;
     padding: 40px clamp(28px, 4vw, 56px);
-    /* Students photo (wwwroot/images/login-side.jpg) under a navy veil that keeps
-       the text readable; without the file only the navy shows. */
+    /* Navy veil only: the old students photo (login-side.jpg) was never added, so it 404'd on every login. */
     background:
         linear-gradient(180deg, rgba(10, 24, 60, 0.70) 0%, rgba(10, 24, 60, 0.55) 45%, rgba(8, 18, 46, 0.92) 100%),
-        url("/images/login-side.jpg") center / cover no-repeat,
         #0D1F4A;
     color: #E9EEFA;
 }

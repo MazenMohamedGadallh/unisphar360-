@@ -693,6 +693,8 @@ public class OllamaChatProvider : StreamingChatProviderBase
     private static List<string>? _availableModels;
     private static DateTime _tagsCacheTime = DateTime.MinValue;
     private static string? _cachedRoot;
+    private static string? _failedRoot;
+    private static DateTime _failedAt = DateTime.MinValue;
     private readonly TimeSpan _tagsCacheExpiry = TimeSpan.FromSeconds(30);
     private readonly IConfiguration _config;
     private readonly ChatOptions _options;
@@ -759,11 +761,18 @@ public class OllamaChatProvider : StreamingChatProviderBase
             && DateTime.UtcNow - _tagsCacheTime < _tagsCacheExpiry)
             return _availableModels;
 
+        // A refused localhost connection takes ~4s on Windows, and pages probe on every load:
+        // remember the failure for the same 30s so a stopped Ollama doesn't stall the UI.
+        if (_failedRoot == ServerRoot && DateTime.UtcNow - _failedAt < _tagsCacheExpiry)
+            throw new HttpRequestException("Ollama unreachable (cached)");
+
         try
         {
             // Absolute URL against the server root so a BaseUrl containing
             // "/v1" cannot redirect the probe to the wrong path.
-            using var response = await _http.GetAsync($"{ServerRoot}/api/tags", ct);
+            using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            probeCts.CancelAfter(TimeSpan.FromSeconds(2));
+            using var response = await _http.GetAsync($"{ServerRoot}/api/tags", probeCts.Token);
             if (response.IsSuccessStatusCode)
             {
                 var json = await response.Content.ReadAsStringAsync(ct);
@@ -793,6 +802,7 @@ public class OllamaChatProvider : StreamingChatProviderBase
         {
             // Debug only: connection-refused stack traces would spam startup logs.
             _typedLogger.LogDebug(ex, "Ollama: failed to fetch /api/tags");
+            if (!ct.IsCancellationRequested) { _failedRoot = ServerRoot; _failedAt = DateTime.UtcNow; }
             throw;
         }
 

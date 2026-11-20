@@ -2115,10 +2115,12 @@ label { font-size: var(--fs-sm); font-weight: 600; }
 .stat-card .card-value { font-size: 24px; line-height: 1.2; white-space: nowrap; }
 .summary-cards { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .summary-cards.admin-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.summary-cards > .card { min-width: 0; }
+/* The grid gap does the spacing; a card margin here doubled it. */
+.summary-cards > .card { min-width: 0; margin-bottom: 0; }
 @media (max-width: 1100px) { .summary-cards.admin-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 800px) { .summary-cards.admin-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 480px) { .summary-cards.admin-kpis { grid-template-columns: minmax(0, 1fr); } }
+/* Phones: keep two tiles per row so 12 KPIs are not a 1500px column. */
+@media (max-width: 480px) { .summary-cards.admin-kpis { gap: 10px; } .summary-cards.admin-kpis .stat-card { padding: 14px; gap: 10px; } }
 
 /* ---- Empty states: balanced wrapping ---- */
 .chat-empty { width: 100%; max-width: 520px; padding: 24px 16px; }
