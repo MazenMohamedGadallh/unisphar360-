@@ -14,13 +14,17 @@ and MainLayout bounces anonymous users to /login after auth resolves.
 @inject BlazorAuthService AuthService
 @inject IJSRuntime JS
 
-<PageTitle>My University - UniSphere 360+</PageTitle>
+<PageTitle>My Courses - UniSphere 360+</PageTitle>
 <RoleGate Roles="Student">
 
 <div class="page-header">
-    <h1>My University</h1>
+    <h1>My Courses</h1>
     <p>@(_info?.UniversityName ?? "Course materials and summaries")</p>
 </div>
+<nav class="admin-tabs" aria-label="My Courses">
+    <span class="admin-tab selected" aria-current="page">My courses &amp; materials</span>
+    <NavLink href="/university/browse" class="admin-tab">Browse &amp; enroll</NavLink>
+</nav>
 
 @if (!string.IsNullOrEmpty(_downloadError))
 {

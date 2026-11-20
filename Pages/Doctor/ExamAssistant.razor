@@ -16,6 +16,10 @@
         <h1>@T("ExamAssistant")</h1>
         <p>@T("GenerateExamsFromMaterials")</p>
     </div>
+    <nav class="admin-tabs" aria-label="Exams">
+        <span class="admin-tab selected" aria-current="page">Create &amp; publish</span>
+        <NavLink href="/doctor/exam-assistant/results" class="admin-tab">Results</NavLink>
+    </nav>
 
     @if (!string.IsNullOrEmpty(_toast))
     {

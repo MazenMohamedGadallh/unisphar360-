@@ -225,18 +225,18 @@ def query(req: QueryRequest) -> Dict[str, Any]:
     best = rank(req.question, req.documents, req.top_k)
     sources = to_sources(best)
     system = (req.system_prompt or "You are a university teaching assistant.") + \
-        " Use the provided course excerpts first when relevant and cite the excerpt title. If they do not cover the" \
+        " Use the provided document excerpts first when relevant and cite the excerpt title. If they do not cover the" \
         " question, do NOT refuse: answer helpfully from general knowledge and say briefly that it came from general" \
-        " knowledge rather than the course materials."
+        " knowledge rather than the provided documents."
     if not best:
-        answer, provider, model = _write(system, f"Course excerpts: (none matched)\n\nQuestion: {req.question}")
+        answer, provider, model = _write(system, f"Document excerpts: (none matched)\n\nQuestion: {req.question}")
         if answer:
             return {"answer": answer, "sources": [], "grounded": False, "provider": provider, "model": model}
-        return {"answer": "I could not find this in the provided course materials, and no language model is available for a general answer right now.",
+        return {"answer": "I could not find this in your documents, and no language model is available for a general answer right now.",
                 "sources": [], "grounded": False, "provider": "bm25", "model": "none"}
-    answer, provider, model = _write(system, f"Course excerpts:\n{to_context(best)}\n\nQuestion: {req.question}")
+    answer, provider, model = _write(system, f"Document excerpts:\n{to_context(best)}\n\nQuestion: {req.question}")
     if answer:
         return {"answer": answer, "sources": sources, "grounded": True, "provider": provider, "model": model}
     extract = "\n\n".join(f"From \"{c['title']}\": {c['text']}" for c in best[:3])
-    return {"answer": "Here are the most relevant passages from your course materials:\n\n" + extract,
+    return {"answer": "Here are the most relevant passages from your documents:\n\n" + extract,
             "sources": sources, "grounded": True, "provider": "extractive", "model": "bm25"}

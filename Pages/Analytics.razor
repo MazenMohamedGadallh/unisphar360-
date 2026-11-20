@@ -1,4 +1,6 @@
 @page "/analytics"
+@* Academic Advisor showed the same stats, grades table and insights; its URL now lands here. *@
+@page "/academic-advisor"
 @*
 [Authorize(Roles = "Student,Graduate")] removed on purpose (see
 Dashboard.razor): the server challenges every F5 to /login because
@@ -13,11 +15,11 @@ roles, and every /api endpoint is [Authorize]-guarded server-side.
 @inject NavigationManager Nav
 @inject BlazorAuthService AuthService
 
-<PageTitle>My Analytics - UniSphere 360+</PageTitle>
+<PageTitle>Performance - UniSphere 360+</PageTitle>
 <RoleGate Roles="Student">
 
 <div class="page-header">
-    <h1>My Analytics</h1>
+    <h1>Performance</h1>
     <p>Are you on the right track? Here's what your data says.</p>
 </div>
 

@@ -277,11 +277,12 @@ public class ChatService
     {
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
 
-        // Only the Student AI Assistant's RAG provider is routed through the
-        // RAG service. Graduates, doctors and admins keep the existing provider
-        // behaviour, and a student who explicitly picks another provider keeps
+        // The RAG provider is routed through the RAG service for every role that
+        // has documents to ground on (AiGroundingService.BuildDocumentsAsync:
+        // student/doctor course materials, graduate CV). Admins keep the normal
+        // providers, and anyone who explicitly picks another provider keeps
         // that choice instead of being silently redirected.
-        var useRag = user?.Role == UserRole.Student
+        var useRag = user?.Role is UserRole.Student or UserRole.Doctor or UserRole.Graduate
             && string.Equals(providerName, "rag", StringComparison.OrdinalIgnoreCase)
             && _ragOptions.Enabled
             && _ragProvider.IsConfigured;

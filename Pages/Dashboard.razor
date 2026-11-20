@@ -19,18 +19,11 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
 <RoleGate Roles="Student">
 
 <div class="dashboard">
-    <!-- Welcome Banner -->
     <div class="welcome-banner">
         <div class="welcome-content">
             <h1>@_greeting, @_firstName!</h1>
-            <p>Your academic journey matters. Let's make it better together.</p>
-            <div class="welcome-chips">
-                <span class="welcome-chip"><UiIcon Name="sparkles" />AI Assistant ready</span>
-                <NavLink href="/study-planner" class="welcome-chip"><UiIcon Name="calendar-days" />Study planner</NavLink>
-                <NavLink href="/courses" class="welcome-chip"><UiIcon Name="book-open" />Courses</NavLink>
-            </div>
+            <p>Here is what to study next.</p>
         </div>
-        <div class="welcome-decoration"><UiIcon Name="graduation-cap" /></div>
     </div>
 
     @if (!string.IsNullOrEmpty(_summaryError))
@@ -43,8 +36,48 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         <div class="alert alert-error">Access denied: you don't have permission to view that page.</div>
     }
 
-    <!-- Academic Summary Cards -->
-    <div class="summary-cards">
+    @* One clear next step: the weakest course plus the next unfinished plan item. *@
+    @if (_performance is not null && _planner is not null)
+    {
+        var weakest = WeakestCourse;
+        var next = NextPlanItem;
+        <section class="continue-card" aria-label="Continue studying">
+            <div class="continue-body">
+                <span class="continue-label">Continue studying</span>
+                @if (weakest is not null)
+                {
+                    <h2>@weakest.CourseName</h2>
+                    <p class="continue-why">Your lowest grade this term: @weakest.GradeLetter with @weakest.AttendancePercent% attendance. A focused session here moves your GPA the most.</p>
+                }
+                else
+                {
+                    <h2>You're on track in every course</h2>
+                    <p class="continue-why">Keep it going with the next item in your plan.</p>
+                }
+                @if (next is not null)
+                {
+                    <p class="continue-next"><UiIcon Name="calendar-days" /> Next in your plan: <strong>@next.Subject</strong>, @next.Hours hrs on @next.DayLabel</p>
+                }
+                else
+                {
+                    <p class="continue-next"><UiIcon Name="calendar-days" /> Nothing left in this week's plan.</p>
+                }
+                <div class="continue-actions">
+                    <NavLink href="/study-planner" class="btn btn-primary"><UiIcon Name="calendar-days" /> Open study plan</NavLink>
+                    <NavLink href="/student/assistant" class="btn btn-outline"><UiIcon Name="sparkles" /> Ask the AI about it</NavLink>
+                </div>
+            </div>
+            @if (_summary is not null)
+            {
+                <div class="continue-ring" style="--pct:@(_summary.CompletionPercent)" role="img" aria-label="@(_summary.CompletionPercent)% of courses completed">
+                    <span class="ring-value">@_summary.CompletionPercent%</span>
+                    <span class="ring-label">of your courses<br />completed</span>
+                </div>
+            }
+        </section>
+    }
+
+    <div class="summary-cards home-stats">
         <div class="card stat-card">
             <div class="card-info">
                 <span class="card-label">Current GPA</span>
@@ -83,67 +116,82 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
                 <span class="card-delta">Need attention</span>
             </div>
         </div>
-        <div class="card stat-card">
-            <div class="card-info">
-                <span class="card-label">Recommended Courses</span>
-                <span class="card-value">@(_summary?.RecommendedCoursesCount ?? 0)</span>
-                <span class="card-delta">For you</span>
-            </div>
-        </div>
     </div>
 
-    <!-- Academic Performance Table -->
-    <div class="card performance-card">
-        <div class="card-header">
-            <h3>Academic Performance</h3>
-            <NavLink href="/academic-advisor" class="view-all">View All <UiIcon Name="arrow-right" /></NavLink>
-        </div>
-        @if (!string.IsNullOrEmpty(_performanceError))
-        {
-            <div class="alert alert-error">@_performanceError <button class="btn btn-small" @onclick="LoadPerformanceAsync">Retry</button></div>
-        }
-        else if (_performance is null)
-        {
-            <div class="loading">Loading performance data...</div>
-        }
-        else if (!_performance.Any())
-        {
-            <div class="empty-state"><div class="empty-icon"><UiIcon Name="chart-no-axes-combined" /></div>No academic records found. Enroll in courses to see your performance.</div>
-        }
-        else
-        {
-            <div class="table-wrapper">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Course</th>
-                            <th>Grade</th>
-                            <th>Attendance</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var row in _performance)
-                        {
-                            <tr>
-                                <td>@row.CourseName</td>
-                                <td>@row.GradeLetter (@row.GradePoints.ToString("0.0"))</td>
-                                <td>@row.AttendancePercent%</td>
-                                <td><span class="status-badge @row.Status.ToLower().Replace(" ", "-")">@row.Status</span></td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-    </div>
-
-    <!-- Two-column section -->
     <div class="two-column">
-        <!-- Study Planner -->
+        <div class="card">
+            <div class="card-header">
+                <h3>Needs attention</h3>
+                <NavLink href="/analytics" class="view-all">Full performance <UiIcon Name="arrow-right" /></NavLink>
+            </div>
+            @if (!string.IsNullOrEmpty(_performanceError))
+            {
+                <div class="alert alert-error">@_performanceError <button class="btn btn-small" @onclick="LoadPerformanceAsync">Retry</button></div>
+            }
+            else if (_performance is null)
+            {
+                <div class="loading">Loading your courses...</div>
+            }
+            else if (!WeakCourses.Any())
+            {
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="trending-up" /></div>No course needs extra work right now.</div>
+            }
+            else
+            {
+                <div class="attention-list">
+                    @foreach (var row in WeakCourses)
+                    {
+                        <div class="attention-item">
+                            <div class="attention-info">
+                                <span class="attention-name">@row.CourseName</span>
+                                <span class="attention-meta">@row.GradeLetter, @row.AttendancePercent% attendance</span>
+                            </div>
+                            <div class="attention-bar" aria-hidden="true"><i style="width:@(Math.Clamp(row.GradePoints / 4.0 * 100, 4, 100).ToString("0"))%"></i></div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3>Exams to take</h3>
+                <NavLink href="/student/exams" class="view-all">My exams <UiIcon Name="arrow-right" /></NavLink>
+            </div>
+            @if (!string.IsNullOrEmpty(_examsError))
+            {
+                <div class="alert alert-error">@_examsError <button class="btn btn-small" @onclick="LoadExamsAsync">Retry</button></div>
+            }
+            else if (_exams is null)
+            {
+                <div class="loading">Loading exams...</div>
+            }
+            else if (!_exams.Any())
+            {
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="clipboard-check" /></div>You're all caught up. No open exams.</div>
+            }
+            else
+            {
+                <div class="attention-list">
+                    @foreach (var exam in _exams.Take(4))
+                    {
+                        <NavLink href="/student/exams" class="attention-item exam-item">
+                            <div class="attention-info">
+                                <span class="attention-name">@exam.Title</span>
+                                <span class="attention-meta">@exam.CourseTitle, @exam.QuestionCount questions@(exam.Marks is int m ? $", {m} marks" : "")</span>
+                            </div>
+                            <span class="status-badge in-progress">Not started</span>
+                        </NavLink>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="two-column">
         <div class="card planner-card">
             <div class="card-header">
-                <h3>Study Planner</h3>
+                <h3>This week's study plan</h3>
                 <NavLink href="/study-planner" class="view-all">Edit <UiIcon Name="arrow-right" /></NavLink>
             </div>
             @if (!string.IsNullOrEmpty(_plannerError))
@@ -172,7 +220,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
                             <div class="planner-status">
                                 @if (!item.IsFreeDay)
                                 {
-                                    <button class="check-btn" title="Toggle done" @onclick="() => ToggleDayAsync(item)">
+                                    <button class="check-btn" title="Toggle done" aria-label="@(item.IsCompleted ? "Mark not done" : "Mark done")" @onclick="() => ToggleDayAsync(item)">
                                         @if (item.IsCompleted)
                                         {
                                             <span class="check-icon"><UiIcon Name="check" /></span>
@@ -190,154 +238,39 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             }
         </div>
 
-        <!-- Recommended Courses -->
-        <div class="card recommendations-card">
+        <div class="card">
             <div class="card-header">
-                <h3>Recommended Courses</h3>
-                <NavLink href="/courses" class="view-all">View All <UiIcon Name="arrow-right" /></NavLink>
+                <h3>New in your courses</h3>
+                <NavLink href="/university" class="view-all">My courses <UiIcon Name="arrow-right" /></NavLink>
             </div>
-            @if (!string.IsNullOrEmpty(_recommendedError))
+            @if (!string.IsNullOrEmpty(_universityError))
             {
-                <div class="alert alert-error">@_recommendedError <button class="btn btn-small" @onclick="LoadRecommendedAsync">Retry</button></div>
+                <div class="alert alert-error">@_universityError <button class="btn btn-small" @onclick="LoadUniversityAsync">Retry</button></div>
             }
-            else if (_recommended is null)
-            {
-                <div class="loading">Loading recommendations...</div>
-            }
-            else if (!_recommended.Any())
-            {
-                <div class="empty-state"><div class="empty-icon"><UiIcon Name="lightbulb" /></div>No recommendations available at this time.</div>
-            }
-            else
-            {
-                <div class="recommendation-list">
-                    @foreach (var course in _recommended.Take(4))
-                    {
-                        <div class="recommendation-item">
-                            <div class="rec-info">
-                                <span class="rec-code">@course.Name</span>
-                                <span class="rec-title">@course.Tag</span>
-                                <span class="rec-track">@course.Track | @course.Credits credits</span>
-                            </div>
-                            <NavLink href="@($"/courses/{course.Id}")" class="rec-btn">View</NavLink>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-    </div>
-
-    <!-- My University -->
-    <div class="card university-card">
-        <div class="card-header">
-            <h3>My University</h3>
-            <NavLink href="/university" class="view-all">View all <UiIcon Name="arrow-right" /></NavLink>
-        </div>
-        @if (!string.IsNullOrEmpty(_universityError))
-        {
-            <div class="alert alert-error">@_universityError <button class="btn btn-small" @onclick="LoadUniversityAsync">Retry</button></div>
-        }
-        else if (_university is null)
-        {
-            <div class="loading">Loading university...</div>
-        }
-        else if (string.IsNullOrEmpty(_university.UniversityName))
-        {
-            <div class="empty-state"><div class="empty-icon"><UiIcon Name="landmark" /></div>No university assigned to your account yet.</div>
-        }
-        else
-        {
-            <div class="university-sub">@_university.Department · Year @(_university.AcademicYear?.ToString() ?? "-")</div>
-            @if (_uniCourses is null)
-            {
-                <div class="loading">Loading courses...</div>
-            }
-            else if (!_uniCourses.Any())
-            {
-                <div class="empty-state"><div class="empty-icon"><UiIcon Name="book-open" /></div>No courses found for your university.</div>
-            }
-            else
-            {
-                <div class="uni-course-list">
-                    @foreach (var course in _uniCourses.Take(6))
-                    {
-                        <div class="uni-course-item">
-                            <span class="uni-course-name">@course.Title</span>
-                            <span class="badge">@course.MaterialsCount</span>
-                        </div>
-                    }
-                </div>
-            }
-            <h4 class="mini-heading">Latest summaries &amp; materials</h4>
-            @if (_uniMaterials is null)
+            else if (_uniMaterials is null)
             {
                 <div class="loading">Loading materials...</div>
             }
             else if (!_uniMaterials.Any())
             {
-                <div class="empty-state"><div class="empty-icon"><UiIcon Name="file-text" /></div>No materials yet.</div>
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="file-text" /></div>No new lectures or summaries yet.</div>
             }
             else
             {
                 <div class="activity-list">
                     @foreach (var m in _uniMaterials.Take(5))
                     {
-                        <div class="activity-item">
+                        <NavLink href="@($"/university?materialId={m.Id}")" class="activity-item">
                             <div class="activity-content">
                                 <span class="activity-message">@m.Title</span>
-                                <span class="activity-time">
-                                    @m.CourseName
-                                    @if (!string.IsNullOrWhiteSpace(m.InstructorName))
-                                    {
-                                        <text> &middot; @m.InstructorName</text>
-                                    }
-                                    &middot; @m.Type &middot; @m.CreatedAt.ToString("MMM d")
-                                </span>
+                                <span class="activity-time">@m.CourseName, @m.Type, @m.CreatedAt.ToString("MMM d")</span>
                             </div>
-                        </div>
-                    }
-                </div>
-            }
-        }
-    </div>
-
-        <!-- AI Insights -->
-        <div class="card insights-card">
-            <div class="card-header">
-                <h3>AI Insights</h3>
-            </div>
-            @if (!string.IsNullOrEmpty(_insightsError))
-            {
-                <div class="alert alert-error">@_insightsError <button class="btn btn-small" @onclick="LoadInsightsAsync">Retry</button></div>
-            }
-            else if (_insights is null)
-            {
-                <div class="loading">Loading insights...</div>
-            }
-            else if (!_insights.Any())
-            {
-                <div class="empty-state"><div class="empty-icon"><UiIcon Name="chart-no-axes-combined" /></div>No insights available. Keep learning!</div>
-            }
-            else
-            {
-                <div class="insights-list">
-                    @foreach (var insight in _insights)
-                    {
-                        <div class="insight-item @insight.Type.ToLowerInvariant()">
-                            <div class="insight-icon"><UiIcon Name="@GetInsightIcon(insight.Type)" /></div>
-                            <div class="insight-content">
-                                <span class="insight-title">@insight.Title</span>
-                                <span class="insight-message">@insight.Message</span>
-                                @if (!string.IsNullOrEmpty(insight.ActionLabel))
-                                {
-                                    <NavLink href="@insight.ActionRoute" class="insight-action">@insight.ActionLabel <UiIcon Name="arrow-right" /></NavLink>
-                                }
-                            </div>
-                        </div>
+                        </NavLink>
                     }
                 </div>
             }
         </div>
+    </div>
 </div>
 
 
@@ -355,14 +288,19 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
     private string? _performanceError;
     private DashboardStudyPlanDto? _planner;
     private string? _plannerError;
-    private List<DashboardRecommendedCourseDto>? _recommended;
-    private string? _recommendedError;
-    private List<DashboardInsightDto>? _insights;
-    private string? _insightsError;
-    private MyUniversityDto? _university;
+    private List<StudentExamDto>? _exams;
+    private string? _examsError;
     private string? _universityError;
-    private List<UniversityCourseDto>? _uniCourses;
     private List<MaterialDto>? _uniMaterials;
+
+    // Lowest grade points first; "Needs Attention" is the API's own flag.
+    private IEnumerable<DashboardPerformanceRowDto> WeakCourses =>
+        (_performance ?? new()).Where(r => r.Status == "Needs Attention")
+            .OrderBy(r => r.GradePoints).ThenBy(r => r.AttendancePercent).Take(3);
+    private DashboardPerformanceRowDto? WeakestCourse => WeakCourses.FirstOrDefault();
+    private DashboardStudyDayDto? NextPlanItem =>
+        _planner?.Days.Where(d => !d.IsFreeDay && !d.IsCompleted && d.Date.Date >= DateTime.Today)
+            .OrderBy(d => d.Date).FirstOrDefault();
     // Guards the deferred first load (see OnAfterRenderAsync): prerender /
     // pre-restore passes must not fire API calls or 401-logout a user.
     private bool _started;
@@ -416,8 +354,7 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         LoadSummaryAsync(),
         LoadPerformanceAsync(),
         LoadPlannerAsync(),
-        LoadRecommendedAsync(),
-        LoadInsightsAsync(),
+        LoadExamsAsync(),
         LoadUniversityAsync());
 
     private async Task TryLoadAsync(Func<Task> load, Action<string?> setError, string what)
@@ -468,32 +405,28 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         _planner = await Http.GetFromJsonAsync<DashboardStudyPlanDto>("/api/dashboard/study-plan");
     }, e => _plannerError = e, "study plan");
 
-    private Task LoadRecommendedAsync() => TryLoadAsync(async () =>
+    // Open exams the student has not submitted yet.
+    private Task LoadExamsAsync() => TryLoadAsync(async () =>
     {
-        _recommended = await Http.GetFromJsonAsync<List<DashboardRecommendedCourseDto>>("/api/dashboard/recommended-courses") ?? new();
-    }, e => _recommendedError = e, "recommendations");
-
-    private Task LoadInsightsAsync() => TryLoadAsync(async () =>
-    {
-        _insights = await Http.GetFromJsonAsync<List<DashboardInsightDto>>("/api/dashboard/insights") ?? new();
-    }, e => _insightsError = e, "insights");
+        var exams = await Http.GetFromJsonAsync<List<StudentExamDto>>("/api/student/exams") ?? new();
+        var attempts = await Http.GetFromJsonAsync<List<StudentAttemptListRowDto>>("/api/student/exams/attempts") ?? new();
+        var submitted = attempts.Where(x => x.SubmittedAtUtc is not null).Select(x => x.ExamId).ToHashSet();
+        _exams = exams.Where(e => !submitted.Contains(e.Id)).OrderByDescending(e => e.PublishedAtUtc).ToList();
+    }, e => _examsError = e, "exams");
 
     private Task LoadUniversityAsync() => TryLoadAsync(async () =>
     {
         try
         {
-            _university = await Http.GetFromJsonAsync<MyUniversityDto>("/api/university/me");
+            var page = await Http.GetFromJsonAsync<PagedResultDto<MaterialDto>>("/api/university/me/materials?page=1&pageSize=5");
+            _uniMaterials = page?.Items.ToList() ?? new();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
             // Legit state, not an error: account has no university assigned.
-            _university = new MyUniversityDto("", "", null, 0, 0);
-            return;
+            _uniMaterials = new();
         }
-        _uniCourses = await Http.GetFromJsonAsync<List<UniversityCourseDto>>("/api/university/me/courses") ?? new();
-        var page = await Http.GetFromJsonAsync<PagedResultDto<MaterialDto>>("/api/university/me/materials?page=1&pageSize=5");
-        _uniMaterials = page?.Items.ToList() ?? new();
-    }, e => _universityError = e, "university");
+    }, e => _universityError = e, "course materials");
 
     private async Task ToggleDayAsync(DashboardStudyDayDto day)
     {
@@ -520,11 +453,4 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
     }
 
 
-    private static string GetInsightIcon(string type) => type.ToLowerInvariant() switch
-    {
-        "warning" => "triangle-alert",
-        "progress" => "trending-up",
-        "recommendation" => "lightbulb",
-        _ => "lightbulb"
-    };
 }

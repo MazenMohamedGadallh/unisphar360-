@@ -283,6 +283,14 @@ mark { background: var(--highlight-light); color: var(--highlight); }
 .signin-pitch h2, .signin-pitch p, .signin-pitch li { text-shadow: 0 1px 12px rgba(0, 0, 0, 0.45); }
 .signin-logo { display: inline-flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; font-family: var(--font-serif); font-size: 20px; font-weight: 600; }
 .signin-logo b { font-weight: 600; color: #8FD3F4; }
+/* The swirl logo turns slowly with a soft breathing glow while on the sign-in page. */
+.signin-logo img { border-radius: 50%; animation: logo-spin 14s linear infinite, logo-glow 3.5s ease-in-out infinite; }
+@keyframes logo-spin { to { transform: rotate(360deg); } }
+@keyframes logo-glow {
+    0%, 100% { filter: drop-shadow(0 0 4px rgba(143, 211, 244, 0.35)); }
+    50% { filter: drop-shadow(0 0 14px rgba(143, 211, 244, 0.85)); }
+}
+@media (prefers-reduced-motion: reduce) { .signin-logo img { animation: none; } }
 .signin-pitch { max-width: 440px; }
 .signin-pitch h2 { font-size: clamp(30px, 3.2vw, 42px); line-height: 1.12; color: #fff; margin-bottom: 14px; }
 .signin-pitch p { font-size: 16px; line-height: 1.55; color: #C3CDE6; margin-bottom: 28px; }
@@ -377,3 +385,55 @@ mark { background: var(--highlight-light); color: var(--highlight); }
 /* Sign-in "portal" transition: ink instead of a violet vortex. */
 .portal-bg { background: var(--bg); }
 .portal-vortex, .portal-vortex-2, .portal-flash { display: none; }
+
+/* ---- Student home: one next step, then the details ---- */
+.continue-card {
+    display: grid; grid-template-columns: 1fr auto; gap: 28px; align-items: center;
+    padding: 26px 30px; margin-bottom: 22px;
+    background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--primary);
+    border-radius: var(--radius); box-shadow: var(--shadow-md);
+}
+.continue-label { display: block; font-size: 13px; font-weight: 600; color: var(--primary); margin-bottom: 6px; }
+.continue-card h2 { font-family: var(--font-serif); font-size: 28px; font-weight: 600; line-height: 1.15; letter-spacing: -0.015em; margin-bottom: 8px; color: var(--text); }
+.continue-why { color: var(--text-secondary); max-width: 62ch; margin-bottom: 12px; }
+.continue-next { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 14px; margin-bottom: 18px; }
+.continue-next .ui-icon { width: 16px; height: 16px; color: var(--primary); flex: none; }
+.continue-next strong { color: var(--text); font-weight: 600; }
+.continue-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.continue-actions .btn { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+.continue-actions .ui-icon { width: 16px; height: 16px; }
+.continue-ring {
+    --pct: 0; width: 132px; height: 132px; border-radius: 50%; flex: none;
+    display: grid; place-content: center; text-align: center;
+    background:
+        radial-gradient(closest-side, var(--card) 79%, transparent 80%),
+        conic-gradient(var(--primary) calc(var(--pct) * 1%), var(--surface-2) 0);
+}
+.continue-ring .ring-value { font-family: var(--font-serif); font-size: 28px; font-weight: 600; line-height: 1; color: var(--text); }
+.continue-ring .ring-label { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.3; }
+
+.summary-cards.home-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .summary-cards.home-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.attention-list { display: flex; flex-direction: column; }
+.attention-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 13px 22px; border-bottom: 1px solid var(--border); color: inherit; text-decoration: none;
+}
+.attention-item:last-child { border-bottom: none; }
+a.attention-item:hover, a.activity-item:hover { background: var(--surface-2); }
+.attention-info { display: flex; flex-direction: column; min-width: 0; }
+.attention-name { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.attention-meta { font-size: 13px; color: var(--text-muted); }
+.attention-bar { width: 96px; height: 6px; border-radius: 99px; background: var(--surface-2); flex: none; overflow: hidden; }
+.attention-bar i { display: block; height: 100%; border-radius: 99px; background: var(--danger); }
+a.activity-item { color: inherit; text-decoration: none; }
+
+@media (max-width: 700px) {
+    .continue-card { grid-template-columns: 1fr; padding: 22px 20px; }
+    .continue-ring { width: 112px; height: 112px; }
+    .continue-card h2 { font-size: 24px; }
+}
+
+/* NavLink tabs (merged pages) must not look like body links. */
+.admin-tabs a.admin-tab { text-decoration: none; }

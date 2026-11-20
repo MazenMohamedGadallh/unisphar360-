@@ -41,14 +41,17 @@ public class ChatController : ControllerBase
         _logger = logger;
     }
 
+    // Roles with their own RAG documents (student/doctor: course materials, graduate: CV); admins have none.
+    private bool UsesRag => User.IsInRole("Student") || User.IsInRole("Doctor") || User.IsInRole("Graduate");
+
     /// <summary>Only providers that are currently available (keys set, Ollama up).
-    /// Students also see the course-grounded RAG assistant when its service is
-    /// actually reachable.</summary>
+    /// Students, doctors and graduates also see the grounded RAG assistant when its
+    /// service is actually reachable.</summary>
     [HttpGet("providers")]
     public async Task<ActionResult<IReadOnlyList<ChatProviderDto>>> Providers(CancellationToken ct)
     {
         var providers = (await _chat.GetProvidersAsync(ct)).ToList();
-        if (User.IsInRole("Student") && _rag.IsConfigured
+        if (UsesRag && _rag.IsConfigured
             && !providers.Any(p => string.Equals(p.Name, "rag", StringComparison.OrdinalIgnoreCase)))
         {
             var healthy = false;
@@ -78,7 +81,7 @@ public class ChatController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<ChatProviderStatusDto>>> ProviderStatuses(CancellationToken ct)
     {
         var providers = (await _chat.GetProviderStatusesAsync(ct)).ToList();
-        if (User.IsInRole("Student") && _rag.IsConfigured
+        if (UsesRag && _rag.IsConfigured
             && !providers.Any(p => string.Equals(p.Name, "rag", StringComparison.OrdinalIgnoreCase)))
         {
             var healthy = false;
