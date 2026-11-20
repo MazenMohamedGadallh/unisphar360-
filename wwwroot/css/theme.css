@@ -1,0 +1,381 @@
+/* ==========================================================================
+   UniSphere "campus paper" theme. Loaded LAST and unlayered, so it wins over
+   app.legacy.css (@layer legacy) and app.generated.css (Tailwind layers).
+   Delete this file's <link> in App.razor to get the previous look back.
+
+   Idea: warm paper and ink instead of violet glass; one deep green accent,
+   one terracotta highlight; flat colors (no gradients or glows); a serif for
+   headings; a live contour-map background (js/live-bg.js) behind everything.
+   ========================================================================== */
+
+:root {
+    --font-sans: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+    --font-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+
+    /* Colors taken from the UniSphere sphere logo: deep blue, cyan, a touch of violet. */
+    --primary: #1E4FB8;
+    --primary-hover: #183F94;
+    --primary-strong: #12306F;
+    --primary-light: #E2EAFA;
+    --primary-soft: #EBF1FC;
+    --on-primary: #FFFFFF;
+    --highlight: #0B83B5;
+    --highlight-light: #DDF0F8;
+
+    /* Gradients collapse to a flat color: from == to. */
+    --accent-from: var(--primary);
+    --accent-to: var(--primary);
+    --banner-from: var(--primary);
+    --banner-to: var(--primary);
+    --hero-from: var(--primary);
+    --hero-to: var(--primary);
+    --on-hero: #FFFFFF;
+
+    --secondary: #2E6A8E;
+    --secondary-light: #E3EDF3;
+    --success: #2F7A47;
+    --success-light: #E4F1E7;
+    --warning: #A86A12;
+    --warning-light: #F8EDD6;
+    --danger: #B23A30;
+    --danger-hover: #962E25;
+    --danger-light: #F6E1DE;
+
+    --bg: #F3F5F9;
+    --surface: #FFFFFF;
+    --card: #FFFFFF;
+    --surface-2: #EDF1F7;
+    --field-bg: #FFFFFF;
+    --sidebar-bg: #FAFBFD;
+    --topbar-bg: rgba(250, 251, 253, 0.88);
+    --border: #DDE3EE;
+    --border-strong: #C7D0E0;
+    --text: #141A2A;
+    --text-secondary: #4A5470;
+    --text-muted: #6E7892;
+
+    --shadow-xs: 0 1px 1px rgba(15, 30, 70, 0.05);
+    --shadow: 0 1px 2px rgba(15, 30, 70, 0.07);
+    --shadow-md: 0 2px 6px rgba(15, 30, 70, 0.08);
+    --shadow-lg: 0 8px 24px rgba(15, 30, 70, 0.12);
+    --shadow-glow: none;
+
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-xs: 6px;
+
+    /* Live background line colors (read by live-bg.js). */
+    --bg-line: rgba(30, 79, 184, 0.08);
+    --bg-line-accent: rgba(11, 131, 181, 0.15);
+    /* Veil over the campus photos: keeps text readable, tints toward the brand. */
+    --photo-veil: linear-gradient(180deg, rgba(243, 245, 249, 0.80), rgba(226, 234, 250, 0.88));
+
+    /* Tailwind token names used by app.generated.css utilities. */
+    --color-primary: var(--primary);
+    --color-primary-light: var(--primary-light);
+    --color-primary-soft: var(--primary-soft);
+    --color-primary-hover: var(--primary-hover);
+    --color-secondary: var(--secondary);
+    --color-secondary-light: var(--secondary-light);
+    --color-success: var(--success);
+    --color-success-light: var(--success-light);
+    --color-warning: var(--warning);
+    --color-warning-light: var(--warning-light);
+    --color-danger: var(--danger);
+    --color-danger-light: var(--danger-light);
+    --color-danger-hover: var(--danger-hover);
+    --color-bg: var(--bg);
+    --color-surface: var(--surface);
+    --color-card: var(--card);
+    --color-border: var(--border);
+    --color-text: var(--text);
+    --color-text-secondary: var(--text-secondary);
+    --color-text-muted: var(--text-muted);
+    --color-banner-from: var(--primary);
+    --color-banner-to: var(--primary);
+    --shadow-card: var(--shadow);
+    --shadow-card-lg: var(--shadow-md);
+    --radius-card: var(--radius);
+    --radius-control: var(--radius-sm);
+}
+
+[data-theme="dark"] {
+    --primary: #8DB4FF;
+    --primary-hover: #A9C6FF;
+    --primary-strong: #C6DAFF;
+    --primary-light: #1B2A4D;
+    --primary-soft: #18243F;
+    --on-primary: #0A1630;
+    --highlight: #5CC8F0;
+    --highlight-light: #13303D;
+    --hero-from: #17306A;
+    --hero-to: #17306A;
+    --banner-from: #17306A;
+    --banner-to: #17306A;
+    --on-hero: #EEF3FF;
+
+    --secondary: #8DB8D3;
+    --secondary-light: #1C2C37;
+    --success: #8CCB9D;
+    --success-light: #1B3022;
+    --warning: #E2B566;
+    --warning-light: #3A2D14;
+    --danger: #EC8C80;
+    --danger-hover: #F2A79D;
+    --danger-light: #3B1E1A;
+
+    --bg: #0C1222;
+    --surface: #141B2E;
+    --card: #141B2E;
+    --surface-2: #1B2338;
+    --field-bg: #10172A;
+    --sidebar-bg: #0F1526;
+    --topbar-bg: rgba(15, 21, 38, 0.86);
+    --border: #253049;
+    --border-strong: #36425F;
+    --text: #E8EDF7;
+    --text-secondary: #AEB8CF;
+    --text-muted: #8590AA;
+
+    --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.35);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.5);
+
+    --bg-line: rgba(141, 180, 255, 0.07);
+    --bg-line-accent: rgba(92, 200, 240, 0.12);
+    --photo-veil: linear-gradient(180deg, rgba(12, 18, 34, 0.78), rgba(10, 22, 52, 0.88));
+}
+
+/* ---------- Live background ---------- */
+#live-bg { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -1; pointer-events: none; }
+
+/* Campus photo slideshow (fills #campus-bg from wwwroot/images/campus/).
+   Each slide fades in while slowly zooming/panning ("Ken Burns"); the veil
+   on top keeps text readable and tints the photos toward the logo blue.
+   With photos present the contour canvas is hidden. */
+#campus-bg { position: fixed; inset: 0; z-index: -2; overflow: hidden; pointer-events: none; }
+#campus-bg:empty { display: none; }
+#campus-bg:not(:empty) ~ #live-bg { display: none; }
+#campus-bg::after { content: ""; position: absolute; inset: 0; background: var(--photo-veil); }
+.campus-slide {
+    position: absolute; inset: -4%;
+    background-size: cover; background-position: center;
+    opacity: 0; transform: scale(1.04) translate3d(0, 0, 0);
+    transition: opacity 2.4s ease, transform 14s linear;
+    will-change: opacity, transform;
+}
+.campus-slide.is-active { opacity: 1; transform: scale(1.14) translate3d(-1.5%, -1%, 0); }
+.campus-slide.is-active:nth-child(even) { transform: scale(1.14) translate3d(1.5%, 1%, 0); }
+@media (prefers-reduced-motion: reduce) {
+    .campus-slide { transition: none; transform: none !important; }
+}html { background: var(--bg); }
+body { background: transparent; font-family: var(--font-sans); font-size: 15px; letter-spacing: 0; }
+.app-container, .main-content, .page-content, .login-container, .login-shell { background: transparent !important; }
+
+/* ---------- Typography ---------- */
+h1, h2, .page-header h1, .hub-title, .login-header h1, .welcome-banner h1, .welcome-banner h2,
+.grad-overview-hero h1, .grad-overview-hero h2, .card-value, .stat-value {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    font-optical-sizing: auto;
+}
+h3, h4 { letter-spacing: 0; }
+.logo-text, .login-brand-name { font-family: var(--font-serif); font-weight: 600; }
+
+/* ---------- Flat, quiet surfaces ---------- */
+/* Replaces the dark "lavender twilight" glass (campus-scene image, violet
+   translucent cards/sidebar/topbar) from app.legacy.css section 11. */
+body, [data-theme="dark"] body { background: transparent; }
+.sidebar, [data-theme="dark"] .sidebar { background: var(--sidebar-bg); border-right: 1px solid var(--border); backdrop-filter: none; }
+.top-bar, [data-theme="dark"] .top-bar { background: var(--topbar-bg); border-bottom: 1px solid var(--border); backdrop-filter: blur(6px); }
+.card, [data-theme="dark"] .card, [data-theme="dark"] .chat-main, [data-theme="dark"] .chat-side {
+    background: var(--card); border-color: var(--border); backdrop-filter: none;
+}
+.card, .stat-card, .modal, .login-card { box-shadow: var(--shadow); }
+.nav-item.active, [data-theme="dark"] .nav-item.active { background: var(--primary-light); color: var(--primary); box-shadow: none; }
+.page-header h1 { text-shadow: none; }
+
+/* AI chat: plain, readable bubbles. */
+.chat-modern .chat-user .chat-bubble { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.chat-modern .chat-assistant .chat-row { background: var(--card); border: 1px solid var(--border); backdrop-filter: none; box-shadow: var(--shadow); }
+.chat-modern .chat-assistant .chat-msg-avatar.ai { background: var(--primary-light); box-shadow: none; }
+.chat-modern .chip { background: var(--card); border: 1px solid var(--border); backdrop-filter: none; }
+.chat-modern .chip:hover { background: var(--primary-light); border-color: var(--primary); box-shadow: none; }
+.chat-modern .chat-composer { background: var(--card); border: 1px solid var(--border-strong); backdrop-filter: none; box-shadow: var(--shadow-md); }
+.chat-modern .chat-send-round { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.editing-row td { background: var(--primary-soft); }
+.btn-primary, .login-card .btn-primary { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.btn-primary:hover:not(:disabled), .login-card .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+
+/* Graduate hero: solid brand-blue block, no shine. */
+.grad-overview-hero { background: var(--hero-from); color: var(--on-hero); }
+.grad-overview-hero :is(h1, h2, h3, p) { color: var(--on-hero); }
+
+/* Dashboard greeting: editorial heading on the page itself, not a glowing
+   banner with a decorative ring and clip-art cap. */
+.welcome-banner { background: none; box-shadow: none; padding: 6px 0 8px; color: var(--text); overflow: visible; border-radius: 0; }
+.welcome-banner::after, .welcome-decoration { display: none; }
+.welcome-content h1 { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 6px; color: var(--text); }
+.welcome-content p { font-size: 15px; color: var(--text-secondary); opacity: 1; }
+.welcome-chip {
+    background: var(--card); border: 1px solid var(--border); color: var(--text-secondary);
+    border-radius: var(--radius-sm); padding: 6px 12px; font-size: 13px; font-weight: 600;
+    text-decoration: none; backdrop-filter: none;
+}
+a.welcome-chip:hover { border-color: var(--primary); color: var(--primary); }
+.welcome-chip .ui-icon { color: var(--primary); }
+
+/* ---------- Icons: one clean line, no fills, no wobble ---------- */
+.ui-icon .duo-front { fill: none; stroke-width: 1.75; }
+:is(.nav-item, .icon-btn, .btn):hover .ui-icon .duo-front { stroke-width: 1.75; }
+.ui-icon, .ui-icon * { transform: none !important; }
+.chat-send-round.is-stop .ui-icon .duo-front { fill: currentColor; }
+
+/* Sidebar: plain icons + a left accent bar for the active page (no boxed tiles). */
+.nav-icon, .nav-item:hover .nav-icon, .nav-item.active .nav-icon,
+.logout-btn .nav-icon, .logout-btn:hover .nav-icon {
+    width: 20px; height: 20px; background: none; box-shadow: none; transform: none; border-radius: 0;
+}
+.nav-item:not(.active) .nav-icon { color: var(--text-muted); }
+.nav-item:hover .nav-icon { color: var(--text); }
+.nav-item.active .nav-icon { color: var(--primary); }
+.nav-item { gap: 12px; }
+
+/* Count badges inside lists sit inline (only the top-bar bell badge floats). */
+.uni-course-item .badge {
+    position: static; box-shadow: none; background: var(--surface-2); color: var(--text-secondary);
+    font-size: 12px; height: 22px; min-width: 22px; padding: 0 8px;
+}
+
+/* Avatars and AI marks: flat instead of violet gradients. */
+.avatar-initial, .avatar-preview, .profile-avatar, .chat-msg-avatar.ai,
+.chat-modern .chat-msg-avatar.ai { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.chat-modern .chat-msg-avatar.me { background: var(--highlight-light); color: var(--highlight); }
+.chat-modern::before { display: none; }
+.chat-modern .chat-avatar { animation: none; }
+.chat-modern .chat-bubble.user, .chat-modern .chat-msg.me .chat-bubble { background: var(--primary); color: var(--on-primary); }
+
+/* Progress bars: flat brand blue. */
+.bar, .grad-score-meter > div { background: var(--primary); }
+
+/* Subtle tinted panels that used violet rgba tints. */
+.admin-hero, .insight-card, .recommendation-item { background-image: none; }
+
+mark { background: var(--highlight-light); color: var(--highlight); }
+::selection { background: var(--primary); color: var(--on-primary); }
+
+/* ---------- Sign-in page (Pages/Login.razor) ----------
+   Split screen: brand panel (navy, live background shows through) on the
+   left, a plain form with visible labels on the right. */
+.signin { min-height: 100vh; display: grid; grid-template-columns: minmax(360px, 5fr) 7fr; }
+.signin-brand {
+    display: flex; flex-direction: column; justify-content: space-between; gap: 40px;
+    padding: 40px clamp(28px, 4vw, 56px);
+    /* Students photo (wwwroot/images/login-side.jpg) under a navy veil that keeps
+       the text readable; without the file only the navy shows. */
+    background:
+        linear-gradient(180deg, rgba(10, 24, 60, 0.70) 0%, rgba(10, 24, 60, 0.55) 45%, rgba(8, 18, 46, 0.92) 100%),
+        url("/images/login-side.jpg") center / cover no-repeat,
+        #0D1F4A;
+    color: #E9EEFA;
+}
+[data-theme="dark"] .signin-brand { border-right: 1px solid var(--border); }
+.signin-pitch h2, .signin-pitch p, .signin-pitch li { text-shadow: 0 1px 12px rgba(0, 0, 0, 0.45); }
+.signin-logo { display: inline-flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; font-family: var(--font-serif); font-size: 20px; font-weight: 600; }
+.signin-logo b { font-weight: 600; color: #8FD3F4; }
+.signin-pitch { max-width: 440px; }
+.signin-pitch h2 { font-size: clamp(30px, 3.2vw, 42px); line-height: 1.12; color: #fff; margin-bottom: 14px; }
+.signin-pitch p { font-size: 16px; line-height: 1.55; color: #C3CDE6; margin-bottom: 28px; }
+.signin-pitch ul { list-style: none; display: grid; gap: 14px; padding: 0; }
+.signin-pitch li { display: flex; align-items: center; gap: 12px; font-size: 15px; color: #DCE3F4; }
+.signin-pitch li .ui-icon { width: 18px; height: 18px; color: #8FD3F4; flex-shrink: 0; }
+.signin-note { font-size: 12.5px; color: #8E9BBD; }
+
+.signin-main { display: flex; align-items: center; justify-content: center; padding: 48px 24px; }
+.signin-form {
+    width: 100%; max-width: 400px; padding: 36px 34px;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md);
+}
+.signin-form h1 { font-size: 30px; margin-bottom: 6px; color: var(--text); }
+.signin-sub { color: var(--text-secondary); font-size: 14.5px; margin-bottom: 24px; }
+.signin-form .alert { margin-bottom: 16px; }
+.signin-field { margin-bottom: 16px; }
+.signin-field label, .signin-label-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.signin-label-row label { margin: 0; }
+.signin-label-row a { font-size: 13px; font-weight: 500; color: var(--primary); text-decoration: none; }
+.signin-label-row a:hover, .signin-switch a:hover { text-decoration: underline; }
+.signin-field input {
+    width: 100%; height: 44px; padding: 0 12px; font: inherit; font-size: 15px; color: var(--text);
+    background: var(--field-bg); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); outline: none;
+}
+.signin-field input::placeholder { color: var(--text-muted); }
+.signin-field input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+.signin-password { position: relative; }
+.signin-password input { padding-right: 44px; }
+.signin-password button {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    width: 36px; height: 36px; display: grid; place-items: center;
+    background: none; border: 0; border-radius: var(--radius-xs); color: var(--text-muted); cursor: pointer;
+}
+.signin-password button:hover { color: var(--text); background: var(--surface-2); }
+.signin-password .ui-icon { width: 18px; height: 18px; }
+.signin-remember { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-secondary); margin: 2px 0 20px; cursor: pointer; }
+.signin-remember input { width: 16px; height: 16px; accent-color: var(--primary); }
+.signin-submit { width: 100%; height: 46px; justify-content: center; font-size: 15px; font-weight: 600; border-radius: var(--radius-sm); }
+.signin-switch { margin-top: 18px; text-align: center; font-size: 14px; color: var(--text-secondary); }
+.signin-switch a { color: var(--primary); font-weight: 600; text-decoration: none; }
+.signin-demo {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 4px;
+    margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-muted);
+}
+.signin-demo span { flex-basis: 100%; text-align: center; margin-bottom: 4px; }
+.signin-demo button {
+    font: inherit; font-size: 13px; padding: 4px 10px; color: var(--text-secondary); cursor: pointer;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
+}
+.signin-demo button:hover { color: var(--primary); border-color: var(--primary); }
+
+@media (max-width: 860px) {
+    .signin { grid-template-columns: 1fr; }
+    .signin-brand { gap: 20px; padding: 24px 20px; }
+    .signin-pitch h2 { font-size: 26px; }
+    .signin-pitch ul, .signin-note { display: none; }
+    .signin-pitch p { margin-bottom: 0; }
+    .signin-main { padding: 24px 16px 40px; align-items: flex-start; }
+    .signin-form { padding: 28px 22px; }
+}
+
+/* ---------- Login / register (legacy hub styles) ---------- */
+.login-aurora, .login-aurora-veil, .login-scene, .login-brand-logo::before { display: none !important; }
+.login-shell { color: var(--text); }
+.login-card {
+    --surface: var(--card); --surface-2: var(--surface-2); --field-bg: var(--field-bg);
+    --border: var(--border-strong); --primary: inherit; --primary-soft: inherit;
+    background: var(--card) !important;
+    border: 1px solid var(--border-strong) !important;
+    backdrop-filter: none !important;
+    color: var(--text);
+}
+.login-card, .login-card * { --text: inherit; }
+.login-card label, .login-card p, .login-card .remember { color: var(--text-secondary); }
+.login-card a { color: var(--primary); }
+.login-card .demo-btn small, .login-card .demo-accounts-label small { color: var(--text-muted); }
+.hub-title { color: var(--text); text-shadow: none; }
+.hub-title-accent { background: none !important; -webkit-text-fill-color: currentColor !important; color: var(--highlight) !important; font-style: italic; }
+.hub-tag, .hub-brand small { color: var(--text-secondary); }
+.hub-badges li { background: var(--card); border: 1px solid var(--border); color: var(--text); box-shadow: none; backdrop-filter: none; }
+.hub-badges li > span, .hub-badges li:nth-child(n) > span { background: var(--primary-light) !important; color: var(--primary) !important; box-shadow: none !important; }
+.hub-badges li:hover > span .ui-icon { transform: none; }
+.field-icon .field-ico .duo-front { stroke: currentColor; }
+.login-card .form-group input, .reg-hub .form-group select, .reg-hub .form-group input, .reg-hub .form-group textarea {
+    background: var(--field-bg) !important; color: var(--text) !important; border-color: var(--border-strong) !important;
+}
+.login-brand-title, .login-brand-sub, .hub-title, .hub-tag, .hub-foot { text-shadow: none !important; }
+.hub-foot { color: var(--text-muted); }
+.hub-cta { background: var(--primary) !important; color: var(--on-primary) !important; box-shadow: none !important; }
+
+/* Sign-in "portal" transition: ink instead of a violet vortex. */
+.portal-bg { background: var(--bg); }
+.portal-vortex, .portal-vortex-2, .portal-flash { display: none; }

@@ -1,8 +1,8 @@
 @namespace UniSphere.Api.Components
 
-@* Creative duotone icon: a soft lavender gradient "ghost" layer sits offset
-   behind a crisp current-colour stroke layer, so every glyph reads two-tone
-   with a little depth. The gradient (#ui-duo) is defined once in App.razor. *@
+@* Clean single-line icon (Lucide geometry) in the current text colour.
+   The group keeps the "duo-front" class so existing CSS that recolours or
+   fills icons (active nav, primary buttons, stop button) still applies. *@
 <svg class="ui-icon @Class"
      xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 24 24"
@@ -15,7 +15,6 @@
      stroke-linejoin="round"
      aria-hidden="true"
      focusable="false">
-    <g class="duo-back" transform="translate(1.4 1.4)">@((MarkupString)_paths)</g>
     <g class="duo-front">@((MarkupString)_paths)</g>
 </svg>
 

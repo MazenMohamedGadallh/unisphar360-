@@ -11,11 +11,12 @@
     <p>Upload your CV, review the AI analysis and refine your draft</p>
 </div>
 
+@* Errors sit above the studio instead of replacing it, so upload / manual text stay usable. *@
 @if (_error is not null)
 {
-    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="LoadAsync">Retry</button></div>
+    <div class="alert alert-error">@_error <button class="btn btn-small" @onclick="() => _error = null">Dismiss</button></div>
 }
-else if (_loading)
+@if (_loading)
 {
     <div class="loading">Loading CVs...</div>
 }
@@ -93,11 +94,12 @@ else
                 </div>
                 <div>
                     <h3>AI analysis</h3>
+                    <p class="muted">Analyzed by UniSphere RAG using your CV as the source.</p>
                     @if (_busyAnalyze)
                     {
-                        <div class="loading">Analyzing with AI... this can take up to a minute.</div>
+                        <div class="loading">Analyzing your CV... this can take up to a minute.</div>
                     }
-                    <button class="btn btn-primary" @onclick="AnalyzeAsync" disabled="@_busyAnalyze"><UiIcon Name="sparkles" /> Analyze with AI</button>
+                    <button class="btn btn-primary" @onclick="AnalyzeAsync" disabled="@_busyAnalyze"><UiIcon Name="sparkles" /> Analyze CV</button>
                     @if (_analysis is not null)
                     {
                         <div style="margin-top:12px;">

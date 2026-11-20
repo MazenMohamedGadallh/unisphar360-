@@ -15,6 +15,7 @@ namespace UniSphere.Api.Services;
 public class GraduateAiService(
     IAiCompletionService completion,
     IAiGroundingService grounding,
+    IRagClient rag,
     ILogger<GraduateAiService> logger)
 {
     /// <summary>Run a one-shot prompt on the best live provider (Gemini →
@@ -94,7 +95,7 @@ public class GraduateAiService(
         var system = "You are a senior technical recruiter and evidence-based ATS analyst. " +
             "Analyze only claims supported by the supplied CV. Distinguish explicit skills from inferred skills; never invent experience. " +
             "Be specific, constructive and concise. Return ONLY a JSON object, no markdown fences, no commentary.";
-        var user = """
+        var template = """
             Analyze this CV for the target role: {role}
 
             CV TEXT:
@@ -113,9 +114,37 @@ public class GraduateAiService(
               "keywords": ["job-description keywords the CV should include for {role}"]
             }
             Rules: 3-5 items per list; scorePercent reflects realistic junior-level hiring competitiveness; rewrites must quote actual CV text.
-            """ .Replace("{role}", role).Replace("{cv}", truncated);
+            """ .Replace("{role}", role);
+        var user = template.Replace("{cv}", truncated);
 
+        // The RAG service analyses first, grounded in the CV itself: the CV goes in
+        // once, as the retrieved document, so small local models keep the whole
+        // prompt in context. The general provider chain is the fallback.
+        var ragQuestion = template.Replace("{cv}", "(provided above as the excerpts titled \"Uploaded CV\")");
+        var viaRag = await TryRagJsonAsync(system, ragQuestion, truncated, ParseCvAnalysis, ct);
+        if (viaRag is { } ragResult) return ragResult;
         return await GenerateJsonAsync<CvAnalysisData>(system, user, 2048, ParseCvAnalysis, ct);
+    }
+
+    /// <summary>Ask the RAG service for a JSON answer grounded in <paramref name="documentText"/>.
+    /// Null when RAG is off, unreachable or answers with something unparsable.</summary>
+    private async Task<(T Value, AiMeta Meta)?> TryRagJsonAsync<T>(
+        string systemPrompt, string userPrompt, string documentText,
+        Func<JsonElement, T> parse, CancellationToken ct)
+    {
+        if (!rag.IsConfigured) return null;
+        try
+        {
+            var answer = await rag.QueryAsync(userPrompt,
+                [new RagDocument("cv", "Uploaded CV", documentText)], systemPrompt, ct);
+            var value = parse(ExtractJson(answer.Answer));
+            return (value, new AiMeta(rag.DisplayName, $"{answer.Provider}/{answer.Model}"));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogInformation("RAG CV analysis unavailable, using the provider chain: {Reason}", ex.Message);
+            return null;
+        }
     }
 
     private static CvAnalysisData ParseCvAnalysis(JsonElement root)

@@ -10,9 +10,10 @@ Implements the HTTP contract the ASP.NET Core app expects (Services/RagClient.cs
 
 Documents are sent by the .NET app per request (already authorised for the signed-in
 user), chunked and ranked in memory with BM25 - no vector DB, no model download, no
-GPU. /retrieve needs NO LLM key. /query uses GEMINI_API_KEY when present (or falls back
-to an extractive answer built from the best chunks), so the student "UniSphere RAG"
-provider never fails just because a key is missing.
+GPU. /retrieve needs NO LLM key. /query writes the answer with GEMINI_API_KEY when present,
+else with a local Ollama (OLLAMA_BASE_URL, OLLAMA_MODEL), else falls back to an extractive
+answer built from the best chunks, so the student "UniSphere RAG" provider never fails
+just because a key is missing.
 
 Run:  python -m uvicorn api:app --host 127.0.0.1 --port 8000
 Env (optional, read from ./.env, ../.env or the process environment):
@@ -115,6 +116,9 @@ def chunk(text: str, size: int = 800, overlap: int = 100) -> List[str]:
     return [c for c in out if c]
 
 
+SMALL_DOCS_CHARS = 9000
+
+
 def rank(query: str, docs: List[Doc], top_k: int) -> List[Dict[str, Any]]:
     chunks: List[Dict[str, Any]] = []
     for d in docs:
@@ -136,6 +140,10 @@ def rank(query: str, docs: List[Doc], top_k: int) -> List[Dict[str, Any]]:
             idf = math.log(1 + (N - df[t] + 0.5) / (df[t] + 0.5))
             score += idf * tf[t] * (k1 + 1) / (tf[t] + k1 * (1 - b + b * len(c["tok"]) / avg))
         c["score"] = score
+    # Small document sets (a single CV, a short handout) fit whole: keep every chunk
+    # in reading order so nothing is dropped by top_k.
+    if sum(len(c["text"]) for c in chunks) <= SMALL_DOCS_CHARS:
+        return chunks
     best = sorted((c for c in chunks if c["score"] > 0), key=lambda c: -c["score"])[:top_k]
     return best
 
@@ -184,6 +192,34 @@ def _gemini(system: str, prompt: str) -> Optional[str]:
         return None
 
 
+def _ollama(system: str, prompt: str) -> Optional[str]:
+    """Local fallback writer: a running Ollama (OLLAMA_BASE_URL / OLLAMA_MODEL)."""
+    base = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/").removesuffix("/v1")
+    # keep_alive: reloading the model after Ollama's default 5 idle minutes takes 30s+ on this CPU.
+    # num_ctx: Ollama's default window (2-4k tokens) silently cuts long prompts (a CV + instructions).
+    body = {"model": os.getenv("OLLAMA_MODEL", "qwen3:1.7b"), "stream": False, "think": False, "keep_alive": "30m",
+            "options": {"num_ctx": 8192},
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
+    req = urllib.request.Request(f"{base}/api/chat", data=json.dumps(body).encode(), method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            text = json.load(r)["message"]["content"]
+        # qwen3 may still wrap reasoning in <think> tags: keep only the answer.
+        return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip() or None
+    except (urllib.error.URLError, KeyError, ValueError, TimeoutError, OSError):
+        return None
+
+
+def _write(system: str, prompt: str) -> tuple[Optional[str], str, str]:
+    """Answer with Gemini when a key is set, else a local Ollama; (answer, provider, model)."""
+    answer = _gemini(system, prompt)
+    if answer:
+        return answer, "gemini", GEMINI_MODEL
+    answer = _ollama(system, prompt)
+    return answer, "ollama", os.getenv("OLLAMA_MODEL", "qwen3:1.7b")
+
+
 @app.post("/query", dependencies=[Depends(verify_key)])
 def query(req: QueryRequest) -> Dict[str, Any]:
     best = rank(req.question, req.documents, req.top_k)
@@ -193,14 +229,14 @@ def query(req: QueryRequest) -> Dict[str, Any]:
         " question, do NOT refuse: answer helpfully from general knowledge and say briefly that it came from general" \
         " knowledge rather than the course materials."
     if not best:
-        answer = _gemini(system, f"Course excerpts: (none matched)\n\nQuestion: {req.question}")
+        answer, provider, model = _write(system, f"Course excerpts: (none matched)\n\nQuestion: {req.question}")
         if answer:
-            return {"answer": answer, "sources": [], "grounded": False, "provider": "gemini", "model": GEMINI_MODEL}
+            return {"answer": answer, "sources": [], "grounded": False, "provider": provider, "model": model}
         return {"answer": "I could not find this in the provided course materials, and no language model is available for a general answer right now.",
                 "sources": [], "grounded": False, "provider": "bm25", "model": "none"}
-    answer = _gemini(system, f"Course excerpts:\n{to_context(best)}\n\nQuestion: {req.question}")
+    answer, provider, model = _write(system, f"Course excerpts:\n{to_context(best)}\n\nQuestion: {req.question}")
     if answer:
-        return {"answer": answer, "sources": sources, "grounded": True, "provider": "gemini", "model": GEMINI_MODEL}
+        return {"answer": answer, "sources": sources, "grounded": True, "provider": provider, "model": model}
     extract = "\n\n".join(f"From \"{c['title']}\": {c['text']}" for c in best[:3])
     return {"answer": "Here are the most relevant passages from your course materials:\n\n" + extract,
             "sources": sources, "grounded": True, "provider": "extractive", "model": "bm25"}
