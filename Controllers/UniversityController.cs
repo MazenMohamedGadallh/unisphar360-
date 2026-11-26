@@ -9,10 +9,6 @@ using UniSphere.Api.Validators;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>University-scoped courses and materials. Students only ever see
-/// their own university; ids from the client are always re-validated
-/// server-side against the JWT identity. Department/year are optional
-/// catalog filters, never a security boundary.</summary>
 [Authorize]
 [ApiController]
 [Route("api/university")]
@@ -36,18 +32,9 @@ public class UniversityController : ControllerBase
     private async Task<IQueryable<Course>> MyCourseQueryAsync()
     {
         var scope = await _scope.GetAsync();
-        // My University lists the full catalog of the caller's university.
-        // University isolation still comes from the server-side scope; the
-        // old department/year eligibility filter is intentionally not used
-        // here (recommendations keep their own eligibility rules).
         return _db.Courses.AsNoTracking().VisibleToCurrentUser(scope);
     }
 
-    /// <summary>Courses whose materials the student may read: courses they
-    /// are enrolled in plus courses they are eligible for (own university,
-    /// matching department/year). The full catalog stays visible on the
-    /// course list, but materials for courses the student cannot take are
-    /// not exposed.</summary>
     private async Task<IQueryable<Course>> MyMaterialCourseQueryAsync(User user)
     {
         var scope = await _scope.GetAsync();
@@ -74,9 +61,6 @@ public class UniversityController : ControllerBase
         var user = await MeAsync();
         if (user is null || user.IsDeleted) return Unauthorized();
 
-        // Graduates keep university access without a current-year academic
-        // scope: the page surfaces their university record (possibly null)
-        // instead of a hard 404, which previously broke the module for them.
         if (!user.UniversityId.HasValue)
         {
             if (user.Role == UserRole.Graduate)
@@ -106,8 +90,6 @@ public class UniversityController : ControllerBase
         if (user is null || user.IsDeleted) return Unauthorized();
         if (!user.UniversityId.HasValue) return new List<UniversityCourseDto>();
 
-        // Start from the full own-university catalog. Department/year narrow
-        // the catalog only when the caller explicitly supplies them.
         var allCourses = await (await MyCourseQueryAsync()).OrderBy(c => c.Code).ToListAsync();
 
         var enrollmentRows = await _db.Enrollments.AsNoTracking()
@@ -166,8 +148,6 @@ public class UniversityController : ControllerBase
         }).ToList();
     }
 
-    /// <summary>Informational status for the catalog card. Enrollment rules
-    /// are untouched: this only describes what the student has already done.</summary>
     private static string CourseStatus(
         Course course, Enrollment? enrollment, HashSet<string> passedCodes)
     {
@@ -179,9 +159,6 @@ public class UniversityController : ControllerBase
         return prerequisites.All(passedCodes.Contains) ? "Available" : "Locked";
     }
 
-    /// <summary>True when the course belongs to the student's own department
-    /// and year. Empty course fields mean "all departments/years", matching
-    /// the existing eligibility convention.</summary>
     private static bool MatchesStudentProfile(Course course, User user)
     {
         var departmentMatches = string.IsNullOrWhiteSpace(user.Department)
@@ -247,8 +224,6 @@ public class UniversityController : ControllerBase
             total, page, pageSize);
     }
 
-    /// <summary>One material for the /university?materialId= deep link.
-    /// Out-of-scope ids return 404, never another student's data.</summary>
     [Authorize(Roles = "Student")]
     [HttpGet("me/materials/{id:int}")]
     public async Task<ActionResult<MaterialDto>> MaterialById(int id)
@@ -293,7 +268,6 @@ public class UniversityController : ControllerBase
             m.Type, m.CreatedAtUtc, string.IsNullOrWhiteSpace(m.Description) ? null : m.Description)).ToList();
     }
 
-    /// <summary>Doctors add materials for courses of their own university; admins for any course.</summary>
     [Authorize(Roles = "Doctor,Admin")]
     [HttpPost("materials")]
     public async Task<ActionResult<MaterialDto>> CreateMaterial(
@@ -312,8 +286,6 @@ public class UniversityController : ControllerBase
         if (user is null || user.IsDeleted) return Unauthorized();
 
         var scope = await _scope.GetAsync();
-        // Doctors may only write to courses they are assigned to teach;
-        // admins manage any course. Foreign/unassigned ids are 404.
         var courseQuery = _db.Courses.VisibleToCurrentUser(scope);
         if (scope.Role == UserRole.Doctor)
             courseQuery = courseQuery.AssignedToDoctor(_db, user.Id);
@@ -380,5 +352,6 @@ public class UniversityController : ControllerBase
             instructorName ?? "",
             !string.IsNullOrWhiteSpace(m.StoredFileName),
             m.OriginalFileName,
-            m.FileSizeBytes);
+            m.FileSizeBytes,
+            m.DeadlineUtc);
 }

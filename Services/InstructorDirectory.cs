@@ -3,9 +3,6 @@ using UniSphere.Api.Data;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>Read-only helper that resolves instructor display names for a set
-/// of courses. Course ids always come from scoped server-side queries; the
-/// result is what students see as "Instructor(s)" on a course.</summary>
 public static class InstructorDirectory
 {
     public static async Task<Dictionary<int, string>> NamesByCourseAsync(
@@ -15,10 +12,6 @@ public static class InstructorDirectory
         if (courseIds.Count == 0) return result;
 
         var ids = courseIds.ToList();
-        // A doctor can be linked through either the legacy per-term
-        // CourseInstructors row or the doctor-module CourseAssignments row
-        // (imported data and the seeder write both, but older data may only
-        // have one). Students must see the instructor regardless of source.
         var legacy = await db.CourseInstructors.AsNoTracking()
             .Where(ci => ids.Contains(ci.CourseId))
             .Select(ci => new { ci.CourseId, ci.DoctorUserId })
@@ -51,12 +44,6 @@ public static class InstructorDirectory
         return result;
     }
 
-    /// <summary>The doctor-editable display title per course, if one was set.
-    /// Course ids always come from a scoped server-side query. The catalog
-    /// Course.Title and Course.Code are never modified. Doctor-module
-    /// CourseAssignment rows take precedence over the legacy per-term
-    /// CourseInstructor rows so students always see the doctor's current
-    /// title from either source.</summary>
     public static async Task<Dictionary<int, string>> DisplayTitlesByCourseAsync(
         AppDbContext db, IReadOnlyCollection<int> courseIds, CancellationToken ct = default)
     {
@@ -73,8 +60,6 @@ public static class InstructorDirectory
 
         foreach (var row in rows)
         {
-            // First non-empty display title wins when a course has more than
-            // one instructor; the catalog title remains the fallback.
             result.TryAdd(row.CourseId, row.DisplayTitle!.Trim());
         }
 

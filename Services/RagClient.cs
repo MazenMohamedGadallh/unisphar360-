@@ -5,9 +5,6 @@ using Microsoft.Extensions.Options;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>Server-side settings for the existing RAG service. The base URL is
-/// non-secret configuration; an optional API key must come from environment
-/// variables/user-secrets (RagApi:ApiKey), never from a committed file.</summary>
 public class RagOptions
 {
     public bool Enabled { get; set; } = true;
@@ -38,6 +35,8 @@ public sealed record RagAnswer(
     bool Grounded,
     string Provider,
     string Model);
+
+public sealed record RagStreamEvent(string? Delta, IReadOnlyList<RagSource>? Sources = null);
 
 public sealed record RagRetrieval(
     string Context,
@@ -74,10 +73,19 @@ public interface IRagClient
         CancellationToken ct);
 
     Task<bool> IsHealthyAsync(CancellationToken ct);
+
+    async IAsyncEnumerable<RagStreamEvent> QueryStreamAsync(
+        string question,
+        IReadOnlyList<RagDocument> documents,
+        string? systemPrompt,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        var answer = await QueryAsync(question, documents, systemPrompt, ct);
+        yield return new RagStreamEvent(answer.Answer);
+        yield return new RagStreamEvent(null, answer.Sources);
+    }
 }
 
-/// <summary>Typed server-side client for the existing RAG HTTP adapter. It is
-/// used by the shared AI Assistant (students, doctors, graduates) and the Doctor Exam Assistant.</summary>
 public sealed class RagClient : IRagClient
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
@@ -127,6 +135,77 @@ public sealed class RagClient : IRagClient
             throw new RagInvalidResponseException("The RAG service returned an empty answer.");
         return result;
     }
+
+    public async IAsyncEnumerable<RagStreamEvent> QueryStreamAsync(
+        string question,
+        IReadOnlyList<RagDocument> documents,
+        string? systemPrompt,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        if (!IsConfigured)
+            throw new RagUnavailableException("The RAG service is not enabled or configured.");
+
+        var payload = new
+        {
+            question,
+            documents = ToPayload(documents),
+            top_k = Math.Clamp(_options.TopK, 1, 8),
+            system_prompt = systemPrompt
+        };
+
+        HttpResponseMessage response;
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "query/stream")
+            {
+                Content = JsonContent.Create(payload, options: Json)
+            };
+            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new RagUnavailableException("The RAG service timed out. Please try again.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "RAG stream request failed");
+            throw new RagUnavailableException("The RAG service is unavailable right now. Please try again later.");
+        }
+
+        using (response)
+        {
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                var whole = await QueryAsync(question, documents, systemPrompt, ct);
+                yield return new RagStreamEvent(whole.Answer);
+                yield return new RagStreamEvent(null, whole.Sources);
+                yield break;
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("RAG stream request failed with HTTP {Status}", (int)response.StatusCode);
+                throw new RagUnavailableException(
+                    response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                        ? "The RAG service rejected the server credentials."
+                        : "The RAG service is unavailable right now. Please try again later.");
+            }
+
+            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(ct));
+            string? line;
+            while ((line = await reader.ReadLineAsync(ct)) is not null)
+            {
+                if (line.Length == 0) continue;
+                StreamLine? item;
+                try { item = JsonSerializer.Deserialize<StreamLine>(line, Json); }
+                catch (JsonException) { continue; }
+                if (item is null) continue;
+                if (!string.IsNullOrEmpty(item.Delta)) yield return new RagStreamEvent(item.Delta);
+                if (item.Done) yield return new RagStreamEvent(null, item.Sources ?? new List<RagSource>());
+            }
+        }
+    }
+
+    private sealed record StreamLine(string? Delta, bool Done, List<RagSource>? Sources);
 
     public async Task<RagRetrieval> RetrieveAsync(
         string query,

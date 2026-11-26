@@ -1,5 +1,3 @@
-@* Graduate sidebar navigation. Jobs, Skills and Campus pages carry their own tab bars.
-   Used by MainLayout whenever the signed-in role is Graduate. *@
 @namespace UniSphere.Api.Components
 <nav class="min-h-0 flex-1 overflow-y-auto px-3 py-4">
     <NavLink href="/graduate" Match="NavLinkMatch.All" class="@Item" ActiveClass="@ItemActive" @onclick="HandleNavigate">
@@ -40,8 +38,6 @@
     [Parameter]
     public EventCallback OnNavigate { get; set; }
 
-    // Full-literal Tailwind class tokens (single tokens per string, safe for the
-    // Tailwind CLI content scan; never built by concatenation).
     private const string Item =
         "group mb-1 flex w-full cursor-pointer items-center gap-3 rounded-control border-0 bg-transparent px-3 py-3 text-start text-sm font-medium text-text-secondary no-underline transition-all duration-200 hover:bg-bg hover:text-text";
     private const string ItemActive =

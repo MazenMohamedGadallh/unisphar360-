@@ -6,7 +6,6 @@ namespace UniSphere.Api.Dtos;
 
 public record UserDto(int Id, string FullName, string FirstName, string? AvatarUrl, string Major);
 
-/// <summary>Self-profile payload for /api/users/me (any authenticated role).</summary>
 public record MeDto(int Id, string FullName, string Email, string? AvatarUrl, string Major, int RoleId, string Role);
 
 public record ModuleDto(string Key, string Title, string Subtitle, string Icon, string BackgroundColor, string AccentColor);
@@ -25,7 +24,7 @@ public record HomeResponse(
     IReadOnlyList<EventDto> UpcomingEvents,
     RecommendationDto Recommendation);
 
-// ---- Search (/api/search)
+// Search (/api/search)
 public record SearchItemDto(int? Id, string Title, string Subtitle, string Route, string Icon);
 
 public record SearchGroupDto(string Type, string Label, IReadOnlyList<SearchItemDto> Items);
@@ -43,7 +42,7 @@ public record CourseDto(int Id, string Code, string Title, string Description, s
 
 public record UpdateUserRequest(string FullName, string Major, string? AvatarUrl);
 
-// ---- Academic Advisor screen
+// Academic Advisor screen
 public record AcademicStats(
     double Gpa, double GpaDelta, double MaxGpa,
     int CompletedCourses, int TotalCourses, int CompletedPercent,
@@ -77,7 +76,7 @@ public record AcademicDashboardResponse(
     IReadOnlyList<QuickActionDto> QuickActions,
     IReadOnlyList<ActivityDto> RecentActivity);
 
-// ---- Student Home dashboard (/api/dashboard/*)
+// Student Home dashboard (/api/dashboard/*)
 public record DashboardSummaryDto(
     string FullName, string FirstName, string Greeting,
     double CurrentGpa, double GpaDeltaVsLastSemester,
@@ -103,7 +102,7 @@ public record DashboardActivityDto(int Id, string Text, DateTime CreatedAt);
 
 public record UnreadCountDto(int UnreadCount);
 
-// ---- Performance analytics (/api/analytics/*)
+// Performance analytics (/api/analytics/*)
 public record FactorContributionDto(string Factor, double Weight, double Value, double Contribution, string Description);
 
 public record PerformanceCourseRiskDto(string Course, string RiskLevel, string Reason);
@@ -117,7 +116,7 @@ public record PerformanceAnalysisDto(
 
 public record GpaTrendPointDto(string Label, double Gpa);
 
-// ---- Admin panel (/api/admin/*)
+// Admin panel (/api/admin/*)
 public record DailyCountDto(DateTime Date, int Count);
 
 public record AdminOverviewDto(
@@ -150,7 +149,7 @@ public record AuditLogDto(
 public record SystemHealthDto(
     string Status, string Database, double UptimeSeconds, string Version, DateTime ServerTimeUtc);
 
-// ---- My University (/api/university/*)
+// My University (/api/university/*)
 public record UniversityDto(int Id, string Name, string? Logo);
 
 public record MyUniversityDto(
@@ -165,15 +164,11 @@ public record UniversityCourseDto(
 public record MaterialDto(
     int Id, int CourseId, string CourseName, string Title, string Type,
     string Description, string Content, string? FileUrl, DateTime CreatedAt,
-    // Instructor(s) resolved from the admin-managed assignment tables, so
-    // every material always names who teaches the course.
     string InstructorName = "",
-    // Additive attachment metadata. StoredFileName is deliberately not
-    // exposed; clients only need to know whether a download exists and what
-    // name/size to display.
     bool HasUploadedFile = false,
     string? UploadedFileName = null,
-    long? UploadedFileSizeBytes = null);
+    long? UploadedFileSizeBytes = null,
+    DateTime? DeadlineUtc = null);
 
 public record UpcomingItemDto(
     int Id, string Title, string CourseName, string Type, DateTime Date, string? Description);
@@ -182,7 +177,7 @@ public record CreateMaterialRequest(
     int CourseId, string Title, string Type,
     string? Description, string? Content, string? FileUrl);
 
-// ---- AI Chat (/api/chat)
+// AI Chat (/api/chat)
 public record ChatProviderDto(string Name, string DisplayName, string Model);
 
 public record ChatProviderStatusDto(string Name, string DisplayName, string Model, bool Available, string Reason);
@@ -200,8 +195,6 @@ public record SendChatMessageRequest(string Provider, string Content);
 
 public record RenameConversationRequest(string Title);
 
-// ---- Auth
-// Role: "Student" | "Doctor" | "Graduate". Admin can never be registered.
 public record RegisterRequest(
     string FirstName, string? MiddleName, string LastName,
     string PhoneNumber, string Email, string Gender, int Age,
@@ -223,7 +216,7 @@ public record RoleDto(int Id, string Name);
 
 public record AuthResponse(string Token, DateTime ExpiresAtUtc, AuthUserDto User);
 
-// ---- Part 1: instructor assignments (/api/admin/*)
+// Part 1: instructor assignments (/api/admin/*)
 public record InstructorAssignmentDto(
     int Id, int CourseId, string CourseCode, string CourseTitle,
     int? UniversityId, string UniversityName,
@@ -237,16 +230,13 @@ public record AdminDoctorDto(
 
 public record AdminCourseDto(int Id, string Code, string Title, int? UniversityId);
 
-// ---- Part 1: doctor workspace (/api/doctor/*)
+// Part 1: doctor workspace (/api/doctor/*)
 public record DoctorCourseDto(
     int Id, string Code, string Title, string Department,
     int? AcademicYear, string Semester, int Credits, string Prerequisites,
     int StudentsCount, int MaterialsCount, string Terms,
     string? DisplayTitle = null)
 {
-    /// <summary>Aliases for the older doctor-module clients/tests that bind
-    /// CourseId/StudentCount. Both names are serialized so either contract
-    /// keeps working without duplicating the endpoint.</summary>
     public int CourseId => Id;
     public int StudentCount => StudentsCount;
 }
@@ -260,18 +250,14 @@ public record DoctorSummaryDto(
     IReadOnlyList<DoctorAnnouncementDto> LatestByMe,
     IReadOnlyList<MaterialDto> Upcoming);
 
-// ---- Phase 1: doctor profile is defined in Dtos/DoctorDtos.cs (friend's
-// doctor module owns it; DoctorProfile.razor binds the same field names).
-// NOTE: Doctor(Summary)Dto below remains only for the legacy DoctorHome page.
-
-// ---- Phase 1: doctor-editable course display title (catalog stays intact) ----
+// Phase 1: doctor-editable course display title (catalog stays intact)
 public record UpdateDoctorCourseRequest(string DisplayTitle)
 {
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtraFields { get; init; }
 }
 
-// ---- Phase 1: admin editing of locked profile fields ----
+// Phase 1: admin editing of locked profile fields
 public record AdminUserDetailDto(
     int Id, string FirstName, string? MiddleName, string LastName, string FullName,
     string Email, string Address, string PhoneNumber,
@@ -283,10 +269,6 @@ public record AdminUpdateUserRequest(
     string Email, string PhoneNumber, string? Address,
     string? Department, int? UniversityId);
 
-// ---- Phase 2: doctor research hub (/api/doctor/research/*) ----
-// Only the documented form fields exist on this request: DoctorUserId,
-// UniversityId and Role cannot be supplied (unknown multipart fields are
-// ignored by the binder), and ownership is always taken from the JWT.
 public class DoctorResearchUploadRequest
 {
     public string Title { get; set; } = "";
@@ -323,14 +305,13 @@ public record ResearchFiltersDto(
     IReadOnlyList<string> Fields,
     IReadOnlyList<int> Years);
 
-// ---- Graduation (/api/graduation/*)
+// Graduation (/api/graduation/*)
 public record GraduationChecklistItemDto(string Key, string Title, string Detail, bool IsMet);
 
 public record GraduationApplicationSummaryDto(
     int Id, string Status, DateTime SubmittedAtUtc,
     DateTime? ReviewedAtUtc, string? DecisionNote, int? ConferredGraduationYear);
 
-/// <summary>Alumni block shown for accounts with the Graduate role.</summary>
 public record GraduationAlumniDto(
     string GraduatedFrom, int? GraduationYear, double FinalGpa, string Honors, bool HasCertificate);
 
@@ -363,9 +344,8 @@ public record GraduationApplicationAdminDto(
 
 public record ReviewGraduationApplicationRequest(bool Approve, string? Note, int? GraduationYear);
 
-// ---- Exam Generator (/api/doctor/exam-generator) ----
+// Exam Generator (/api/doctor/exam-generator)
 
-/// <summary>Request to generate exam questions from a course's materials.</summary>
 public record ExamGenerationRequest(
     int CourseId,
     int QuestionCount = 10,
@@ -373,7 +353,6 @@ public record ExamGenerationRequest(
     string Difficulty = "mixed",    // easy, medium, hard, mixed
     string Language = "en");        // en or ar
 
-/// <summary>One generated question (draft, before saving to an exam).</summary>
 public record GeneratedExamQuestionDto(
     string QuestionText,
     string QuestionType,
@@ -382,21 +361,18 @@ public record GeneratedExamQuestionDto(
     string? SourceMaterial,
     string? OptionsJson);   // JSON array of option strings for MCQ
 
-/// <summary>Result of generating exam questions from materials.</summary>
 public record ExamGenerationResponse(
     string Provider, string Model,
     IReadOnlyList<GeneratedExamQuestionDto> Questions,
     int CourseId, string CourseCode, string CourseTitle,
     string? RagWarning = null);
 
-/// <summary>One exam question persisted in the database.</summary>
 public record ExamQuestionDto(
     int Id, int ExamId,
     string QuestionText, string QuestionType,
     string? CorrectAnswer, string? Explanation, string? SourceMaterial,
     string? OptionsJson, int OrderIndex, int? Marks);
 
-/// <summary>One saved exam with its questions.</summary>
 public record ExamDto(
     int Id, int DoctorUserId, int CourseId, string CourseCode, string CourseTitle,
     string Title, int QuestionCount, string QuestionTypes,
@@ -404,62 +380,61 @@ public record ExamDto(
     DateTime CreatedAtUtc, string Status, DateTime? PublishedAtUtc, int? Marks,
     IReadOnlyList<ExamQuestionDto> Questions);
 
-/// <summary>One exam summary for the "My exams" list.</summary>
 public record ExamListDto(
     int Id, int CourseId, string CourseCode, string CourseTitle,
     string Title, int QuestionCount, string Difficulty, string Language,
     DateTime CreatedAtUtc, string Status, DateTime? PublishedAtUtc);
 
-/// <summary>Request to create/update an exam (questions included).</summary>
 public record UpdateExamRequest(
     int CourseId,
     string Title, int QuestionCount, string QuestionTypes,
     string Difficulty, string Language, string? MaterialsUsed,
     IReadOnlyList<ExamQuestionDto> Questions);
 
-/// <summary>Request to update a single exam question.</summary>
 public record UpdateExamQuestionRequest(
     string QuestionText, string QuestionType,
     string? CorrectAnswer, string? Explanation, string? SourceMaterial,
     string? OptionsJson, int OrderIndex);
 
-// ---- Exam Assistant (/api/doctor/exam-assistant) ----
+// Exam Assistant (/api/doctor/exam-assistant)
 
-/// <summary>Request to generate exam questions from selected materials of a course.</summary>
 public record ExamAssistantGenerationRequest(
     int CourseId,
     int[] MaterialIds,
     int QuestionCount = 10,
     string Difficulty = "mixed",
-    string Language = "en");
+    string Language = "en",
+    int? McqCount = null,
+    int? TrueFalseCount = null,
+    int? EssayCount = null,
+    int? DefinitionCount = null);
 
-/// <summary>Request to publish a draft exam.</summary>
+public record TranslateQuestionsRequest(
+    IReadOnlyList<GeneratedExamQuestionDto> Questions,
+    string Language = "ar");
+
 public record ExamAssistantPublishRequest(
     int ExamId,
     string Title,
     int? Marks);
 
-/// <summary>One exam visible to students (correct answers are NEVER included).</summary>
 public record StudentExamDto(
     int Id, int CourseId, string CourseCode, string CourseTitle,
     string Title, int QuestionCount, int? Marks,
     DateTime CreatedAtUtc, DateTime? PublishedAtUtc);
 
-/// <summary>One question visible to students (correct answer is NEVER included).</summary>
 public record StudentExamQuestionDto(
     int Id, int ExamId,
     string QuestionText, string QuestionType,
     string? OptionsJson, int OrderIndex, int? Marks);
 
-/// <summary>Per-user notification preference (On / MuteUntil / Off).</summary>
 public record UserNotificationSettingDto(
     int UserId, string Preference, DateTime? MutedUntilUtc);
 
-/// <summary>Request to update a user's notification preference.</summary>
 public record UpdateUserNotificationSettingRequest(
     string Preference, DateTime? MutedUntilUtc);
 
-// ---- Personal study plan (/api/study-planner/suggestion)
+// Personal study plan (/api/study-planner/suggestion)
 public record StudyPlanCourseDto(string Course, int WeeklyHours, string Priority, double DifficultyPercent, string Reason);
 public record StudyPlanSessionDto(DateTime Date, string Course, int Hours);
 public record StudyPlanSuggestionDto(DateTime WeekStart, int TotalHours,

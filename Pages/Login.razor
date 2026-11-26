@@ -88,7 +88,6 @@
     </main>
 </div>
 
-
 @code {
     private string _email = "";
     private string _password = "";
@@ -101,8 +100,6 @@
 
     private sealed record DemoUser(string Role, string Email, string Password);
 
-    // Matches the README "Demo Accounts" table exactly: one demo account per
-    // role — Student, Graduate, Doctor and Admin.
     private static readonly DemoUser[] DemoAccounts =
     [
         new("Student", "mazenmohamed@unisphere.edu", "Password123!"),
@@ -121,14 +118,9 @@
     [SupplyParameterFromQuery(Name = "expired")]
     public string? Expired { get; set; }
 
-    // Deep links (or an F5 on a protected nested route) arrive here with a
-    // returnUrl courtesy of the auth challenge redirect in Program.cs.
     [SupplyParameterFromQuery(Name = "returnUrl")]
     public string? ReturnUrl { get; set; }
 
-    /// <summary>Only navigate to local app paths. Rejects protocol URLs,
-    /// protocol-relative hosts (//evil.com), backslashes and control
-    /// characters so returnUrl can never act as an open redirect.</summary>
     private static bool IsSafeReturnUrl(string? url) =>
         !string.IsNullOrEmpty(url)
         && url.StartsWith('/')
@@ -140,8 +132,6 @@
 
     private string LandingPath =>
         IsSafeReturnUrl(ReturnUrl) ? ReturnUrl!
-        // Role-aware landing (this project's RoleRoutes): doctors go to their
-        // dashboard, admins to the admin panel, graduates to /graduate.
         : (Fetch?.Role is null ? "/dashboard" : UniSphere.Api.Services.RoleRoutes.HomeFor(Fetch.Role));
 
     private AuthUserDto? Fetch { get; set; }
@@ -159,10 +149,6 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // Full reload (F5): the scoped auth service starts empty, so the
-        // persisted token can only be read once JS interop is available
-        // (OnAfterRenderAsync — never during prerender). Restore it here:
-        // a signed-in user should land on their destination, not the form.
         if (firstRender && await AuthService.RestoreSessionAsync())
             Nav.NavigateTo(LandingPath, replace: true);
     }
@@ -177,10 +163,6 @@
             var token = await AuthService.LoginAsync(_email, _password);
             if (token is not null)
             {
-                // Client-side navigation keeps the same circuit, so the
-                // in-memory JWT stored by BlazorAuthService survives.
-                // forceLoad: true would reload the page, drop the token,
-                // and bounce straight back to /login.
                 var user = await AuthService.GetUserAsync();
                 Fetch = user;
                 var target = IsSafeReturnUrl(ReturnUrl)

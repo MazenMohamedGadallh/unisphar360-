@@ -10,17 +10,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>
-/// Research Hub for doctors. Identity (doctor id + university id) is always
-/// resolved from the JWT claims — never from client input. Uploaded PDFs are
-/// verified by magic bytes (%PDF-), capped at 20 MB, stored under random GUID
-/// names in App_Data/research (OUTSIDE wwwroot, so nothing is served
-/// statically) and streamed back only through the authorized GET {id}/pdf
-/// action; server paths are never exposed. The Browse tab is the deliberate
-/// exception to university isolation: doctors and admins of ALL universities
-/// see every PUBLISHED paper, and the output carries only the author's name,
-/// university and department — never email or phone.
-/// </summary>
 [Authorize(Roles = "Doctor,Admin")]
 [ApiController]
 [Route("api/research-hub")]
@@ -45,11 +34,8 @@ public class ResearchHubController : ControllerBase
 
     private string ResearchDir => Path.Combine(_env.ContentRootPath, "App_Data", "research");
 
-    // ---- Browse (cross-university, published only) ----
+    // Browse (cross-university, published only)
 
-    /// <summary>GET /api/research-hub — every PUBLISHED paper from doctors of
-    /// ALL universities, with search (title/abstract/keywords/authors/author
-    /// name), filters (university, field, year), sort = newest, paging 20.</summary>
     [HttpGet]
     public async Task<ActionResult<ResearchHubPageDto>> Browse(
         [FromQuery] string? q = null,
@@ -90,8 +76,6 @@ public class ResearchHubController : ControllerBase
         return new ResearchHubPageDto(items, total, page, PageSize);
     }
 
-    /// <summary>GET /api/research-hub/filters — dropdown options derived from
-    /// published papers (universities referenced, distinct fields and years).</summary>
     [HttpGet("filters")]
     public async Task<ActionResult<ResearchHubFiltersDto>> Filters()
     {
@@ -113,9 +97,6 @@ public class ResearchHubController : ControllerBase
         return new ResearchHubFiltersDto(universities, fields, years);
     }
 
-    /// <summary>GET /api/research-hub/{id} — details. Published papers are
-    /// visible to every Doctor/Admin; drafts resolve to the owner only
-    /// (anyone else gets 404 so drafts never leak).</summary>
     [HttpGet("{id:int}")]
     public async Task<ActionResult<ResearchHubItemDto>> Details(int id)
     {
@@ -131,11 +112,6 @@ public class ResearchHubController : ControllerBase
         return await ToItemAsync(paper);
     }
 
-    /// <summary>GET /api/research-hub/{id}/pdf — download. Login required
-    /// (class-level authorize). Published papers may be downloaded by any
-    /// Doctor/Admin; a draft is downloadable by its owner only (404 for
-    /// everyone else). Streams from App_Data with a sanitized client-facing
-    /// file name — the physical path is never revealed.</summary>
     [HttpGet("{id:int}/pdf")]
     public async Task<IActionResult> DownloadPdf(int id)
     {
@@ -158,11 +134,8 @@ public class ResearchHubController : ControllerBase
         return PhysicalFile(physicalPath, "application/pdf", BuildDownloadName(paper));
     }
 
-    // ---- My research (doctor-only ownership CRUD) ----
+    // My research (doctor-only ownership CRUD)
 
-    /// <summary>GET /api/research-hub/mine — the doctor's OWN papers, any
-    /// publish state, including drafts. Resolved from claims only; admins are
-    /// excluded here (action role intersects the class role to Doctor).</summary>
     [HttpGet("mine")]
     [Authorize(Roles = "Doctor")]
     public async Task<ActionResult<IReadOnlyList<ResearchHubItemDto>>> Mine()
@@ -177,13 +150,6 @@ public class ResearchHubController : ControllerBase
         return papers;
     }
 
-    /// <summary>POST /api/research-hub — uploads a paper: multipart form
-    /// (metadata + required PDF). The PDF is accepted only when its REAL
-    /// bytes start with %PDF- (the client MIME type is ignored), it is
-    /// capped at 20 MB (action limit + body size limit), and it is stored
-    /// under a random GUID name in App_Data/research. The owner
-    /// (DoctorUserId) and university (UniversityId) are stamped server-side
-    /// from the authenticated user. Rate limited + audit logged.</summary>
     [HttpPost]
     [Authorize(Roles = "Doctor")]
     [EnableRateLimiting("research-upload")]
@@ -216,8 +182,8 @@ public class ResearchHubController : ControllerBase
 
         var paper = new DoctorResearch
         {
-            DoctorUserId = me.Id,                 // from claims — never from the client
-            UniversityId = me.UniversityId.Value, // from claims — never from the client
+            DoctorUserId = me.Id,                 // from claims - never from the client
+            UniversityId = me.UniversityId.Value, // from claims - never from the client
             Title = form.Title.Trim(),
             Abstract = form.Abstract.Trim(),
             Authors = form.Authors.Trim(),
@@ -239,11 +205,6 @@ public class ResearchHubController : ControllerBase
         return CreatedAtAction(nameof(Details), new { id = paper.Id }, await ToItemAsync(full));
     }
 
-    /// <summary>PUT /api/research-hub/{id} — edits the paper. Only the
-    /// owner's own paper is editable; any other doctor's paper (or unknown
-    /// id) returns 404. A replacement PDF goes through the same magic-byte
-    /// validation and the old file is deleted only after the row is saved.
-    /// Rate limited + audit logged.</summary>
     [HttpPut("{id:int}")]
     [Authorize(Roles = "Doctor")]
     [EnableRateLimiting("research-upload")]
@@ -306,9 +267,6 @@ public class ResearchHubController : ControllerBase
         return Ok(await ToItemAsync(full));
     }
 
-    /// <summary>PUT /api/research-hub/{id}/publish — publish/unpublish toggle.
-    /// Owner only (else 404). Publishing requires an attached PDF so the
-    /// Browse download path can never offer a broken file.</summary>
     [HttpPut("{id:int}/publish")]
     [Authorize(Roles = "Doctor")]
     public async Task<IActionResult> SetPublished(int id, [FromBody] SetResearchPublishRequest req)
@@ -330,8 +288,6 @@ public class ResearchHubController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>DELETE /api/research-hub/{id} — removes the paper and its
-    /// stored PDF. Owner only; other doctors' papers return 404.</summary>
     [HttpDelete("{id:int}")]
     [Authorize(Roles = "Doctor")]
     public async Task<IActionResult> Delete(int id)
@@ -351,11 +307,8 @@ public class ResearchHubController : ControllerBase
         return NoContent();
     }
 
-    // ---- helpers ----
+    // helpers
 
-    /// <summary>Browse/mine projection — fully translated to SQL (the
-    /// university name comes from a correlated subquery). Never includes
-    /// server paths or private author data (email, phone).</summary>
     private IQueryable<ResearchHubItemDto> ProjectItems(IQueryable<DoctorResearch> query) => query
         .Select(r => new ResearchHubItemDto(
             r.Id, r.Title, r.Abstract, r.Authors, r.Keywords, r.Year, r.Field,
@@ -368,9 +321,6 @@ public class ResearchHubController : ControllerBase
             r.DoctorUser != null ? r.DoctorUser.Department : "",
             !string.IsNullOrWhiteSpace(r.PdfPath)));
 
-    /// <summary>Materializes one loaded paper (with DoctorUser included) into
-    /// the DTO. The university name is looked up separately — Users store only
-    /// the university id.</summary>
     private async Task<ResearchHubItemDto> ToItemAsync(DoctorResearch r)
     {
         var universityName = r.UniversityId > 0
@@ -390,10 +340,6 @@ public class ResearchHubController : ControllerBase
             !string.IsNullOrWhiteSpace(r.PdfPath));
     }
 
-    /// <summary>Validates the REAL bytes (magic %PDF- read from the stream —
-    /// the declared content type is ignored), stores the file under a random
-    /// GUID name in App_Data/research and returns just the file name — or
-    /// null when the content is not a PDF.</summary>
     private async Task<string?> StorePdfAsync(IFormFile file)
     {
         var header = new byte[5];
@@ -420,9 +366,6 @@ public class ResearchHubController : ControllerBase
         return storeName;
     }
 
-    /// <summary>Deletes a stored PDF by its server-generated GUID name. The
-    /// name always originates from our own rows (never client input) and is
-    /// re-validated as a GUID+pdf file before the physical delete.</summary>
     private void DeleteStoredPdf(string storeName)
     {
         try
@@ -452,9 +395,6 @@ public class ResearchHubController : ControllerBase
     }
 }
 
-// ---- Multipart form model for the upload/edit endpoints. Note that
-// DoctorUserId and UniversityId are deliberately absent: the server always
-// stamps them from the authenticated user. ----
 public sealed class ResearchUploadForm
 {
     public string Title { get; set; } = "";

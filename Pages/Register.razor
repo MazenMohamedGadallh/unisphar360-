@@ -317,10 +317,6 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // Full reload (F5): the scoped auth service starts empty, so the
-        // persisted token can only be read once JS interop is available
-        // (OnAfterRenderAsync — never during prerender). Restore it here:
-        // a signed-in user should land on their own workspace, not the form.
         if (firstRender && await AuthService.RestoreSessionAsync())
         {
             var user = await AuthService.GetUserAsync();
@@ -334,9 +330,6 @@
     {
         if (string.Equals(_model.Role, role, StringComparison.Ordinal)) return;
         _model.Role = role;
-        // Hidden role-specific inputs keep their values in Blazor state —
-        // clearing them prevents a leftover academic year / specialization /
-        // graduation field from being submitted for the wrong role.
         _model.AcademicYear = null;
         _model.Specialization = "";
         _model.GraduatedFrom = "";

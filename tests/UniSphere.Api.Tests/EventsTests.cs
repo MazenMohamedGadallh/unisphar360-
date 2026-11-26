@@ -5,9 +5,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>Events follow the university-isolation contract: GETs require
-/// authentication and return only the caller's university's events; admins
-/// must supply an existing UniversityId when creating.</summary>
 public class EventsTests : IClassFixture<ApiFactory>
 {
     private readonly ApiFactory _factory;
@@ -25,9 +22,6 @@ public class EventsTests : IClassFixture<ApiFactory>
         response.EnsureSuccessStatusCode();
         var events = await response.Content.ReadFromJsonAsync<List<Event>>();
         Assert.NotNull(events);
-        // El Shorouk sees its 3 upcoming events plus the campus-wide
-        // graduation ceremony (UniversityId == null is global); the Helwan
-        // one must not leak.
         Assert.Equal(4, events!.Count);
         Assert.Contains(events, e => e.Title == "Graduation Ceremony 2026");
         Assert.All(events, e => Assert.True(e.StartsAtUtc >= DateTime.UtcNow.AddMinutes(-1)));

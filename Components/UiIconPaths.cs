@@ -1,9 +1,5 @@
 namespace UniSphere.Api.Components;
 
-/// <summary>
-/// Central Lucide path data used by <see cref="UiIcon"/>.
-/// Path geometry is from Lucide (ISC); the component supplies the shared SVG shell.
-/// </summary>
 public static class UiIconPaths
 {
     private static readonly Dictionary<string, string> Icons = new(StringComparer.OrdinalIgnoreCase)
@@ -226,7 +222,6 @@ public static class UiIconPaths
         ["\U0001F5D1"] = "trash-2",
     };
 
-    /// <summary>Returns safe SVG inner markup for a Lucide name, alias, or legacy value.</summary>
     public static string Resolve(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return Icons["circle"];

@@ -202,8 +202,6 @@ else
     {
         try
         {
-            // Providers come back as name/display/model objects; binding them
-            // as strings used to throw and flip the banner on permanently.
             _status = await Http.GetFromJsonAsync<AiStatusDto>("/api/doctor/ai/status");
             _available = _status?.Available ?? false;
         }
@@ -244,7 +242,6 @@ else
             _error = $"Could not load course materials ({(ex.InnerException ?? ex).Message}).";
         }
     }
-
 
     private async Task SummarizeAsync()
     {
@@ -295,7 +292,5 @@ else
 
     private sealed record AiStatusDto(bool Available, List<ProviderStatusDto> Providers, string Message);
 
-    /// <summary>The status endpoint returns provider objects (Name/DisplayName/Model),
-    /// not strings — this must mirror ChatProviderDto for correct binding.</summary>
     private sealed record ProviderStatusDto(string Name, string DisplayName, string Model);
 }

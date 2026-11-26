@@ -6,20 +6,12 @@ using UniSphere.Api.Data;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Real-provider AI helper for graduate features (CV analysis, interview
-/// questions/feedback, roadmap suggestions). Uses the same provider registry
-/// as the chat module; when no provider is available it throws a real
-/// <see cref="ChatProviderException"/> — output is never faked.
-/// </summary>
 public class GraduateAiService(
     IAiCompletionService completion,
     IAiGroundingService grounding,
     IRagClient rag,
     ILogger<GraduateAiService> logger)
 {
-    /// <summary>Run a one-shot prompt on the best live provider (Gemini →
-    /// OpenRouter → ...), failing over to the next one on error.</summary>
     private async Task<(string Text, string ProviderName, string Model)> GenerateAsync(
         string systemPrompt, string userPrompt, int maxTokens, CancellationToken ct)
     {
@@ -27,8 +19,6 @@ public class GraduateAiService(
         return (result.Text, result.Provider, result.Model);
     }
 
-    /// <summary>Live UniSphere context (profile, skills, CV, target roles, job
-    /// listings; or course data for students) appended to a prompt. Best effort.</summary>
     private async Task<string> ContextBlockAsync(int userId, string query, CancellationToken ct, int maxChars = 4000)
     {
         if (userId <= 0) return "";
@@ -46,9 +36,6 @@ public class GraduateAiService(
 
     public sealed record AiMeta(string ProviderName, string Model);
 
-    /// <summary>Generate JSON and deserialize; failures become explicit
-    /// <see cref="ChatProviderException"/> messages only — internals are
-    /// logged, never faked and never leaked to the client.</summary>
     private async Task<(T Value, AiMeta Meta)> GenerateJsonAsync<T>(
         string systemPrompt, string userPrompt, int maxTokens,
         Func<JsonElement, T>? parse, CancellationToken ct)
@@ -77,7 +64,7 @@ public class GraduateAiService(
         }
     }
 
-    // ---------------- CV analysis ----------------
+    // CV analysis
 
     public sealed record CvAnalysisData(
         string OverallAssessment, int ScorePercent,
@@ -117,17 +104,12 @@ public class GraduateAiService(
             """ .Replace("{role}", role);
         var user = template.Replace("{cv}", truncated);
 
-        // The RAG service analyses first, grounded in the CV itself: the CV goes in
-        // once, as the retrieved document, so small local models keep the whole
-        // prompt in context. The general provider chain is the fallback.
         var ragQuestion = template.Replace("{cv}", "(provided above as the excerpts titled \"Uploaded CV\")");
         var viaRag = await TryRagJsonAsync(system, ragQuestion, truncated, ParseCvAnalysis, ct);
         if (viaRag is { } ragResult) return ragResult;
         return await GenerateJsonAsync<CvAnalysisData>(system, user, 2048, ParseCvAnalysis, ct);
     }
 
-    /// <summary>Ask the RAG service for a JSON answer grounded in <paramref name="documentText"/>.
-    /// Null when RAG is off, unreachable or answers with something unparsable.</summary>
     private async Task<(T Value, AiMeta Meta)?> TryRagJsonAsync<T>(
         string systemPrompt, string userPrompt, string documentText,
         Func<JsonElement, T> parse, CancellationToken ct)
@@ -176,7 +158,7 @@ public class GraduateAiService(
             [.. rewrites], GetList(root, "keywords"));
     }
 
-    // ---------------- Practice quiz ----------------
+    // Practice quiz
 
     public sealed record PracticeQuestionData(string Question, string[] Options, int CorrectIndex, string Explanation, string? Reference);
     public sealed record PracticeQuizData(PracticeQuestionData[] Questions);
@@ -216,7 +198,7 @@ public class GraduateAiService(
         return new PracticeQuizData([.. questions]);
     }
 
-    // ---------------- Interview questions ----------------
+    // Interview questions
 
     public sealed record QuestionsData(string[] Questions);
 
@@ -257,7 +239,7 @@ public class GraduateAiService(
         throw new ChatProviderException("The AI response was missing the questions list.");
     }
 
-    // ---------------- Interview answer feedback ----------------
+    // Interview answer feedback
 
     public sealed record FeedbackData(string Feedback, int Score);
 
@@ -289,7 +271,7 @@ public class GraduateAiService(
         return new FeedbackData(feedback, score);
     }
 
-    // ---------------- Roadmap suggestions ----------------
+    // Roadmap suggestions
 
     public sealed record RoadmapSuggestionsData(RoadmapSuggestionData[] Items);
     public sealed record RoadmapSuggestionData(string Title, string Category, string? Notes, string? Why);
@@ -332,18 +314,13 @@ public class GraduateAiService(
         throw new ChatProviderException("The AI response was missing the items list.");
     }
 
-    // ---------------- JSON extraction ----------------
+    // JSON extraction
 
     internal static JsonElement ExtractJson(string raw)
     {
-        // Tolerates <think> blocks, ```json fences, prose around the JSON and
-        // truncated arrays (see AiJsonExtractor).
         if (!AiJsonExtractor.TryExtract(raw, out var element))
             throw new ChatProviderException("The AI response did not contain valid JSON. Please try again.");
 
-        // Models sometimes return a bare array instead of {"questions":[...]}
-        // (or the extractor salvages one from truncated output). Wrap it so
-        // every parser can read it from "questions" / "items".
         if (element.ValueKind == JsonValueKind.Array)
         {
             using var doc = JsonDocument.Parse(

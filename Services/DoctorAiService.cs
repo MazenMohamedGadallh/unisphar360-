@@ -9,26 +9,10 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// AI teaching assistant for doctors. Provider calls go through the existing
-/// injectable <see cref="ChatProviderRegistry"/>; API keys live only in
-/// environment variables/user-secrets. Every feature:
-///  - only reads lecture content the doctor is authorized to access,
-///  - validates model output against a schema and fails loudly on malformed
-///    output (never publishes a partial/garbage quiz),
-///  - states honestly when AI is unavailable instead of pretending to work,
-///  - marks generated quizzes as drafts requiring doctor review.
-///
-/// The lecture Q&amp;A uses lexical (term-matching) retrieval over authorised
-/// lecture chunks and answers grounded in the retrieved text — a lightweight
-/// RAG approach that adds no vector database or extra AI server.
-/// </summary>
 public interface IDoctorAiService
 {
     Task<IReadOnlyList<ChatProviderDto>> GetProvidersAsync(CancellationToken ct);
     string GetModelName();
-    /// <summary>The provider actually resolved for generation (name + model) —
-    /// used so responses can be labeled truthfully, not alphabetically-first.</summary>
     Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken ct);
     Task<QuizGenerationResponse> GenerateQuizAsync(int doctorUserId, QuizGenerationRequest req, CancellationToken ct);
     Task<LectureSummaryDto> SummarizeAsync(int doctorUserId, SummarizeRequest req, CancellationToken ct);
@@ -93,7 +77,7 @@ public class DoctorAiService : IDoctorAiService
     {
         try
         {
-            // Fails over Gemini → OpenRouter → ... until one answers.
+            // Fails over Gemini -> OpenRouter -> ... until one answers.
             _last = await _completion.CompleteAsync(systemPrompt, userPrompt, _options.MaxTokens, ct,
                 Math.Max(5, _options.TimeoutSeconds), _options.PreferredProvider);
         }
@@ -104,7 +88,7 @@ public class DoctorAiService : IDoctorAiService
         return _last.Text;
     }
 
-    // ---- Quiz generator ----
+    // Quiz generator
 
     public async Task<QuizGenerationResponse> GenerateQuizAsync(
         int doctorUserId, QuizGenerationRequest req, CancellationToken ct)
@@ -116,8 +100,6 @@ public class DoctorAiService : IDoctorAiService
             ?? throw new AiUnavailableException("Course not found.");
 
         var count = Math.Clamp(req.QuestionCount, 1, 15);
-        // Never ask the model to write a quiz with nothing to ground it: it would
-        // invent questions (or quiz itself about the prompt).
         if (string.IsNullOrWhiteSpace(material.content) || material.content.Trim().Length < 80)
             throw new AiUnavailableException(
                 "This course has no lecture text yet. Add lecture content (or a text/markdown file) before generating a quiz.");
@@ -184,7 +166,7 @@ public class DoctorAiService : IDoctorAiService
         return list;
     }
 
-    // ---- Lecture summarizer ----
+    // Lecture summarizer
 
     public async Task<LectureSummaryDto> SummarizeAsync(
         int doctorUserId, SummarizeRequest req, CancellationToken ct)
@@ -217,7 +199,7 @@ public class DoctorAiService : IDoctorAiService
         return new LectureSummaryDto(material.Id, material.Title, summary, providerName, model);
     }
 
-    // ---- Lecture question answering (lexical RAG) ----
+    // Lecture question answering (lexical RAG)
 
     public async Task<LectureAnswerDto> AnswerLectureQuestionAsync(
         int doctorUserId, LectureQuestionRequest req, CancellationToken ct)
@@ -237,8 +219,6 @@ public class DoctorAiService : IDoctorAiService
             .Distinct()
             .ToList();
 
-        // RAG retrieval over the whole course (semantic), merged with the
-        // lexical excerpts below. Silent no-op when the RAG service is off.
         var ragContext = RagGrounding.None;
         if (_grounding is not null)
         {
@@ -320,9 +300,6 @@ public class DoctorAiService : IDoctorAiService
         return (true, ("Course material", combined));
     }
 
-    /// <summary>Best-effort text extraction. Database text content is used
-    /// first; uploaded plain-text files are read from disk. Binary/scan
-    /// formats are rejected explicitly (no OCR in this project).</summary>
     private async Task<string> ExtractTextAsync(CourseMaterial material, CancellationToken ct)
     {
         if (!string.IsNullOrWhiteSpace(material.Content)) return material.Content;

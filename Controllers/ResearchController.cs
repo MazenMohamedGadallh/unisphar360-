@@ -20,7 +20,6 @@ public class ResearchController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>Search research papers from the local database.</summary>
     [HttpGet("papers")]
     public async Task<ActionResult<IReadOnlyList<object>>> SearchPapers([FromQuery] string? q)
     {
@@ -43,7 +42,6 @@ public class ResearchController : ControllerBase
         return Ok(papers);
     }
 
-    /// <summary>Add a research paper to the local database (Admin/Doctor only).</summary>
     [Authorize(Roles = "Admin,Doctor")]
     [HttpPost("papers")]
     public async Task<ActionResult<object>> AddPaper([FromBody] CreatePaperRequest req)
@@ -67,7 +65,6 @@ public class ResearchController : ControllerBase
         return Ok(new { paper.Id, paper.Title, paper.Authors, paper.Abstract, paper.Url, paper.Source });
     }
 
-    /// <summary>Simple extractive summarization: returns the first 2-3 sentences of the abstract.</summary>
     [HttpGet("summarize/{id:int}")]
     public async Task<ActionResult<object>> Summarize(int id)
     {
@@ -86,7 +83,6 @@ public class ResearchController : ControllerBase
         return Ok(new { paper.Id, paper.Title, Summary = summary, OriginalLength = paper.Abstract.Length, SummaryLength = summary.Length });
     }
 
-    /// <summary>Get trending papers (most recent).</summary>
     [HttpGet("trending")]
     public async Task<ActionResult<IReadOnlyList<object>>> GetTrending()
     {

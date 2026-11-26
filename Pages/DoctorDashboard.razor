@@ -1,9 +1,4 @@
 @page "/doctor"
-@*
-Route guard here is UX only. The server enforces [Authorize(Roles="Doctor")]
-on every /api/doctor endpoint, so a non-doctor who reaches this page gets
-no data regardless of what the UI shows.
-*@
 @using System.Net
 @using UniSphere.Api.Dtos
 @inject HttpClient Http

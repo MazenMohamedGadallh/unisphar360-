@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>PBKDF2 password hashing. Stored format: iterations.salt.hash (base64).</summary>
 public static class PasswordService
 {
     private const int Iterations = 100_000;

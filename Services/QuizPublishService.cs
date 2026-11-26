@@ -5,33 +5,17 @@ using UniSphere.Api.Dtos;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Publishes a doctor's AI-generated quiz as an exam, reusing the existing
-/// exam infrastructure end to end: Exam/ExamQuestion entities via
-/// <see cref="IExamAssistantService.CreateDraftExamAsync"/> and
-/// <see cref="IExamAssistantService.PublishExamWithNotifiedCountAsync"/>
-/// (draft + notify + same SaveChanges). No quiz-specific tables are created.
-/// Every server-verifiable value is recomputed here; the client cannot inject
-/// course ownership, material titles, notification counts or exam status.
-/// Draft creation and publication run inside one ambient EF transaction on
-/// the scoped AppDbContext (both inner methods share that context), so a
-/// publish failure rolls the draft back — no orphan drafts.
-/// </summary>
 public interface IQuizPublishService
 {
     Task<QuizPublishOutcome> PublishAsync(
         int doctorUserId, QuizPublishRequest req, CancellationToken ct);
 }
 
-/// <summary>Outcome of a publish attempt. <see cref="IsConflict"/> is only
-/// true when the best-effort duplicate guard trips (HTTP 409).</summary>
 public sealed record QuizPublishOutcome(
     bool Ok, QuizPublishResponse? Result, string? Error, bool IsConflict = false);
 
-/// <summary>Database-independent payload problems (course/material/shape) — surfaced as HTTP 400.</summary>
 public sealed class QuizPublishValidationException(string message) : Exception(message);
 
-/// <summary>The same doctor re-published an identical quiz minutes apart (HTTP 409).</summary>
 public sealed class DuplicateQuizException(string message) : Exception(message);
 
 public class QuizPublishService : IQuizPublishService
@@ -100,8 +84,6 @@ public class QuizPublishService : IQuizPublishService
         if (title.Length is < 3 or > 150)
             throw new QuizPublishValidationException("Title must contain 3-150 characters.");
 
-        // ----- Exam window re-validation (defense in depth; FluentValidation
-        // already checks these at the endpoint) -----
         var nowUtc = DateTime.UtcNow;
         if (req.ClosesAtUtc is { } closes && closes <= nowUtc)
             throw new QuizPublishValidationException(
@@ -113,7 +95,7 @@ public class QuizPublishService : IQuizPublishService
             throw new QuizPublishValidationException(
                 "Duration, when provided, must be between 1 and 600 minutes.");
 
-        // ----- Server-side recompute: course, ownership, material -----
+        // Server-side recompute: course, ownership, material
         var course = await _db.Courses.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == req.CourseId, ct)
             ?? throw new QuizPublishValidationException("Course not found.");
@@ -134,8 +116,6 @@ public class QuizPublishService : IQuizPublishService
             materialTitle = material;
         }
 
-        // ----- Best-effort duplicate guard (no schema for a real idempotency
-        // key, so this is a time-window heuristic, not exactly-once) -----
         var windowStart = DateTime.UtcNow.AddMinutes(-DuplicateWindowMinutes);
         var recentlyPublished = await _db.Exams.AsNoTracking().AnyAsync(e =>
             e.DoctorUserId == doctorUserId
@@ -146,7 +126,7 @@ public class QuizPublishService : IQuizPublishService
                 throw new DuplicateQuizException(
                     "This quiz was already published moments ago. Generate a new quiz to publish again.");
 
-        // ----- Map generated questions into the shared exam shape -----
+        // Map generated questions into the shared exam shape
         var examQuestions = new List<ExamQuestionDto>();
         for (var i = 0; i < req.Questions.Count; i++)
         {
@@ -187,16 +167,11 @@ public class QuizPublishService : IQuizPublishService
             MaterialsUsed: materialsUsedJson,
             Questions: examQuestions);
 
-        // ----- Draft + publish in one ambient transaction (no orphans) -----
+        // Draft + publish in one ambient transaction (no orphans)
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var draft = await _exams.CreateDraftExamAsync(doctorUserId, updateReq, ct) ??
             throw new QuizPublishValidationException("Quiz could not be staged as a draft exam.");
 
-        // Optional exam window: stamp the tracked draft (same scoped context,
-        // inside the ambient transaction) so the persisted exam carries the
-        // opens/closes dates, the advertised duration and the post-submit
-        // show-answers preference. Persisted by the publish step's
-        // SaveChanges below; rolled back together with the draft on failure.
         var draftExam = await _db.Exams.FindAsync(new object?[] { draft.Id }, ct)
             ?? throw new QuizPublishValidationException("Staged draft exam vanished before publication.");
         draftExam.OpensAtUtc = AsUtc(req.OpensAtUtc);
@@ -216,8 +191,6 @@ public class QuizPublishService : IQuizPublishService
             notified, published.Status ?? "Published");
     }
 
-    /// <summary>Window dates are interpreted as UTC instants (the Blazor
-    /// page posts them as UTC so all clients see the same absolute time).</summary>
     private static DateTime? AsUtc(DateTime? value) =>
         value is null ? null : DateTime.SpecifyKind(value.Value, DateTimeKind.Utc);
 }

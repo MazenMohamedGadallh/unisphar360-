@@ -22,7 +22,6 @@ public class HomeController : ControllerBase
         _scope = scope;
     }
 
-    /// <summary>Everything the Flutter home screen needs in one call.</summary>
     [HttpGet]
     public async Task<ActionResult<HomeResponse>> Get()
     {

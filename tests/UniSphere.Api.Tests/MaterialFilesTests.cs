@@ -7,14 +7,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>
-/// End-to-end coverage for doctor course-material attachments:
-/// allowed extensions + real byte signatures, the 20 MB server limit,
-/// server-authoritative course/university authorization, traversal-like
-/// client file names, authenticated downloads, replacement/deletion disk
-/// cleanup, and legacy FileUrl-only materials. Every material created here is
-/// deleted again, and the factory uses a throw-away Uploads:StoragePath.
-/// </summary>
 public class MaterialFilesTests : IClassFixture<ApiFactory>, IAsyncLifetime
 {
     private readonly ApiFactory _factory;
@@ -313,8 +305,6 @@ public class MaterialFilesTests : IClassFixture<ApiFactory>, IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden,
             (await UploadAsync(_admin, material.Id, PdfBytes, "admin.pdf")).StatusCode);
 
-        // The assigned doctor and the admin can download; the file survived all
-        // of the rejected writes/deletes above.
         Assert.Equal(HttpStatusCode.OK,
             (await _doctor.GetAsync($"/api/materials/{material.Id}/file")).StatusCode);
         Assert.Equal(HttpStatusCode.OK,
@@ -323,7 +313,7 @@ public class MaterialFilesTests : IClassFixture<ApiFactory>, IAsyncLifetime
         Assert.Single(MaterialFiles());
     }
 
-    // ---- Helpers ----
+    // Helpers
 
     private async Task<MaterialRow> CreateMaterialAsync(string? fileUrl = null)
     {
@@ -349,8 +339,6 @@ public class MaterialFilesTests : IClassFixture<ApiFactory>, IAsyncLifetime
     {
         using var form = new MultipartFormDataContent();
         var file = new ByteArrayContent(bytes);
-        // Deliberately claim a generic MIME type: the server must inspect the
-        // extension and the actual bytes, not trust the client header.
         file.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
         form.Add(file, "file", fileName);
         return await client.PostAsync($"/api/doctor/materials/{materialId}/file", form);

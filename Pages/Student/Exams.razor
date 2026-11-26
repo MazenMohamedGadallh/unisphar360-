@@ -152,7 +152,14 @@
                             var options = ParseOptions(question.OptionsJson ?? "[]");
                             <div class="recommendation-item" style="display: block;">
                                 <div class="rec-title">@(qi + 1). @question.QuestionText</div>
-                                @if (options.Count > 0)
+                                @if (IsWritten(question.QuestionType))
+                                {
+                                    <textarea class="form-input written-answer" dir="auto" maxlength="5000"
+                                              placeholder="Write your answer here..."
+                                              value="@_texts.GetValueOrDefault(question.QuestionId, "")"
+                                              @oninput="@(e => _texts[question.QuestionId] = e.Value?.ToString() ?? "")"></textarea>
+                                }
+                                else if (options.Count > 0)
                                 {
                                     <div style="margin: 8px 0 0 20px;">
                                         @for (var oi = 0; oi < options.Count; oi++)
@@ -185,6 +192,10 @@
             {
                 <div class="chart-container" style="margin-top: 10px;">
                     <h4>Score: @(_state.Attempt.Score ?? 0) / @(_state.Attempt.MaxScore ?? _selectedExam.QuestionCount)</h4>
+                    @if (_state.Review?.Any(r => r.PendingGrading) == true)
+                    {
+                        <p class="rec-track">Some written answers are still being graded, so this score may go up.</p>
+                    }
                     <p>Submitted: @FormatDate(_state.Attempt.SubmittedAtUtc!.Value)</p>
                     @if (!_state.ShowAnswersAfterSubmit)
                     {
@@ -200,12 +211,26 @@
                                 <div class="rec-title">@r.QuestionText</div>
                                 <div style="margin: 6px 0 0 20px;">
                                     <div>
-                                        <span class="@(r.IsCorrect == true ? "status-badge passed" : "status-badge needs-attention")">
-                                            @(r.IsCorrect == true ? "Correct" : r.SelectedOption is null && r.IsCorrect == false ? "Unanswered" : "Incorrect")
-                                        </span>
+                                        @if (r.PendingGrading)
+                                        {
+                                            <span class="status-badge">Waiting for the doctor to grade</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="@(r.IsCorrect == true ? "status-badge passed" : "status-badge needs-attention")">
+                                                @(r.IsCorrect == true ? "Correct" : r.SelectedOption is null && r.TextAnswer is null && r.IsCorrect == false ? "Unanswered" : "Incorrect")
+                                            </span>
+                                        }
                                     </div>
-                                    <div>Your answer: @(Label(options, r.SelectedOption) ?? "— unanswered —")</div>
-                                    @if (r.IsCorrect != true && r.CorrectOption is { } correctIdx)
+                                    @if (r.TextAnswer is not null || options.Count == 0)
+                                    {
+                                        <div dir="auto">Your answer: @(r.TextAnswer ?? "— unanswered —")</div>
+                                    }
+                                    else
+                                    {
+                                        <div>Your answer: @(Label(options, r.SelectedOption) ?? "— unanswered —")</div>
+                                    }
+                                    @if (r.IsCorrect != true && r.CorrectOption is { } correctIdx && correctIdx >= 0)
                                     {
                                         <div>Correct answer: @(options.ElementAtOrDefault(correctIdx) ?? "?")</div>
                                     }
@@ -221,7 +246,6 @@
         </div>
     }
 </RoleGate>
-
 
 </RoleGate>
 @code {
@@ -250,6 +274,10 @@
     private StudentExamAttemptStateDto? _state;
     // questionId -> chosen option index (-1 = unanswered)
     private Dictionary<int, int> _selections = new();
+    private Dictionary<int, string> _texts = new();
+
+    private static bool IsWritten(string type) =>
+        type is "Essay" or "Definition" or "ShortAnswer";
     private bool _loading;
     private bool _busy;
     private string _error = "";
@@ -286,8 +314,6 @@
             var resp = await Http.GetFromJsonAsync<List<StudentExamDto>>("/api/student/exams");
             _exams = resp ?? new();
 
-            // Own attempt rows (one per student per exam) drive the list
-            // chips: score + submission date once finished.
             try
             {
                 var rows = await Http.GetFromJsonAsync<List<StudentAttemptListRowDto>>("/api/student/exams/attempts");
@@ -314,6 +340,7 @@
         _error = "";
         _state = null;
         _selections = new();
+        _texts = new();
         try
         {
             var resp = await Http.GetFromJsonAsync<StudentExamDetailDto>($"/api/student/exams/{examId}");
@@ -322,14 +349,12 @@
                 _selectedExam = resp;
             }
 
-            // Attempt state may 404 only for foreign exams — the detail call
-            // above would have already failed then. A missing attempt is a
-            // normal state (not started), not an error.
             try
             {
                 _state = await Http.GetFromJsonAsync<StudentExamAttemptStateDto>($"/api/student/exams/{examId}/attempt");
                 if (_state?.Attempt is not null && _state.Attempt.SubmittedAtUtc is null)
                     _selections = new();
+        _texts = new();
             }
             catch
             {
@@ -383,12 +408,13 @@
         ClearToasts();
         try
         {
-            // Only the option CHOICE is sent; the server derives correctness.
+            // Only the option choice or written text is sent; the server derives correctness.
             var takeIds = _state.TakeQuestions.Select(q => q.QuestionId).ToHashSet();
             var answers = takeIds.Select(id =>
             {
                 var idx = _selections.TryGetValue(id, out var v) ? v : -1;
-                return new SubmitExamAnswerDto(id, idx >= 0 ? idx : null);
+                var text = _texts.TryGetValue(id, out var t) && !string.IsNullOrWhiteSpace(t) ? t : null;
+                return new SubmitExamAnswerDto(id, idx >= 0 ? idx : null, text);
             }).ToList();
 
             var resp = await Http.PostAsJsonAsync(
@@ -466,6 +492,7 @@
         _selectedExam = null;
         _state = null;
         _selections = new();
+        _texts = new();
         ClearToasts();
     }
 
@@ -475,8 +502,6 @@
         _toastIsError = false;
     }
 
-    /// <summary>Student-safe: exam questions only carry the option strings
-    /// (OptionsJson); correct answers never reach this page.</summary>
     private static List<string> ParseOptions(string optionsJson)
     {
         try

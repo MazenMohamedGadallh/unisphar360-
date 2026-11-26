@@ -10,8 +10,6 @@ namespace UniSphere.Api.Validators;
 
 public class RegisterRequestValidator : AbstractValidator<RegisterRequest>
 {
-    // Egyptian mobile (010/011/012/015, with optional 0 or +20) or a general
-    // international number as fallback.
     private const string EgyptianPhone = @"^(\+20|0)?1[0125]\d{8}$";
     private const string InternationalPhone = @"^\+?[1-9]\d{7,14}$";
     private const string PasswordPattern = @"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$";
@@ -241,15 +239,12 @@ public class CreatePaperRequestValidator : AbstractValidator<CreatePaperRequest>
     }
 }
 
-// ---- Doctor module ----
+// Doctor module
 
 public class DoctorMaterialValidator : AbstractValidator<CreateDoctorMaterialRequest>
 {
     public static readonly string[] AllowedTypes = CreateMaterialRequestValidator.AllowedTypes;
 
-    /// <summary>An /uploads/ path with no ".." segments, or an http(s) URL. Blocks
-    /// javascript:/data: links (stored XSS in material links) and path traversal
-    /// (the AI assistant reads /uploads/ files from disk).</summary>
     public static bool IsSafeFileUrl(string? u)
     {
         if (string.IsNullOrEmpty(u)) return true;
@@ -337,11 +332,11 @@ public class LectureQuestionRequestValidator : AbstractValidator<LectureQuestion
     }
 }
 
-// ---- Exam generator (/api/doctor/exam-generator) ----
+// Exam generator (/api/doctor/exam-generator)
 
 public class ExamGenerationRequestValidator : AbstractValidator<ExamGenerationRequest>
 {
-    private static readonly string[] ValidQuestionTypes = { "MCQ", "TrueFalse", "ShortAnswer" };
+    private static readonly string[] ValidQuestionTypes = { "MCQ", "TrueFalse", "ShortAnswer", "Essay", "Definition" };
     private static readonly string[] ValidDifficulties = { "easy", "medium", "hard", "mixed" };
     private static readonly string[] ValidLanguages = { "en", "ar" };
     private const int MaxQuestions = 50;
@@ -380,7 +375,7 @@ public class ExamGenerationRequestValidator : AbstractValidator<ExamGenerationRe
 
 public class UpdateExamRequestValidator : AbstractValidator<UpdateExamRequest>
 {
-    private static readonly string[] ValidQuestionTypes = { "MCQ", "TrueFalse", "ShortAnswer" };
+    private static readonly string[] ValidQuestionTypes = { "MCQ", "TrueFalse", "ShortAnswer", "Essay", "Definition" };
     private static readonly string[] ValidDifficulties = { "easy", "medium", "hard", "mixed" };
     private static readonly string[] ValidLanguages = { "en", "ar" };
     private const int MaxQuestions = 50;
@@ -425,7 +420,7 @@ public class UpdateExamRequestValidator : AbstractValidator<UpdateExamRequest>
 
 public class UpdateExamQuestionRequestValidator : AbstractValidator<UpdateExamQuestionRequest>
 {
-    private static readonly string[] ValidQuestionTypes = { "MCQ", "TrueFalse", "ShortAnswer" };
+    private static readonly string[] ValidQuestionTypes = { "MCQ", "TrueFalse", "ShortAnswer", "Essay", "Definition" };
 
     public UpdateExamQuestionRequestValidator()
     {
@@ -443,14 +438,12 @@ public class UpdateExamQuestionRequestValidator : AbstractValidator<UpdateExamQu
     }
 }
 
-// ---- Doctor profile (Phase 1) ----
+// Doctor profile (Phase 1)
 
 public class UpdateDoctorProfileRequestValidator : AbstractValidator<UpdateDoctorProfileRequest>
 {
     public UpdateDoctorProfileRequestValidator()
     {
-        // Only the editable field exists on the DTO; locked fields are
-        // rejected by the controller before this validator runs.
         RuleFor(x => x.AvatarUrl).MaximumLength(500)
             .Must(DoctorMaterialValidator.IsSafeFileUrl)
             .When(x => !string.IsNullOrEmpty(x.AvatarUrl))
@@ -458,9 +451,6 @@ public class UpdateDoctorProfileRequestValidator : AbstractValidator<UpdateDocto
     }
 }
 
-/// <summary>Course display title rule: 3-120 characters when set, plain text
-/// only (no HTML/open angle brackets), so no injected markup can reach
-/// students. Empty/null clears the override (students see the catalog title).</summary>
 public class SetCourseDisplayTitleRequestValidator : AbstractValidator<SetCourseDisplayTitleRequest>
 {
     public SetCourseDisplayTitleRequestValidator()
@@ -489,12 +479,8 @@ public class AdminUpdateUserRequestValidator : AbstractValidator<AdminUpdateUser
     }
 }
 
-// ---- Research Hub (Phase 2) ----
+// Research Hub (Phase 2)
 
-/// <summary>Research paper metadata. Plain text only (no HTML angle brackets)
-/// so no injected markup can reach the research hub UI. The PDF file itself
-/// is validated by the controller via magic bytes and a 20 MB cap — the
-/// client's declared MIME type is never trusted.</summary>
 public class ResearchUploadFormValidator : AbstractValidator<ResearchUploadForm>
 {
     public ResearchUploadFormValidator()
@@ -527,7 +513,7 @@ public class ResearchUploadFormValidator : AbstractValidator<ResearchUploadForm>
             .When(x => !string.IsNullOrEmpty(x.DoiOrUrl));
     }
 }
-// ---- Part 1: instructor assignments & doctor announcements
+// Part 1: instructor assignments & doctor announcements
 
 public class CreateInstructorAssignmentRequestValidator : AbstractValidator<CreateInstructorAssignmentRequest>
 {
@@ -555,7 +541,7 @@ public class CreateDoctorAnnouncementRequestValidator : AbstractValidator<Create
     }
 }
 
-// ---- Phase 2: doctor research hub
+// Phase 2: doctor research hub
 
 public class DoctorResearchUploadRequestValidator : AbstractValidator<DoctorResearchUploadRequest>
 {
@@ -612,7 +598,7 @@ public class DoctorResearchUploadRequestValidator : AbstractValidator<DoctorRese
     }
 }
 
-// ---- Graduation (/api/graduation/*) ----
+// Graduation (/api/graduation/*)
 
 public class GraduationApplyRequestValidator : AbstractValidator<GraduationApplyRequest>
 {
@@ -642,7 +628,7 @@ public class ReviewGraduationApplicationRequestValidator : AbstractValidator<Rev
     }
 }
 
-// ---- Exam assistant (/api/doctor/exam-assistant) ----
+// Exam assistant (/api/doctor/exam-assistant)
 
 public class ExamAssistantGenerationRequestValidator : AbstractValidator<ExamAssistantGenerationRequest>
 {
@@ -663,6 +649,17 @@ public class ExamAssistantGenerationRequestValidator : AbstractValidator<ExamAss
         RuleFor(x => x.QuestionCount)
             .InclusiveBetween(1, MaxQuestions)
             .WithMessage($"Question count must be between 1 and {MaxQuestions}.");
+
+        RuleFor(x => new[] { x.McqCount, x.TrueFalseCount, x.EssayCount, x.DefinitionCount })
+            .Must(c => c.All(n => n is null or >= 0 and <= MaxQuestions))
+            .WithMessage($"Each question type count must be between 0 and {MaxQuestions}.")
+            .OverridePropertyName("QuestionTypes");
+
+        RuleFor(x => x)
+            .Must(x => (x.McqCount ?? 0) + (x.TrueFalseCount ?? 0) + (x.EssayCount ?? 0) + (x.DefinitionCount ?? 0) == x.QuestionCount)
+            .When(x => x.McqCount is not null || x.TrueFalseCount is not null || x.EssayCount is not null || x.DefinitionCount is not null)
+            .WithMessage("The question type counts must add up to the number of questions.")
+            .OverridePropertyName("QuestionCount");
 
         RuleFor(x => x.Difficulty)
             .NotEmpty().WithMessage("Difficulty is required.")

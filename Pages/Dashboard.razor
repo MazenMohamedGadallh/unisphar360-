@@ -1,14 +1,4 @@
 @page "/dashboard"
-@*
-Page-level [Authorize] removed on purpose: the server enforces it
-during prerendering against the HTTP Authorization header, but browsers
-never send the localStorage JWT on a page navigation — so every F5 was
-challenged (302 to /login) before the circuit could restore the session
-from ProtectedLocalStorage. Authorization for this page is enforced:
- - all data: server-side [Authorize] on /api (see Controllers/*)
- - the UI shell: MainLayout's auth gate bounces anonymous users to
-   /login (replace: true) once the auth state resolves.
-*@
 @using System.Net
 @using UniSphere.Api.Dtos
 @inject HttpClient Http
@@ -273,7 +263,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
     </div>
 </div>
 
-
 </RoleGate>
 @code {
     [SupplyParameterFromQuery(Name = "denied")]
@@ -301,37 +290,24 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
     private DashboardStudyDayDto? NextPlanItem =>
         _planner?.Days.Where(d => !d.IsFreeDay && !d.IsCompleted && d.Date.Date >= DateTime.Today)
             .OrderBy(d => d.Date).FirstOrDefault();
-    // Guards the deferred first load (see OnAfterRenderAsync): prerender /
-    // pre-restore passes must not fire API calls or 401-logout a user.
     private bool _started;
 
     protected override async Task OnInitializedAsync()
     {
-        // F5: this runs before the persisted token is restored (restore
-        // happens in OnAfterRenderAsync, where JS interop is available).
-        // Never fire API calls or redirect while auth is resolving: without
-        // a bearer header every call 401s, and the 401 handler below would
-        // log a signed-in user out. Defer to the interactive pass instead.
         if (!AuthService.IsInitialized)
             await AuthService.RestoreSessionAsync();
         if (!AuthService.IsInitialized)
             return;
-        // Graduates get a dedicated career dashboard: bounce before any
-        // student-only card loads.
         if ((await AuthService.GetUserAsync())?.Role == "Graduate")
         {
             Nav.NavigateTo("/graduate", replace: true);
             return;
         }
-        // Each card loads (and fails) independently: one bad call can never
-        // freeze the whole dashboard on "Loading..." again.
         await LoadAllAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // Prerender (or interactive init before JS): OnInitializedAsync
-        // returned early above. Complete the load once auth resolves.
         if (firstRender && !_started)
         {
             _started = true;
@@ -366,11 +342,6 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
         {
-            // Token expired or revoked mid-session: clean logout and tell
-            // the user why, instead of spinning or looping silently.
-            // Guarded by IsInitialized: callers only load after auth
-            // resolves, so a 401 here is genuine expiry — never the
-            // pre-restore "no bearer header yet" case on F5.
             if (!AuthService.IsInitialized)
             {
                 setError($"Could not load {what}. Check your connection and try again.");
@@ -451,6 +422,5 @@ from ProtectedLocalStorage. Authorization for this page is enforced:
             _plannerError = "Could not update the study plan. Please try again.";
         }
     }
-
 
 }

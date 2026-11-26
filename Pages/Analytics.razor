@@ -1,13 +1,6 @@
 @page "/analytics"
 @* Academic Advisor showed the same stats, grades table and insights; its URL now lands here. *@
 @page "/academic-advisor"
-@*
-[Authorize(Roles = "Student,Graduate")] removed on purpose (see
-Dashboard.razor): the server challenges every F5 to /login because
-the browser never sends the localStorage JWT as a bearer header.
-Access is still enforced: OnInitializedAsync below redirects other
-roles, and every /api endpoint is [Authorize]-guarded server-side.
-*@
 @using System.Net
 @using UniSphere.Api.Dtos
 @using UniSphere.Api.Services
@@ -263,22 +256,16 @@ else
     </div>
 }
 
-
 </RoleGate>
 @code {
     private PerformanceAnalysisDto? _analysis;
     private List<DashboardPerformanceRowDto>? _performance;
     private List<GpaTrendPointDto>? _trend;
     private string? _error;
-    // Deferred first-run guard (see OnAfterRenderAsync): prerender /
-    // pre-restore passes must not redirect or 401-logout a signed-in user.
     private bool _started;
 
     protected override async Task OnInitializedAsync()
     {
-        // F5: auth restores in OnAfterRenderAsync (JS interop). Never
-        // redirect to /login while it is still resolving: GetUserAsync()
-        // is null until the persisted token is read.
         if (!AuthService.IsInitialized)
             await AuthService.RestoreSessionAsync();
         if (!AuthService.IsInitialized)
@@ -304,8 +291,6 @@ else
     private async Task GuardAndLoadAsync()
     {
         _started = true;
-        // The router does not enforce roles client-side, so check here:
-        // non-students go back to their dashboard with an access message.
         var user = await AuthService.GetUserAsync();
         if (user is null)
         {
@@ -437,8 +422,6 @@ else
 
     private Microsoft.AspNetCore.Components.MarkupString TrendPointLabels(int i)
     {
-        // Built as markup because Razor reserves the <text> tag: SVG text
-        // elements with dynamic attributes don't parse as Blazor markup.
         var pt = _trend![i];
         var p = TrendPoint(i, _trend.Count);
         var label = System.Net.WebUtility.HtmlEncode(pt.Label);

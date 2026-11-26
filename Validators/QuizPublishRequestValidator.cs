@@ -3,10 +3,6 @@ using UniSphere.Api.Dtos;
 
 namespace UniSphere.Api.Validators;
 
-/// <summary>Validates the exact request the publish-quiz feature posts.
-/// Database-dependent checks (course exists, doctor assigned, material in
-/// course) are enforced again server-side in QuizPublishService — the client
-/// is never trusted for ownership or titles.</summary>
 public class QuizPublishRequestValidator : AbstractValidator<QuizPublishRequest>
 {
     private const int MaxQuestionTextLength = 1000;
@@ -31,10 +27,6 @@ public class QuizPublishRequestValidator : AbstractValidator<QuizPublishRequest>
             .When(x => x.Marks.HasValue)
             .WithMessage("Marks, when provided, must be between 1 and 1000.");
 
-        // Exam window (all optional; absent = always open). The close date
-        // is the hard server-side submit deadline, so it must lie in the
-        // future and after the open date. DurationMinutes is the advertised
-        // soft time budget shown to students, not auto-enforced.
         RuleFor(x => x.ClosesAtUtc)
             .Must(c => c!.Value > DateTime.UtcNow)
             .When(x => x.ClosesAtUtc.HasValue)

@@ -5,8 +5,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>CV PDFs from ReportLab (and others) wrap content streams in
-/// /Filter [/ASCII85Decode /FlateDecode]; the extractor must read them.</summary>
 public class CvPdfExtractionTests
 {
     [Fact]
@@ -54,7 +52,6 @@ public class CvPdfExtractionTests
         return ms.ToArray();
     }
 
-    /// <summary>Adobe ASCII85 encoder (test-side mirror of the decoder).</summary>
     private static string Ascii85(byte[] data)
     {
         var sb = new StringBuilder();

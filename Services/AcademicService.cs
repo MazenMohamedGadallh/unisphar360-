@@ -6,7 +6,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>Builds every block of the Academic Advisor screen.</summary>
 public class AcademicService
 {
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -21,7 +20,6 @@ public class AcademicService
         new("academic-insights", "View Academic Insights", "lightbulb", "/academic/insights", "#FFF4D9", "#E09A1A"),
     };
 
-    /// <summary>Weeks start on Sunday (matches the design).</summary>
     public static DateTime StartOfWeek(DateTime d) => d.Date.AddDays(-(int)d.DayOfWeek);
 
     public static string TimeAgo(DateTime utc)
@@ -44,9 +42,6 @@ public class AcademicService
     public static string GreetingFor(int hour) =>
         hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
 
-    /// <summary>Status rule for the dashboard performance table:
-    /// attendance below 90% or grade below B (3.0) needs attention;
-    /// A- or better (3.7+) with attendance 90%+ is excellent.</summary>
     public static string ComputeStatus(double gradePoints, int attendancePercent)
     {
         if (attendancePercent < 90 || gradePoints < 3.0) return "Needs Attention";
@@ -54,13 +49,8 @@ public class AcademicService
         return "Good";
     }
 
-    // Semester value stored on every Enrollment ("Current"). Filter
-    // case-insensitively so hand-written values like "current" still match.
     private const string CurrentSemester = "current";
 
-    /// <summary>Institutional 4.0 scale (matches the seeded demo records:
-    /// B+ = 3.3, A- = 3.7, ...). Used when a letter is assigned without
-    /// explicit points so GPA and letter always agree.</summary>
     public static double LetterToPoints(string letter) => letter.Trim().ToUpperInvariant() switch
     {
         "A" => 4.0,
@@ -84,10 +74,6 @@ public class AcademicService
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
         if (user is null) return null;
 
-        // Home badges are derived from the student's real Enrollments, not
-        // from a manually maintained SemesterRecord. Accounts imported or
-        // created without a semester snapshot therefore still get a summary
-        // (zeros are a valid state) instead of a 404.
         var stats = await GetEnrollmentStatsAsync(userId);
 
         return new DashboardSummaryDto(
@@ -99,10 +85,6 @@ public class AcademicService
             await GetUnreadCountAsync(userId));
     }
 
-    /// <summary>Academic stats computed directly from the student's
-    /// enrollments. SemesterRecords are only used as the previous-term
-    /// baseline for the delta badges (never as the source of the current
-    /// values).</summary>
     private async Task<AcademicStats> GetEnrollmentStatsAsync(int userId)
     {
         var enrollments = await _db.Enrollments.AsNoTracking()
@@ -128,8 +110,6 @@ public class AcademicService
         var total = enrollments.Select(e => e.CourseId).Distinct().Count();
         var percent = total == 0 ? 0 : (int)Math.Round(100.0 * completed / total);
 
-        // Below-B grades need attention; ungraded courses only count when
-        // attendance is already low (a fresh enrollment is not a warning).
         var toImprove = graded.Count(e => e.GradePoints <= 3.0)
             + enrollments.Count(e => string.IsNullOrWhiteSpace(e.GradeLetter) && e.AttendancePercent < 85);
 
@@ -177,8 +157,6 @@ public class AcademicService
     public static DashboardStudyDayDto ToDashboardDayDto(StudyPlanItem i) =>
         new(i.Id, i.Date, i.Date.ToString("ddd", Inv), i.Title, i.Hours, i.IsDone, i.Hours == 0);
 
-    /// <summary>Always exactly 7 days (Sunday..Saturday). Days without a
-    /// stored item come back as free days so the UI never has gaps.</summary>
     public async Task<DashboardStudyPlanDto> GetDashboardStudyPlanAsync(int userId, DateTime? weekStart = null)
     {
         var start = StartOfWeek(weekStart ?? DateTime.Today);
@@ -213,15 +191,11 @@ public class AcademicService
         return ToDashboardDayDto(item);
     }
 
-    /// <summary>Three rule-based cards generated from the student's real
-    /// grades and attendance: a warning, a progress note, a recommendation.</summary>
     public async Task<IReadOnlyList<DashboardInsightDto>> GetDashboardInsightsAsync(int userId)
     {
         var insights = new List<DashboardInsightDto>();
 
         var rows = await GetDashboardPerformanceAsync(userId, "Current");
-        // Focus on graded courses only: an ungraded (in-progress) course has
-        // no grade yet, so "grade ()" warnings would be nonsense.
         var weakest = rows
             .Where(r => !string.IsNullOrWhiteSpace(r.GradeLetter))
             .OrderBy(r => r.GradePoints).ThenBy(r => r.AttendancePercent)
@@ -332,7 +306,6 @@ public class AcademicService
             ComputeStatus(e.GradePoints, e.AttendancePercent))).ToList();
     }
 
-    /// <summary>Courses the student is not enrolled in, ranked by their track.</summary>
     public async Task<IReadOnlyList<CourseDto>> GetRecommendedAsync(int userId, int take = 4)
     {
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);

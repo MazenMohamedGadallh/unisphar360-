@@ -24,11 +24,9 @@ public class GraduateProfileController(
 {
     private int UserId => User.GetUserId();
 
-    /// <summary>Current graduate's career profile (lazily created).</summary>
     [HttpGet]
     public async Task<ActionResult<GraduateProfileDto>> Get() => await profiles.GetProfileAsync(UserId);
 
-    /// <summary>Update the career profile fields.</summary>
     [HttpPut]
     public async Task<ActionResult<GraduateProfileDto>> Update(GraduateProfileUpdateRequest request)
     {
@@ -37,14 +35,12 @@ public class GraduateProfileController(
         return await profiles.UpdateAsync(UserId, request);
     }
 
-    /// <summary>Deterministic profile completion audit (weights are documented).</summary>
     [HttpGet("completion")]
     public async Task<ActionResult<ProfileCompletionDto>> Completion() =>
         await profiles.GetCompletionAsync(UserId);
 
-    // ---- Skills ----
+    // Skills
 
-    /// <summary>Add or update a skill (same name, case-insensitive).</summary>
     [HttpPost("skills")]
     public async Task<ActionResult<GraduateSkillDto>> AddSkill(GraduateSkillCreateRequest request)
     {
@@ -57,7 +53,7 @@ public class GraduateProfileController(
     public async Task<IActionResult> RemoveSkill(int id) =>
         await profiles.RemoveSkillAsync(UserId, id) ? NoContent() : NotFound();
 
-    // ---- Profile entries ----
+    // Profile entries
 
     [HttpPost("entries")]
     public async Task<ActionResult<ProfileEntryDto>> AddEntry(ProfileEntryCreateRequest request)
@@ -79,9 +75,8 @@ public class GraduateProfileController(
     public async Task<IActionResult> RemoveEntry(int id) =>
         await profiles.RemoveEntryAsync(UserId, id) ? NoContent() : NotFound();
 
-    // ---- CV management ----
+    // CV management
 
-    /// <summary>Upload a CV (pdf/docx/txt, max 10MB). Extraction is best-effort per format.</summary>
     [HttpPost("cv")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> UploadCv(IFormFile file)
@@ -106,7 +101,6 @@ public class GraduateProfileController(
     public async Task<IActionResult> DeleteCv(int id) =>
         await cvs.DeleteAsync(UserId, id) ? NoContent() : NotFound();
 
-    /// <summary>Store manually typed CV text (fallback when extraction failed).</summary>
     [HttpPut("cv/{id:int}/manual-text")]
     public async Task<IActionResult> SaveCvManualText(int id, [FromBody] CvManualTextRequest request)
     {
@@ -121,7 +115,6 @@ public class GraduateProfileController(
         }
     }
 
-    /// <summary>Run a REAL AI analysis (requires a configured provider; never faked).</summary>
     [HttpPost("cv/{id:int}/analyze")]
     public async Task<IActionResult> AnalyzeCv(int id, [FromBody] CvAnalyzeRequest? request)
     {

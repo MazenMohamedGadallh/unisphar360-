@@ -206,8 +206,6 @@ else if (_overview is not null)
         _loading = true;
         _overview = await GetJsonAsync<GradOverviewModel>("/api/grad/overview");
         _loading = false;
-        // A lighter read for the notifications card (overview reload also
-        // refreshes it). Errors land in the generic _error banner above.
         if (_overview is not null)
             _notifications = await GetJsonAsync<List<GradNotificationRow>>("/api/notifications");
         StateHasChanged();

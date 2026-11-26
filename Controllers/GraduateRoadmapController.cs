@@ -51,7 +51,6 @@ public class GraduateRoadmapController(
     public async Task<IActionResult> Delete(int id) =>
         await roadmap.DeleteAsync(UserId, id) ? NoContent() : NotFound(new { error = "Roadmap item not found." });
 
-    /// <summary>AI-based roadmap suggestions (requires a configured provider).</summary>
     [HttpGet("suggest")]
     public async Task<IActionResult> Suggest(CancellationToken ct)
     {
@@ -66,7 +65,6 @@ public class GraduateRoadmapController(
         }
     }
 
-    /// <summary>Apply AI suggestions as real roadmap items.</summary>
     [HttpPost("apply-suggestions")]
     public async Task<IActionResult> Apply([FromBody] List<RoadmapSuggestionDto> picked) =>
         Ok(await roadmap.ApplySuggestionsAsync(UserId, picked ?? []));

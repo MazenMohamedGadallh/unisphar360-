@@ -11,10 +11,6 @@ public static class DbSeeder
 
     public static void Seed(AppDbContext db)
     {
-        // In-place rename for existing databases: the demo student was
-        // created as gehad@unisphere.edu in older seeds. Update that row
-        // (same Id, so grades/attendance/plans/notifications stay linked)
-        // instead of inserting a duplicate.
         var legacy = db.Users.FirstOrDefault(u => u.Email == DemoStudentOldEmail);
         if (legacy is not null && !db.Users.Any(u => u.Email == DemoStudentEmail))
         {
@@ -25,13 +21,6 @@ public static class DbSeeder
             db.SaveChanges();
         }
 
-
-        // The graduation ceremony event was added after many databases already
-        // had users (the seeder early-returns once users exist), so refresh it
-        // idempotently here instead of only inside the fresh-seed path.
-        // Only patch LEGACY databases (ones that already have events): the
-        // fresh-seed path below inserts the ceremony with the full event list,
-        // so running this too would double-count it.
         if (db.Events.Any() && !db.Events.Any(e => e.Title == "Graduation Ceremony 2026"))
         {
             db.Events.Add(new EventItem
@@ -44,9 +33,6 @@ public static class DbSeeder
             db.SaveChanges();
         }
 
-        // Legacy-database patch: earlier seeds created the demo graduate
-        // without a UniversityId, which left /api/university/me permanently
-        // 404 for that account. Link it to Cairo University when empty.
         var legacyGraduate = db.Users.FirstOrDefault(u => u.Email == "graduate@unisphere.edu");
         if (legacyGraduate is not null && legacyGraduate.UniversityId is null)
         {
@@ -58,9 +44,6 @@ public static class DbSeeder
             }
         }
 
-        // Roles (AppDbContext.OnModelCreating seeds these via HasData on
-        // EnsureCreated, so only insert when the table is still empty —
-        // otherwise a fresh database crashes with UNIQUE constraint on Roles.Id).
         if (!db.Roles.Any())
         {
             db.Roles.AddRange(
@@ -91,8 +74,6 @@ public static class DbSeeder
         if (db.Users.Any())
         {
             EnsureExistingInstallation(db, elShorouk, helwan);
-            // Demo jobs are idempotent (Source == "Demo" guard), so also run
-            // them for databases created before the career platform existed.
             SeedDemoJobs(db);
             if (legacyGraduate is not null)
                 SeedGraduateCareerDemo(db, legacyGraduate.Id);
@@ -293,8 +274,6 @@ public static class DbSeeder
             new ResearchPaper { Title = "Deep Residual Learning for Image Recognition", Authors = "He et al.", Abstract = "We present a residual learning framework to ease the training of networks that are substantially deeper than those used previously.", Url = "https://arxiv.org/abs/1512.03385", Source = "arxiv", PublishedDate = new DateTime(2015, 12, 10) }
         );
 
-        // Course materials for Mazen's university courses (3-4 per course,
-        // mixed types) plus 3 upcoming items (exams/announcement).
         var nowUtc = DateTime.UtcNow;
         void Material(string code, string title, string type, string description, string content, int daysAgo = 0)
         {
@@ -336,15 +315,8 @@ public static class DbSeeder
         db.SaveChanges();
     }
 
-    /// <summary>Demo job catalog (Source="Demo") — clearly-labeled seed content so
-    /// the search/matching/UI experience works before the first live sync.
-    /// Live rows (Source="Remotive") arrive via GET /api/grad/jobs/sync.
-    /// Demo rows never claim a fake posting URL: their "Open" link goes to a
-    /// real job-board search matching the title and location.</summary>
     public static void SeedDemoJobs(AppDbContext db)
     {
-        // Rewrite legacy demo links (old seeds pointed at example.com/*, which is
-        // not a real job board). Idempotent: only touches the placeholder URLs.
         var stale = db.JobListings
             .Where(j => j.Source == "Demo" && j.Url.Contains("://example.com/"))
             .ToList();
@@ -352,9 +324,6 @@ public static class DbSeeder
             j.Url = DemoJobLink(j.Title, j.Location, j.Remote);
         if (stale.Count > 0) db.SaveChanges();
 
-        // Applications created from the stale demo rows copied their URL — point
-        // those at the corrected listing link (placeholder pattern only, so any
-        // user-entered external URLs are never touched).
         var fixedListingIds = stale.Select(j => j.Id).ToHashSet();
         var staleApps = db.JobApplications
             .Where(a => a.SourceUrl != null && a.SourceUrl.Contains("://example.com/jobs/"))
@@ -432,27 +401,16 @@ public static class DbSeeder
                 FetchedAtUtc = utc
             });
         }
-        // Self-committing: the legacy-database path (early-return branch) has
-        // no outer SaveChanges, so persist the demo rows here.
         db.SaveChanges();
     }
 
-    /// <summary>Legitimate, relevant destination for a demo listing: a live
-    /// LinkedIn job search for the title in the listing's location (remote
-    /// listings get LinkedIn's remote-work filter). Real job board, no fake
-    /// postings, always relevant to the concrete role.</summary>
     public static string DemoJobLink(string title, string location, bool remote) =>
         remote
             ? "https://www.linkedin.com/jobs/search/?keywords=" + Uri.EscapeDataString(title) + "&location=Remote&f_WT=2"
             : "https://www.linkedin.com/jobs/search/?keywords=" + Uri.EscapeDataString(title) + "&location=" + Uri.EscapeDataString(location);
 
-    /// <summary>Seeds realistic starter career data owned by the demo graduate
-    /// account so the module is explorable immediately (login demo-account data).</summary>
     public static void SeedGraduateCareerDemo(AppDbContext db, int graduateUserId)
     {
-        // Recompute the guard from skills: some early databases already hold an
-        // EMPTY GraduateProfile row (auto-created when the pages were opened
-        // before the seeding fix). Seed whenever skills are missing, even then.
         var existingProfile = db.GraduateProfiles.FirstOrDefault(p => p.UserId == graduateUserId);
         if (existingProfile is not null && db.GraduateSkills.Any(s => s.UserId == graduateUserId)) return;
         var utc = DateTime.UtcNow;
@@ -478,8 +436,6 @@ public static class DbSeeder
         }
         else
         {
-            // Upgrade the empty legacy row in place instead of duplicating
-            // (GraduateProfiles has a unique index on UserId).
             existingProfile.Headline = demoProfile.Headline;
             existingProfile.CareerSummary = demoProfile.CareerSummary;
             existingProfile.LinkedInUrl = demoProfile.LinkedInUrl;
@@ -519,9 +475,6 @@ public static class DbSeeder
         if (!db.GraduateSettings.Any(s => s.UserId == graduateUserId))
             db.GraduateSettings.Add(new GraduateSettings { UserId = graduateUserId, NotifyNewMatches = true, NotifyFollowUps = true, MatchAlertThresholdPercent = 75 });
 
-        // Tracker starter rows + one saved demo job. Query the table (not
-        // ChangeTracker.Local): on reboots the demo jobs may already be
-        // persisted but untracked, and the starter rows must still link up.
         var savedSource = db.JobListings.FirstOrDefault(j => j.Title.Contains("Data Analyst"))
             ?? db.JobListings.Local.FirstOrDefault(j => j.Title.Contains("Data Analyst"));
         var appliedSource = db.JobListings.FirstOrDefault(j => j.Title.Contains("Backend Developer (.NET)"))
@@ -551,15 +504,11 @@ public static class DbSeeder
         db.SaveChanges();
     }
 
-    /// <summary>Adds missing foundation data to an existing database without
-    /// deleting or recreating anything (safe to run on every startup).</summary>
     private static void EnsureExistingInstallation(
         AppDbContext db, University elShorouk, University helwan)
     {
         var admin = db.Users.FirstOrDefault(u => u.Email == "admin@unisphere.edu");
 
-        // Phase 1: give the demo doctor a locked profile address on older
-        // installations so the read-only profile page has something to show.
         var demoDoctor = db.Users.FirstOrDefault(u => u.Email == "doctor@unisphere.edu");
         if (demoDoctor is not null && string.IsNullOrWhiteSpace(demoDoctor.Address))
             demoDoctor.Address = "12 Faculty Road, El Shorouk, Cairo";
@@ -572,9 +521,6 @@ public static class DbSeeder
                 graduate.GraduatedFrom = "Helwan University, Faculty of Computers and Artificial Intelligence";
         }
 
-        // Backfill legacy rows so scoped queries never expose unowned data.
-        // Skip a code that already exists in El Shorouk to protect the
-        // (UniversityId, Code) unique index on older installations.
         var elShoroukCodes = db.Courses
             .Where(c => c.UniversityId == elShorouk.Id)
             .Select(c => c.Code)
@@ -613,19 +559,11 @@ public static class DbSeeder
             });
         }
 
-        // Existing databases that predate the demo catalog block in the
-        // fresh-seed path have users but no El Shorouk courses, leaving the
-        // demo student/doctor/exam workspaces empty. Restore them additively.
         EnsureDemoCatalogCourses(db, elShorouk);
 
         db.SaveChanges();
     }
 
-    /// <summary>
-    /// Additive repair for older databases: recreate the demo catalog that
-    /// only the fresh-seed path used to insert. Missing rows are added,
-    /// existing rows are never overwritten or removed.
-    /// </summary>
     private static void EnsureDemoCatalogCourses(AppDbContext db, University elShorouk)
     {
         var demoCatalog = new (string Code, string Title, string Description, string Track)[]
@@ -679,13 +617,8 @@ public static class DbSeeder
         db.SaveChanges();
     }
 
-    /// <summary>Demo enrollments that can only be created after the CSV
-    /// catalog importer has inserted the Helwan courses.</summary>
     public static void EnsurePostCatalog(AppDbContext db)
     {
-        // Part 1: assign the El Shorouk demo doctor to the courses he already
-        // publishes materials for. Idempotent: only missing assignments are
-        // added, keyed by (course, doctor, term).
         var doctor = db.Users.FirstOrDefault(u => u.Email == "doctor@unisphere.edu");
         if (doctor is not null && doctor.UniversityId.HasValue)
         {
@@ -700,8 +633,6 @@ public static class DbSeeder
                 .Select(ci => new { ci.CourseId, ci.Term })
                 .ToList();
 
-            // The doctor module reads CourseAssignments; keep the legacy
-            // CourseInstructors rows mirrored there (idempotent on reruns).
             var existingAssignmentCourseIds = db.CourseAssignments
                 .Where(a => a.DoctorUserId == doctor.Id)
                 .Select(a => a.CourseId)
@@ -731,9 +662,6 @@ public static class DbSeeder
             }
         }
 
-        // The demo student's six current-course enrollments also belong to the
-        // post-catalog phase: older databases have the student but never got
-        // these rows. Additive only - existing enrollments keep their grades.
         var demoStudent = db.Users.FirstOrDefault(u => u.Email == DemoStudentEmail);
         if (demoStudent is not null && demoStudent.UniversityId.HasValue)
         {
@@ -772,9 +700,6 @@ public static class DbSeeder
                 });
             }
         }
-
-        // The legacy Helwan demo account was retired, so the Helwan
-        // CS 111/112 enrollment block that used to seed it is gone as well.
 
         db.SaveChanges();
     }

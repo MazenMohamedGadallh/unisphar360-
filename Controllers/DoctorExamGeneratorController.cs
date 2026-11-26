@@ -10,13 +10,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>
-/// Exam generator for doctors. Builds exam questions from a course's own
-/// materials using the configured AI provider, then persists the exam for
-/// later reuse. Every endpoint enforces that the doctor is assigned to the
-/// target course (via <see cref="CourseAccessService"/>) — foreign university
-/// courses return 404, never 403, so no existence leak.
-/// </summary>
 [Authorize(Roles = "Doctor")]
 [ApiController]
 [Route("api/doctor/exam-generator")]
@@ -38,14 +31,8 @@ public class DoctorExamGeneratorController : ControllerBase
 
     private int MeId => User.GetUserId();
 
-    // ------------------------------------------------------------------
     // Step 1: course picklist for the doctor (dropdown)
-    // ------------------------------------------------------------------
 
-    /// <summary>
-    /// Returns the courses this doctor is assigned to teach, for the exam
-    /// generator course dropdown.
-    /// </summary>
     [HttpGet("courses")]
     public async Task<ActionResult<IReadOnlyList<DoctorCourseDto>>> Courses(CancellationToken ct)
     {
@@ -54,17 +41,8 @@ public class DoctorExamGeneratorController : ControllerBase
         return Ok(await _examService.GetAssignedCoursesAsync(doctorUserId: MeId, ct));
     }
 
-    // ------------------------------------------------------------------
     // Step 2: generate questions from materials (draft, not saved)
-    // ------------------------------------------------------------------
 
-    /// <summary>
-    /// Generates exam questions from a course's lecture materials using the
-    /// configured AI provider. Returns a draft question set (not saved).
-    /// Requires the doctor to be assigned to the course; otherwise 404.
-    /// If the course has no materials with text, returns 400 with a clear
-    /// message.
-    /// </summary>
     [HttpPost("generate")]
     [EnableRateLimiting("exam-generator")]
     public async Task<ActionResult<ExamGenerationResponse>> Generate(
@@ -97,13 +75,8 @@ public class DoctorExamGeneratorController : ControllerBase
         }
     }
 
-    // ------------------------------------------------------------------
     // Step 3: save / list / get / update / delete exams
-    // ------------------------------------------------------------------
 
-    /// <summary>
-    /// Saves a generated exam with its questions to the database.
-    /// </summary>
     [HttpPost("exams")]
     [EnableRateLimiting("exam-generator")]
     public async Task<ActionResult<ExamDto>> SaveExam(
@@ -131,7 +104,6 @@ public class DoctorExamGeneratorController : ControllerBase
         }
     }
 
-    /// <summary>Lists the caller's saved exams (most recent first).</summary>
     [HttpGet("exams")]
     public async Task<ActionResult<IReadOnlyList<ExamListDto>>> ListExams(CancellationToken ct)
     {
@@ -139,7 +111,6 @@ public class DoctorExamGeneratorController : ControllerBase
         return Ok(exams);
     }
 
-    /// <summary>Gets one saved exam with all its questions.</summary>
     [HttpGet("exams/{examId:int}")]
     public async Task<ActionResult<ExamDto>> GetExam(int examId, CancellationToken ct)
     {
@@ -148,10 +119,6 @@ public class DoctorExamGeneratorController : ControllerBase
         return Ok(exam);
     }
 
-    /// <summary>
-    /// Updates an existing exam (title, question count/type/difficulty/language,
-    /// and replaces all questions).
-    /// </summary>
     [HttpPut("exams/{examId:int}")]
     [EnableRateLimiting("exam-generator")]
     public async Task<ActionResult<ExamDto>> UpdateExam(
@@ -181,7 +148,6 @@ public class DoctorExamGeneratorController : ControllerBase
         }
     }
 
-    /// <summary>Deletes an exam and all its questions.</summary>
     [HttpDelete("exams/{examId:int}")]
     public async Task<IActionResult> DeleteExam(int examId, CancellationToken ct)
     {
@@ -190,10 +156,6 @@ public class DoctorExamGeneratorController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>
-    /// Updates a single question inside an exam (text, options, answer,
-    /// explanation, source material, order).
-    /// </summary>
     [HttpPut("exams/{examId:int}/questions/{questionId:int}")]
     public async Task<ActionResult<ExamQuestionDto>> UpdateQuestion(
         int examId, int questionId,
@@ -215,7 +177,6 @@ public class DoctorExamGeneratorController : ControllerBase
         return Ok(question);
     }
 
-    /// <summary>Deletes a single question from an exam.</summary>
     [HttpDelete("exams/{examId:int}/questions/{questionId:int}")]
     public async Task<IActionResult> DeleteQuestion(
         int examId, int questionId, CancellationToken ct)

@@ -23,10 +23,6 @@ public class EnrollmentsController : ControllerBase
         _scope = scope;
     }
 
-    /// <summary>Get the logged-in user's enrollments with course details.
-    /// Students see the doctor's display title when one is set: the
-    /// doctor-module assignment row wins, legacy instructor rows still
-    /// resolve their titles, otherwise the catalog title is shown.</summary>
     [Authorize(Roles = "Student")]
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<EnrollmentDto>>> GetMyEnrollments()
@@ -38,8 +34,6 @@ public class EnrollmentsController : ControllerBase
             .OrderBy(e => e.Course!.Code)
             .ToListAsync();
 
-        // Doctor-editable display title, resolved server-side so clients
-        // cannot fake it (assignments win over legacy instructor rows).
         var titles = await ResolveDisplayTitlesAsync(
             enrollments.Select(e => e.CourseId).Distinct().ToList());
 
@@ -48,9 +42,6 @@ public class EnrollmentsController : ControllerBase
             e.Semester, e.GradeLetter, e.GradePoints, e.AttendancePercent, e.Status)).ToList();
     }
 
-    /// <summary>Latest non-null display title per course: doctor-module
-    /// CourseAssignment rows take precedence, legacy CourseInstructor rows
-    /// (and finally the catalog title) fill in.</summary>
     private async Task<Dictionary<int, string>> ResolveDisplayTitlesAsync(List<int> courseIds)
     {
         if (courseIds.Count == 0) return new Dictionary<int, string>();
@@ -71,7 +62,6 @@ public class EnrollmentsController : ControllerBase
         return titles;
     }
 
-    /// <summary>Enroll the logged-in user in a course in their university.</summary>
     [Authorize(Roles = "Student")]
     [HttpPost]
     public async Task<ActionResult<EnrollmentDto>> Enroll([FromBody] CreateEnrollmentRequest req)
@@ -79,8 +69,6 @@ public class EnrollmentsController : ControllerBase
         var userId = User.GetUserId();
         var scope = await _scope.GetAsync();
 
-        // The course must be visible in the caller's own university; foreign
-        // ids are indistinguishable from missing ids.
         var course = await _db.Courses.AsNoTracking()
             .VisibleToCurrentUser(scope)
             .FirstOrDefaultAsync(c => c.Id == req.CourseId);
@@ -103,8 +91,6 @@ public class EnrollmentsController : ControllerBase
             Status = "Good"
         };
 
-        // Optional: a student can add a course together with their own
-        // semester / grade / attendance (e.g. courses already taken).
         var recordError = ApplySelfRecord(enrollment, req.Semester, req.GradeLetter, req.AttendancePercent);
         if (recordError is not null) return BadRequest(recordError);
 
@@ -134,9 +120,6 @@ public class EnrollmentsController : ControllerBase
     private static readonly HashSet<string> AllowedLetters =
         new(StringComparer.OrdinalIgnoreCase) { "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "F" };
 
-    /// <summary>Validates and applies student-entered semester / grade /
-    /// attendance onto an enrollment. Null arguments leave a field as is.
-    /// Returns an error message, or null on success.</summary>
     private static string? ApplySelfRecord(Enrollment e, string? semester, string? gradeLetter, int? attendance)
     {
         if (semester is not null)
@@ -165,9 +148,6 @@ public class EnrollmentsController : ControllerBase
         return null;
     }
 
-    /// <summary>Student: record or correct their own semester, grade letter
-    /// and attendance for one of their enrollments. GPA is computed from
-    /// these values, so this is how a new account enters its real data.</summary>
     [Authorize(Roles = "Student")]
     [HttpPut("{id:int}/my-record")]
     public async Task<ActionResult<EnrollmentDto>> UpdateMyRecord(int id, [FromBody] UpdateMyRecordRequest req)
@@ -187,7 +167,6 @@ public class EnrollmentsController : ControllerBase
             enrollment.AttendancePercent, enrollment.Status));
     }
 
-    /// <summary>Drop a course (only if no grade assigned yet).</summary>
     [Authorize(Roles = "Student")]
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Drop(int id)
@@ -216,9 +195,6 @@ public class EnrollmentsController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Admin/Doctor: Update a student's grade, attendance, and status.
-    /// Doctors can only touch enrollments in courses assigned to them; that
-    /// check runs server-side so foreign ids return 404.</summary>
     [Authorize(Roles = "Admin,Doctor")]
     [HttpPut("{id:int}/grade")]
     public async Task<ActionResult<EnrollmentDto>> UpdateGrade(
@@ -242,9 +218,6 @@ public class EnrollmentsController : ControllerBase
 
         if (enrollment is null) return NotFound();
 
-        // Doctors may only grade their own assigned courses. Either the
-        // doctor-module assignment or the legacy admin-managed instructor
-        // row counts; otherwise the id stays indistinguishable (404).
         if (scope.Role == UserRole.Doctor)
         {
             var assigned = await _db.CourseInstructors.AsNoTracking().AnyAsync(ci =>
@@ -276,8 +249,6 @@ public class EnrollmentsController : ControllerBase
             enrollment.AttendancePercent, enrollment.Status));
     }
 
-    /// <summary>Admin/Doctor: Get all enrollments (optionally filter by userId).
-    /// Doctors only see enrollments in courses assigned to them.</summary>
     [Authorize(Roles = "Admin,Doctor")]
     [HttpGet("all")]
     public async Task<ActionResult<IReadOnlyList<EnrollmentDto>>> GetAll([FromQuery] int? userId = null)

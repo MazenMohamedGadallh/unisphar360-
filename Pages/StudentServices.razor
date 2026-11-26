@@ -1,12 +1,6 @@
 @page "/student-services"
 @* Student Events was a subset of this page; its URL now lands here. *@
 @page "/events"
-@*
-[Authorize] removed on purpose (see Dashboard.razor): the server
-challenges every F5 to /login because the browser never sends the
-localStorage JWT as a bearer header. /api stays [Authorize]-guarded
-and MainLayout bounces anonymous users to /login after auth resolves.
-*@
 @inject HttpClient Http
 
 <PageTitle>Campus - UniSphere 360+</PageTitle>
@@ -110,7 +104,6 @@ and MainLayout bounces anonymous users to /login after auth resolves.
         </div>
     </div>
 </div>
-
 
 </RoleGate>
 @code {

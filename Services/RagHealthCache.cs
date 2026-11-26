@@ -1,11 +1,5 @@
 namespace UniSphere.Api.Services;
 
-/// <summary>Cached health probe for the Python RAG service. The chat
-/// provider list is requested on every page load, so pinging the service
-/// each time would add a network round-trip (or a timeout wait when it is
-/// down) to every request. Results are cached for <see cref="CacheDuration"/>;
-/// a probe is skipped entirely after <c>RagApi:Enabled=false</c>.
-/// Registered as a singleton so one cache covers all requests.</summary>
 public sealed class RagHealthCache
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(30);
@@ -23,8 +17,6 @@ public sealed class RagHealthCache
 
         if (TryReadCache(out var cached)) return cached;
 
-        // One probe at a time so concurrent page loads don't all hit the
-        // Python service; the others re-check the cache and reuse the result.
         await _probeLock.WaitAsync(ct);
         try
         {

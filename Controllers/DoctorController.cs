@@ -9,12 +9,6 @@ using UniSphere.Api.Validators;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>
-/// Doctor-only endpoints. Every course-specific action re-verifies that the
-/// authenticated doctor is assigned to the requested course (via
-/// <see cref="DoctorAccessService"/>) and that the target row belongs to that
-/// course. Frontend route guards are never trusted on their own.
-/// </summary>
 [Authorize(Roles = "Doctor")]
 [ApiController]
 [Route("api/doctor")]
@@ -48,8 +42,6 @@ public class DoctorController : ControllerBase
 
     private int MeId => User.GetUserId();
 
-    /// <summary>Resolves the caller and authorizes a course. Returns a failure
-    /// result (or null when allowed) so each action stays a one-liner.</summary>
     private async Task<(User? User, ActionResult? Failure)> AuthorizeAsync(int courseId)
     {
         var result = await _access.AuthorizeCourseAsync(MeId, courseId);
@@ -59,9 +51,6 @@ public class DoctorController : ControllerBase
         return (result.User, null);
     }
 
-    /// <summary>Material writes are intentionally stricter than reads: a
-    /// course the caller is not assigned to is reported as 404 (not 403) so
-    /// foreign and unassigned course ids are indistinguishable.</summary>
     private async Task<(User? User, ActionResult? Failure)> AuthorizeMaterialWriteAsync(int courseId)
     {
         var result = await _access.AuthorizeCourseAsync(MeId, courseId);
@@ -70,12 +59,8 @@ public class DoctorController : ControllerBase
         return (result.User, null);
     }
 
-    // ---- Profile ----
+    // Profile
 
-    /// <summary>GET /api/doctor/profile — the doctor's own profile resolved
-    /// from the JWT claims only. Locked fields (name/email/phone/address/
-    /// university/department) are returned read-only; only AvatarUrl and the
-    /// per-course display titles are editable.</summary>
     [HttpGet("profile")]
     public async Task<ActionResult<DoctorProfileDto>> Profile()
     {
@@ -102,12 +87,6 @@ public class DoctorController : ControllerBase
             courses);
     }
 
-    /// <summary>PUT /api/doctor/profile — server-side enforcement that the
-    /// doctor can only change what is editable. The body is parsed as raw
-    /// JSON (the User entity is NEVER model-bound) and every key other than
-    /// the editable ones is rejected with 400 BEFORE anything is applied.
-    /// UpdateDoctorProfileRequest contains only editable fields by design;
-    /// all changes are audit-logged by the audit middleware.</summary>
     [HttpPut("profile")]
     public async Task<IActionResult> UpdateProfile([FromBody] System.Text.Json.JsonElement body)
     {
@@ -168,10 +147,6 @@ public class DoctorController : ControllerBase
             courses));
     }
 
-    /// <summary>POST /api/doctor/profile/avatar — uploads an avatar image.
-    /// The magic bytes (not the client MIME type) decide the format, the
-    /// stored name is a server-generated GUID and only a relative URL is
-    /// returned; the previous avatar file is deleted on replace.</summary>
     [HttpPost("profile/avatar")]
     [RequestSizeLimit(MaxAvatarBytes)]
     public async Task<ActionResult<MaterialUploadResultDto>> UploadAvatar(IFormFile file)
@@ -220,11 +195,6 @@ public class DoctorController : ControllerBase
         return Ok(new MaterialUploadResultDto(url, file.FileName ?? name, file.Length));
     }
 
-    /// <summary>My Course rows for the doctor: course code, catalog title,
-    /// term, the doctor's editable display title and the number of enrolled
-    /// students — computed on the server (AsNoTracking) from the Enrollments
-    /// table joined with students of the doctor's university (never trusted
-    /// from the client).</summary>
     [HttpGet("my-courses")]
     public async Task<ActionResult<IReadOnlyList<DoctorProfileCourseDto>>> MyCourses()
     {
@@ -233,11 +203,6 @@ public class DoctorController : ControllerBase
         return Ok(await GetMyCourseRowsAsync(me));
     }
 
-    /// <summary>PUT /api/doctor/courses/{courseId}/display-title — renames the
-    /// course only for this doctor's assignment row. Ownership is enforced by
-    /// looking up the (doctor, course) assignment directly: another doctor's
-    /// course or an unknown course returns 404, never a leak. Catalog code
-    /// and title are never touched.</summary>
     [HttpPut("courses/{courseId:int}/display-title")]
     public async Task<IActionResult> SetCourseDisplayTitle(
         int courseId, [FromBody] SetCourseDisplayTitleRequest req,
@@ -254,9 +219,6 @@ public class DoctorController : ControllerBase
         var me = await _access.GetUserAsync(MeId);
         if (me is null || me.IsDeleted) return Unauthorized();
 
-        // The doctor may be linked through either assignment table. Update
-        // every existing row for this doctor+course so both the legacy and
-        // doctor-module views stay in sync.
         var assignment = await _db.CourseAssignments
             .FirstOrDefaultAsync(a => a.DoctorUserId == me.Id && a.CourseId == courseId);
         var legacyRows = await _db.CourseInstructors
@@ -281,10 +243,6 @@ public class DoctorController : ControllerBase
             courseId, course.Code, course.Title, displayTitle, course.Semester, enrolledCount));
     }
 
-    /// <summary>Course rows used by both the profile and my-courses endpoints.
-    /// Assignments are read from both the legacy CourseInstructors rows and
-    /// the doctor-module CourseAssignments rows; enrolled counts are computed
-    /// on the server with AsNoTracking.</summary>
     private async Task<List<DoctorProfileCourseDto>> GetMyCourseRowsAsync(User me)
     {
         var courseIds = await _access.GetAssignedCourseIdsAsync(me.Id);
@@ -321,10 +279,6 @@ public class DoctorController : ControllerBase
             counts.TryGetValue(x.Id, out var n) ? n : 0)).ToList();
     }
 
-    /// <summary>Counts enrollments per course among non-deleted students of
-    /// the doctor's university. The university id always comes from the
-    /// claims-resolved user, never from client input. When the doctor has no
-    /// university assigned, all students of his courses count.</summary>
     private async Task<Dictionary<int, int>> CountEnrolledAsync(User me, IEnumerable<int> courseIds)
     {
         var ids = courseIds.ToList();
@@ -347,9 +301,6 @@ public class DoctorController : ControllerBase
     private async Task<int> CountEnrolledAsync(User me, int courseId) =>
         (await CountEnrolledAsync(me, new[] { courseId })).TryGetValue(courseId, out var n) ? n : 0;
 
-    /// <summary>Best-effort delete of a previously uploaded file by its
-    /// relative store URL (avatar). Files outside the expected subfolder are
-    /// never touched and the physical path is never exposed.</summary>
     private void DeleteUploadedFile(string? storeUrl, string subdir)
     {
         if (string.IsNullOrWhiteSpace(storeUrl)) return;
@@ -373,7 +324,7 @@ public class DoctorController : ControllerBase
         }
     }
 
-    // ---- Dashboard ----
+    // Dashboard
 
     [HttpGet("dashboard")]
     public async Task<ActionResult<DoctorDashboardDto>> Dashboard()
@@ -383,9 +334,6 @@ public class DoctorController : ControllerBase
         return await _doctor.GetDashboardAsync(me);
     }
 
-    /// <summary>GET /api/doctor/summary — compact workspace counters used by
-    /// the legacy Doctor Home page. Course ids come from both assignment
-    /// tables; student counts and content are always real database rows.</summary>
     [HttpGet("summary")]
     public async Task<ActionResult<DoctorSummaryDto>> Summary()
     {
@@ -443,7 +391,7 @@ public class DoctorController : ControllerBase
             upcoming.Select(m => materialDtos[m.Id]).ToList());
     }
 
-    // ---- Courses ----
+    // Courses
 
     [HttpGet("courses")]
     public async Task<ActionResult<IReadOnlyList<DoctorCourseDto>>> Courses()
@@ -535,11 +483,8 @@ public class DoctorController : ControllerBase
         return Ok(await _doctor.GetCourseAnalyticsAsync(course));
     }
 
-    // ---- Materials ----
+    // Materials
 
-    /// <summary>Legacy list used by /doctor/materials: all materials of the
-    /// caller's assigned courses, with the same filters and paging as the
-    /// student view. A courseId that is not assigned returns 404.</summary>
     [HttpGet("materials")]
     public async Task<ActionResult<PagedResultDto<MaterialDto>>> MyMaterials(
         [FromQuery] int? courseId = null,
@@ -583,9 +528,6 @@ public class DoctorController : ControllerBase
         return new PagedResultDto<MaterialDto>(dtos, total, page, pageSize);
     }
 
-    /// <summary>Legacy create used by /doctor/materials. The course id is in
-    /// the body; ownership is re-checked server-side and unassigned courses
-    /// return 404.</summary>
     [HttpPost("materials")]
     public async Task<ActionResult<MaterialDto>> CreateMaterialForCourse(
         [FromBody] CreateDoctorMaterialRequest req,
@@ -713,10 +655,6 @@ public class DoctorController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>POST /api/doctor/materials/{id}/file — attach or replace the
-    /// secure PDF/Word/PowerPoint file for one material. The material's course
-    /// is re-authorized server-side; foreign or unassigned courses are 404.
-    /// The old file is removed only after the new row state is saved.</summary>
     [HttpPost("materials/{materialId:int}/file")]
     [RequestSizeLimit(CourseMaterialFileStorage.TransportMaxBytes)]
     [RequestFormLimits(MultipartBodyLengthLimit = CourseMaterialFileStorage.TransportMaxBytes)]
@@ -762,9 +700,6 @@ public class DoctorController : ControllerBase
         return Ok(ToDto(material));
     }
 
-    /// <summary>DELETE /api/doctor/materials/{id}/file — removes the attachment
-    /// from the material and deletes the stored file. Same course ownership
-    /// rule as every other material write.</summary>
     [HttpDelete("materials/{materialId:int}/file")]
     public async Task<IActionResult> DeleteMaterialFile(int materialId)
     {
@@ -785,10 +720,6 @@ public class DoctorController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Uploads a lecture file for a course the doctor teaches.
-    /// Extension and size are validated, the stored name is a server-generated
-    /// GUID (no path traversal, never executed) and only a relative URL is
-    /// returned — the physical path is never exposed.</summary>
     [HttpPost("courses/{courseId:int}/materials/upload")]
     [RequestSizeLimit(MaxUploadBytes)]
     public async Task<ActionResult<MaterialUploadResultDto>> Upload(int courseId, IFormFile file)
@@ -819,7 +750,7 @@ public class DoctorController : ControllerBase
         return Ok(new MaterialUploadResultDto(url, file.FileName, file.Length));
     }
 
-    // ---- Announcements ----
+    // Announcements
 
     [HttpGet("courses/{courseId:int}/announcements")]
     public async Task<ActionResult<IReadOnlyList<DoctorAnnouncementDto>>> Announcements(int courseId)
@@ -922,9 +853,6 @@ public class DoctorController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Detects the image format from the first bytes of the stream,
-    /// ignoring the client-declared content type and extension entirely.
-    /// Returns the normalized extension, or null for unsupported data.</summary>
     private static string? DetectImageExtension(IFormFile file)
     {
         using var stream = file.OpenReadStream();
@@ -951,9 +879,6 @@ public class DoctorController : ControllerBase
         return null;
     }
 
-    /// <summary>Defence in depth: after DetectImageExtension picked the
-    /// extension, re-verify the first bytes from a fresh stream still match
-    /// that extension (guards against a truncated/raced file).</summary>
     private static bool IsAllowedImageHeader(byte[] header, string ext) => ext switch
     {
         ".png" => header.Length >= 4 && header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47,
@@ -969,9 +894,6 @@ public class DoctorController : ControllerBase
             m.OriginalFileName,
             m.FileSizeBytes);
 
-    /// <summary>Student-facing material rows always carry the course display
-    /// title and the instructor name(s), resolved server-side from the same
-    /// assignment tables that authorize course access.</summary>
     private async Task<List<MaterialDto>> ToMaterialDtosAsync(IReadOnlyCollection<CourseMaterial> materials)
     {
         if (materials.Count == 0) return new List<MaterialDto>();

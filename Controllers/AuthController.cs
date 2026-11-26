@@ -41,8 +41,6 @@ public class AuthController : ControllerBase
         return new AuthResponse(token, expires, ToDto(user));
     }
 
-    /// <summary>Create a Student, Graduate or Doctor account and return a token (the user is logged in right away).
-    /// Admin accounts can never be created through registration.</summary>
     [AllowAnonymous]
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponse>> Register(RegisterRequest req)
@@ -103,8 +101,6 @@ public class AuthController : ControllerBase
             _db.SemesterRecords.Add(new SemesterRecord { UserId = user.Id, Label = "Current semester", IsCurrent = true });
         _db.Notifications.Add(new Notification { UserId = user.Id, Title = "Welcome to UniSphere 360+", Body = "Your account is ready. Explore your dashboard." });
         _db.Activities.Add(new ActivityItem { UserId = user.Id, Kind = "announcement", Message = "Welcome to UniSphere 360+" });
-        // The audit middleware only logs authenticated calls, so record
-        // this anonymous registration explicitly in the same table.
         _db.AuditLogs.Add(new AuditLog
         {
             UserId = user.Id,
@@ -150,20 +146,17 @@ public class AuthController : ControllerBase
         return Ok(BuildResponse(user));
     }
 
-    /// <summary>All roles from the database (1 Student, 2 Graduate, 3 Doctor, 4 Admin).</summary>
     [AllowAnonymous]
     [HttpGet("roles")]
     public async Task<IReadOnlyList<RoleDto>> Roles() =>
         await _db.Roles.AsNoTracking().OrderBy(r => r.Id).Select(r => new RoleDto(r.Id, r.Name)).ToListAsync();
 
-    /// <summary>Universities for the registration dropdown.</summary>
     [AllowAnonymous]
     [HttpGet("universities")]
     public async Task<IReadOnlyList<UniversityDto>> Universities() =>
         await _db.Universities.AsNoTracking().OrderBy(u => u.Name)
             .Select(u => new UniversityDto(u.Id, u.Name, u.Logo)).ToListAsync();
 
-    /// <summary>Look up one role by its number. Returns 404 if the number is not in the database.</summary>
     [AllowAnonymous]
     [HttpGet("roles/{roleId:int}")]
     public async Task<ActionResult<RoleDto>> RoleById(int roleId)
@@ -172,7 +165,6 @@ public class AuthController : ControllerBase
         return role is null ? NotFound($"Role {roleId} not found.") : new RoleDto(role.Id, role.Name);
     }
 
-    /// <summary>The logged-in user (use it to check that a token is valid).</summary>
     [Authorize]
     [HttpGet("me")]
     public async Task<ActionResult<AuthUserDto>> Me()

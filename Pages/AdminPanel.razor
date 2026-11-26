@@ -1,11 +1,4 @@
 @page "/admin"
-@*
-[Authorize(Roles = "Admin")] removed on purpose (see Dashboard.razor):
-the server challenges every F5 to /login because the browser never
-sends the localStorage JWT as a bearer header. Access is still
-enforced: OnInitializedAsync below redirects non-admins, and every
-/api endpoint is [Authorize]-guarded server-side.
-*@
 @using System.Net
 @using UniSphere.Api.Dtos
 @using UniSphere.Api.Services
@@ -63,8 +56,6 @@ enforced: OnInitializedAsync below redirects non-admins, and every
             <div class="card-header"><h3>Logins per day (last 14 days)</h3></div>
             <div class="chart-container">
                 @{
-                    // Always plot a fixed 14-day window ending today (or the latest
-                    // recorded day) so one lone day never stretches across the chart.
                     var lastDay = _overview.LoginsPerDay.Any()
                         ? new[] { DateTime.Today, _overview.LoginsPerDay.Max(x => x.Date.Date) }.Max()
                         : DateTime.Today;
@@ -516,7 +507,6 @@ else if (_tab == "system")
     </div>
 }
 
-
 </RoleGate>
 @code {
     // Razor reserves the <text> tag, so SVG <text> elements are emitted as markup.
@@ -579,15 +569,10 @@ else if (_tab == "system")
     private List<UniversityDto>? _editUniversities;
     private bool _savingUser;
     private string? _editUserError;
-    // Deferred first-run guard: prerender / pre-restore passes must not
-    // redirect or 401-logout a signed-in user (see OnAfterRenderAsync).
     private bool _started;
 
     protected override async Task OnInitializedAsync()
     {
-        // F5: auth restores in OnAfterRenderAsync (JS interop). Never
-        // redirect to /login while it is still resolving: GetUserAsync()
-        // is null until the persisted token is read.
         if (!AuthService.IsInitialized)
             await AuthService.RestoreSessionAsync();
         if (!AuthService.IsInitialized)
@@ -660,8 +645,6 @@ else if (_tab == "system")
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
         {
-            // Genuine expiry only: loads are deferred until auth resolves,
-            // so a 401 here is never the pre-restore case on F5.
             if (!AuthService.IsInitialized)
             {
                 Toast("Could not load data. Check your connection and try again.", true);
@@ -710,7 +693,7 @@ else if (_tab == "system")
                 $"/api/admin/audit-log?page={_auditPage}&pageSize={AuditPageSize}"));
     }
 
-    // ---- Instructor assignments tab ----
+    // Instructor assignments tab
 
     private async Task LoadInstructorsAsync()
     {
@@ -868,7 +851,7 @@ else if (_tab == "system")
         if (action is not null) await action();
     }
 
-    // ---- Locked account fields edit dialog ----
+    // Locked account fields edit dialog
 
     private async Task OpenEditUserAsync(AdminUserDto u)
     {

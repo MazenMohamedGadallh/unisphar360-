@@ -212,11 +212,6 @@
     <NotAuthorized>
         @if (!AuthService.IsInitialized)
         {
-            @* Auth state still resolving from ProtectedLocalStorage: keep the
-               full shell (sidebar incl. pinned Logout) visible to avoid
-               flicker/disappear. Never render the anonymous layout here:
-               the session may still be restored a moment later. Same
-               markup/style as Authorized; main shows a small loader. *@
             <div class="app-container @(_sidebarCollapsed ? "sidebar-collapsed" : "")">
                 <aside class="sidebar @(_sidebarOpen ? "open" : "")">
                     <div class="sidebar-header">
@@ -288,9 +283,6 @@
                 @Body
             </main>
         }
-        @* Truly anonymous on a protected page: render nothing (no sidebar,
-           no protected @Body flash). OnParametersSetAsync / OnAfterRenderAsync
-           bounces to /login with replace: true. *@
     </NotAuthorized>
 </AuthorizeView>
 
@@ -324,9 +316,6 @@
     private string? _userRole;
     private bool _showLogoutModal;
     private bool _avatarMenuOpen;
-    // Set once this circuit bounces an anonymous user to /login, so the
-    // gate never navigates twice (and a later render pass can never
-    // re-render the layout as anonymous afterwards).
     private bool _authBounced;
     private IJSObjectReference? _guardModule;
     private DotNetObjectReference<MainLayout>? _guardRef;
@@ -386,8 +375,6 @@
 
     private bool IsHomePath()
     {
-        // Home = the app root (redirects to the dashboard) or the
-        // dashboard itself. Only Home arms the Back-button guard.
         var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
         return path is "" or "/" or "/dashboard";
     }
@@ -405,8 +392,6 @@
             _unreadCount = 0;
         }
 
-        // Refresh identity on every navigation so the menu (and user chip)
-        // appear right after login without a full reload.
         try
         {
             var me = await AuthService.GetUserAsync();
@@ -423,13 +408,6 @@
             // Stay with whatever identity we already have.
         }
 
-        // Client-side auth gate: after logout, a Back press can land the SPA
-        // router on a protected page without a full reload (so the server
-        // challenge never fires). Bounce anonymous users to /login.
-        // Public pages are left alone; the server stays the authority.
-        // While the persisted token is still being read (IsInitialized ==
-        // false: prerender / first render), never redirect and never render
-        // as anonymous: the session may still be restored.
         if (!IsPublicPath() && AuthService.IsInitialized && AuthService.GetToken() is null && !_authBounced)
         {
             _authBounced = true;
@@ -439,10 +417,6 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // First interactive render: pull the persisted session out of
-        // browser storage (covers full reloads and reconnects, where the
-        // scoped in-memory token is gone). No-op when already signed in.
-        // JS interop is available here but never during prerender.
         if (firstRender)
         {
             try
@@ -452,14 +426,9 @@
             }
             catch { }
 
-            // Single-flight restore (shared with RedirectToLogin / pages):
-            // exactly one storage read and one Notify per circuit.
             var restored = await AuthService.RestoreSessionAsync();
             if (restored)
             {
-                // Token arrived late (F5): reload identity/badge so the
-                // sidebar, role links, avatar menu and Logout appear at
-                // once instead of waiting for the next navigation.
                 await RefreshUserAsync();
                 var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
                 if (path is "/login" or "/register")
@@ -469,11 +438,6 @@
             }
             else if (AuthService.IsInitialized && !IsPublicPath() && AuthService.GetToken() is null && !_authBounced)
             {
-                // Storage read finished and there is no usable token:
-                // truly anonymous on a protected page. Bounce once with
-                // replace: true (/login itself is public, so no loop).
-                // Never redirect while !IsInitialized: a second
-                // prerender/interactive pass must not lock in anonymous.
                 _authBounced = true;
                 Nav.NavigateTo("/login", replace: true);
             }
@@ -518,12 +482,6 @@
 
     private async Task SyncBackGuardAsync()
     {
-        // OnAfterRenderAsync only runs on an interactive circuit, so JS
-        // interop is safe here (never during static prerendering).
-        // Armed on Home only ("/" or "/dashboard") while signed in with a
-        // resolved auth state — inner pages keep fully native Back, and the
-        // guard initializes after F5 restores the session too. Leaving Home
-        // (or logout) stops the guard and disposes the .NET reference.
         var shouldArm = AuthService.IsInitialized
             && AuthService.GetToken() is not null
             && IsHomePath();
@@ -608,10 +566,6 @@
     [JSInvokable]
     public Task OnBackPressed()
     {
-        // Back was pressed on Home (the guard only arms there): offer the
-        // modal only while still signed in on Home with a resolved auth
-        // state. Anything else (logout raced us, navigated away) is ignored
-        // so inner-page Back stays untouched.
         if (!AuthService.IsInitialized || AuthService.GetToken() is null || !IsHomePath())
             return Task.CompletedTask;
         _showLogoutModal = true;
@@ -621,8 +575,6 @@
 
     private async Task OpenLogoutModal()
     {
-        // Loading (F5 restore in flight): don't bounce to /login — the
-        // session may still restore. Show the modal optimistically.
         if (AuthService.IsLoading)
         {
             _showLogoutModal = true;
@@ -895,8 +847,6 @@
 
     private static Microsoft.AspNetCore.Components.MarkupString Highlight(string text, string term)
     {
-        // Encode first, then mark — offsets stay valid because the match is
-        // located on the raw text before encoding the fragments.
         var index = string.IsNullOrWhiteSpace(term)
             ? -1
             : text.IndexOf(term.Trim(), StringComparison.OrdinalIgnoreCase);

@@ -1,14 +1,5 @@
 namespace UniSphere.Api.Models;
 
-/// <summary>A research paper uploaded by a doctor. DoctorUserId and
-/// UniversityId are always set on the server from the authenticated user —
-/// never accepted from the client. PdfPath is a server-generated GUID file
-/// name stored under App_Data/research (outside wwwroot, so it is never
-/// served statically and the physical path is never exposed); downloads go
-/// through the authorized ResearchHubController instead.
-/// Cross-university Browse is by design the exception to isolation: any
-/// doctor/admin can list PUBLISHED papers; private data (email/phone) of
-/// the author is never included in browse/detail output.</summary>
 public class DoctorResearch
 {
     public int Id { get; set; }

@@ -3,11 +3,6 @@ using System.Text.RegularExpressions;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>Minimal Markdown subset rendered WITHOUT raw HTML passthrough:
-/// every text fragment is HTML-encoded first, so model output can never
-/// inject markup or scripts. Supports fenced code blocks, headings, lists,
-/// bold, inline code and http(s) links. Block texts render with dir="auto"
-/// for Arabic RTL support.</summary>
 public abstract record MdBlock;
 
 public record MdHeading(int Level, string Text) : MdBlock;
@@ -114,7 +109,6 @@ public static class SimpleMarkdown
         return blocks;
     }
 
-    /// <summary>Inline formatting on already-safe HTML: bold, code, links.</summary>
     public static string Inline(string text)
     {
         // 1. Pull out `code` spans so inner markup is never interpreted.
@@ -128,7 +122,7 @@ public static class SimpleMarkdown
         // 2. Encode everything else.
         var html = System.Net.WebUtility.HtmlEncode(staged);
 
-        // 3. Links [text](http...) — http(s) only.
+        // 3. Links [text](http...) - http(s) only.
         html = Regex.Replace(html, @"\[([^\]]+)\]\((https?://[^)\s]+)\)",
             m => $"<a href=\"{m.Groups[2].Value}\" target=\"_blank\" rel=\"noopener\">{m.Groups[1].Value}</a>");
 

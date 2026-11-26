@@ -1,17 +1,10 @@
 namespace UniSphere.Api.Dtos;
 
-// ---- Doctor profile (/api/doctor/profile)
+// Doctor profile (/api/doctor/profile)
 
-/// <summary>The doctor's own profile. FirstName/MiddleName/LastName/Email/
-/// Address/PhoneNumber/UniversityName/Department are LOCKED (read-only,
-/// editable only by an admin); AvatarUrl and the per-course display titles
-/// are editable by the doctor. Identity always resolves from the JWT claims.</summary>
 public record DoctorProfileDto(
     int Id,
     string FirstName, string? MiddleName, string LastName,
-    // Additive fields kept for this project's Phase-1 pages/tests (the legacy
-    // Blazor profile page binds FullName; UniversityId/Specialization let the
-    // client render its own university links without new server round-trips).
     string FullName,
     int? UniversityId,
     string Email, string? Address, string PhoneNumber,
@@ -20,24 +13,15 @@ public record DoctorProfileDto(
     string? AvatarUrl,
     IReadOnlyList<DoctorProfileCourseDto> Courses);
 
-/// <summary>One course assigned to the doctor with its editable display title
-/// (catalog title/code stay read-only) and the server-computed number of
-/// enrolled students in the doctor's university.</summary>
 public record DoctorProfileCourseDto(
     int CourseId, string Code, string CatalogTitle,
     string? DisplayTitle, string Semester, int EnrolledCount);
 
-/// <summary>PUT /api/doctor/profile body. Deliberately contains ONLY the
-/// editable fields. Any locked field (name, email, phone, address,
-/// university, department, ...) in the JSON is rejected with 400 by the
-/// controller before binding; the User entity is never model-bound.</summary>
 public record UpdateDoctorProfileRequest(string? AvatarUrl);
 
-/// <summary>POST /api/doctor/profile/avatar result (same shape as material uploads).</summary>
-/// <summary>PUT /api/doctor/courses/{id}/display-title body.</summary>
 public record SetCourseDisplayTitleRequest(string? DisplayTitle);
 
-// ---- Doctor dashboard (/api/doctor/dashboard)
+// Doctor dashboard (/api/doctor/dashboard)
 
 public record DoctorDashboardDto(
     string DoctorName,
@@ -57,17 +41,15 @@ public record DoctorCourseDetailDto(
     int Id, string Code, string Title, string Description,
     string Track, int Credits, string Semester, string Department, int? AcademicYear);
 
-// ---- Doctor course students (/api/doctor/courses/{id}/students)
+// Doctor course students (/api/doctor/courses/{id}/students)
 
 public record DoctorStudentDto(
     int EnrollmentId, int StudentId, string FullName, string Email,
     string Department, int? AcademicYear,
     string GradeLetter, double GradePoints, int AttendancePercent, string Status,
-    /// <summary>Additive (this project's legacy page binds it): the student's
-    /// major, resolved server-side from the user row.</summary>
     string Major = "");
 
-// ---- Doctor course analytics (/api/doctor/courses/{id}/analytics)
+// Doctor course analytics (/api/doctor/courses/{id}/analytics)
 
 public record GradeBucketDto(string Label, int Count);
 
@@ -84,7 +66,7 @@ public record DoctorCourseAnalyticsDto(
     IReadOnlyList<AttendanceBucketDto> AttendanceDistribution,
     IReadOnlyList<DoctorAlertDto> Alerts);
 
-// ---- Doctor materials (/api/doctor/courses/{id}/materials)
+// Doctor materials (/api/doctor/courses/{id}/materials)
 
 public record DoctorMaterialDto(
     int Id, int CourseId, string Title, string Type, string Description,
@@ -97,9 +79,6 @@ public record CreateDoctorMaterialRequest(
     string Title, string Type, string? Description, string? Content,
     string? FileUrl, DateTime? DeadlineUtc)
 {
-    /// <summary>Used only by the legacy top-level POST /api/doctor/materials
-    /// page flow. Course-scoped routes take the course id from the URL and
-    /// ignore this value.</summary>
     public int CourseId { get; init; }
 }
 
@@ -109,18 +88,16 @@ public record UpdateDoctorMaterialRequest(
 
 public record MaterialUploadResultDto(string FileUrl, string FileName, long SizeBytes);
 
-// ---- Doctor announcements (/api/doctor/courses/{id}/announcements)
+// Doctor announcements (/api/doctor/courses/{id}/announcements)
 
 public record DoctorAnnouncementDto(
     int Id, int? CourseId, string? CourseName, string Title, string Body,
     string? Category, DateTime CreatedAtUtc,
-    /// <summary>Additive (this project's legacy page binds it): true when the
-    /// announcement was authored by the doctor reading it.</summary>
     bool IsMine = false);
 
 public record CreateCourseAnnouncementRequest(string Title, string Body, string? Category);
 
-// ---- Admin: doctor <-> course assignments (/api/course-assignments)
+// Admin: doctor <-> course assignments (/api/course-assignments)
 
 public record CourseAssignmentDto(
     int Id, int CourseId, string CourseCode, string CourseTitle,
@@ -128,7 +105,7 @@ public record CourseAssignmentDto(
 
 public record CreateCourseAssignmentRequest(int DoctorUserId, int CourseId);
 
-// ---- AI teaching assistant (/api/doctor/ai)
+// AI teaching assistant (/api/doctor/ai)
 
 public record QuizGenerationRequest(int CourseId, int? MaterialId, int QuestionCount = 5);
 

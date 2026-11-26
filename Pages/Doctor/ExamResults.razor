@@ -93,6 +93,7 @@
                                                 <th>Student</th>
                                                 <th>Score</th>
                                                 <th>Percent</th>
+                                                <th>To grade</th>
                                                 <th>Submitted</th>
                                             </tr>
                                         </thead>
@@ -103,11 +104,41 @@
                                                     <td>@t.FullName</td>
                                                     <td>@t.Score / @t.MaxScore</td>
                                                     <td>@(t.Percent is null ? "—" : $"{t.Percent:0.#}%")</td>
+                                                    <td>@(t.PendingGrading > 0 ? $"{t.PendingGrading} written" : "—")</td>
                                                     <td>@FormatDate(t.SubmittedAtUtc)</td>
                                                 </tr>
                                             }
                                         </tbody>
                                     </table>
+                                </div>
+                            }
+
+                            @if (_written.Count > 0)
+                            {
+                                <h4 style="margin-top: 14px;">Written answers (@_written.Count(w => !w.Graded) to grade)</h4>
+                                <div class="recommendation-list">
+                                    @foreach (var w in _written)
+                                    {
+                                        <div class="recommendation-item" style="display: block;">
+                                            <div class="rec-info">
+                                                <span class="rec-code">@w.StudentName · Q@(w.OrderIndex + 1) · @w.QuestionType</span>
+                                                <span class="rec-title" dir="auto">@w.QuestionText</span>
+                                                <span dir="auto"><strong>Student answer:</strong> @w.TextAnswer</span>
+                                                @if (!string.IsNullOrWhiteSpace(w.ModelAnswer))
+                                                {
+                                                    <span class="rec-track" dir="auto"><strong>Model answer:</strong> @w.ModelAnswer</span>
+                                                }
+                                            </div>
+                                            <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
+                                                @if (w.Graded)
+                                                {
+                                                    <span class="@(w.IsCorrect ? "status-badge passed" : "status-badge needs-attention")">@(w.IsCorrect ? "Correct" : "Incorrect")</span>
+                                                }
+                                                <button class="btn btn-sm btn-primary" disabled="@(_grading == w.AnswerId)" @onclick="() => GradeAsync(w, true)">Correct</button>
+                                                <button class="btn btn-sm btn-outline" disabled="@(_grading == w.AnswerId)" @onclick="() => GradeAsync(w, false)">Incorrect</button>
+                                            </div>
+                                        </div>
+                                    }
                                 </div>
                             }
 
@@ -146,6 +177,8 @@
     private List<ExamListDto> _publishedExams = new();
     private int _selectedExamId;
     private DoctorExamResultsDto? _results;
+    private List<DoctorWrittenAnswerDto> _written = new();
+    private int? _grading;
 
     protected override async Task OnInitializedAsync()
     {
@@ -210,21 +243,53 @@
     private async Task LoadResultsAsync()
     {
         _results = null;
+        _written = new();
         if (_selectedExamId <= 0) return;
         _error = "";
         try
         {
             _results = await Http.GetFromJsonAsync<DoctorExamResultsDto>(
                 $"/api/doctor/exam-assistant/exams/{_selectedExamId}/results");
+            _written = await Http.GetFromJsonAsync<List<DoctorWrittenAnswerDto>>(
+                $"/api/doctor/exam-assistant/exams/{_selectedExamId}/written-answers") ?? new();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            // Not owned / unknown exam → treat as no data (never confirm ids).
+            // Not owned / unknown exam -> treat as no data (never confirm ids).
             _results = null;
         }
         catch (Exception ex)
         {
             _error = "Could not load results: " + ex.Message;
+        }
+    }
+
+    private async Task GradeAsync(DoctorWrittenAnswerDto answer, bool isCorrect)
+    {
+        _grading = answer.AnswerId;
+        _error = "";
+        try
+        {
+            var resp = await Http.PostAsJsonAsync(
+                $"/api/doctor/exam-assistant/exams/{_selectedExamId}/written-answers/{answer.AnswerId}/grade",
+                new GradeWrittenAnswerRequest(isCorrect));
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = "Could not save the grade. Please try again.";
+                return;
+            }
+            // Refresh scores and the pending counts.
+            var keep = _selectedExamId;
+            await LoadResultsAsync();
+            _selectedExamId = keep;
+        }
+        catch (Exception ex)
+        {
+            _error = "Could not save the grade: " + ex.Message;
+        }
+        finally
+        {
+            _grading = null;
         }
     }
 

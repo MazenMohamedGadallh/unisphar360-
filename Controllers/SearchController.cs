@@ -9,9 +9,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>Grouped, permission-aware search for the topbar search box.
-/// Courses, materials and events are limited to the caller's university;
-/// study-plan results are student-only and users are admin-only.</summary>
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]

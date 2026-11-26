@@ -144,8 +144,6 @@ else if (_settings is not null)
         // Persist with account settings lazily: the next Save carries themePreference.
         if (_settings is null)
         {
-            // Settings never loaded (GET failed): do NOT fabricate defaults
-            // that would silently overwrite the user's saved preferences.
             return;
         }
         _settings.ThemePreference = theme;

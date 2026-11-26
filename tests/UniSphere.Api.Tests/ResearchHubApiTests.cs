@@ -8,16 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>
-/// Integration coverage for the Phase 2 Research Hub API
-/// (Controllers/ResearchHubController.cs): upload with server-authoritative
-/// identity, magic-byte PDF validation, cross-university browse visibility,
-/// draft isolation, ownership rules, role rules and filter combinations.
-/// Tests share one throw-away database (the factory) and run sequentially;
-/// every paper created here is deleted again, so no rows or PDF files leak.
-/// upload endpoints are rate limited to 10 uploads/10min per user - the
-/// doctor stays far below that across the whole class.
-/// </summary>
 public class ResearchHubApiTests : IClassFixture<ApiFactory>
 {
     private const string PdfBytes =
@@ -221,8 +211,6 @@ public class ResearchHubApiTests : IClassFixture<ApiFactory>
     {
         var other = await OtherDoctorClient();
 
-        // Browsing works for every doctor; uploading is blocked until an
-        // admin assigns a university (server-side rule honored exactly once).
         var browse = await other.GetAsync("/api/research-hub");
         Assert.Equal(HttpStatusCode.OK, browse.StatusCode);
 
@@ -235,7 +223,7 @@ public class ResearchHubApiTests : IClassFixture<ApiFactory>
         Assert.Empty(mine!);
     }
 
-    // ---- helpers ----
+    // helpers
 
     private static MultipartFormDataContent Multipart(string title, bool isPublished = false,
         bool fakePdf = false, int? yearOverride = null, string? fieldOverride = null)
@@ -310,11 +298,6 @@ public class ResearchHubApiTests : IClassFixture<ApiFactory>
 
     private string FindResearchDir()
     {
-        // App_Data/research lives next to the API project. Resolve it the same
-        // way ResearchHubController does: from the running app's
-        // IWebHostEnvironment.ContentRootPath, which is the repository root
-        // under WebApplicationFactory (works regardless of where the test
-        // binaries are built).
         var root = _factory.Services.GetRequiredService<
             Microsoft.AspNetCore.Hosting.IWebHostEnvironment>().ContentRootPath;
         var path = Path.Combine(root, "App_Data", "research");

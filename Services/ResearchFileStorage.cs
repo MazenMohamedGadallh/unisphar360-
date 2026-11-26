@@ -2,18 +2,11 @@ using Microsoft.AspNetCore.Http;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>A user-facing validation failure while storing a research PDF.</summary>
 public sealed class ResearchFileException : Exception
 {
     public ResearchFileException(string message) : base(message) { }
 }
 
-/// <summary>
-/// Stores research PDFs outside the executable/wwwroot paths, under
-/// App_Data/research by default. Files are renamed to a random GUID and only
-/// that file name is stored in the database; absolute server paths are never
-/// persisted or returned to clients.
-/// </summary>
 public sealed class ResearchFileStorage
 {
     public const long MaxPdfBytes = 20L * 1024 * 1024; // 20 MB
@@ -35,7 +28,6 @@ public sealed class ResearchFileStorage
         _logger = logger;
     }
 
-    /// <summary>Saves a PDF and returns the generated file name (not a path).</summary>
     public async Task<string> SavePdfAsync(IFormFile file, CancellationToken cancellationToken = default)
     {
         if (file is null || file.Length <= 0)
@@ -84,12 +76,9 @@ public sealed class ResearchFileStorage
         }
     }
 
-    /// <summary>Resolves a stored file name to an absolute path, rejecting any
-    /// value that is not a bare *.pdf file name (path traversal guard).</summary>
     public string? ResolvePath(string? fileName) =>
         StoredFileStorage.ResolvePath(_root, fileName, PdfExtensions);
 
-    /// <summary>Best-effort delete; a missing/unreadable file never fails the API call.</summary>
     public void Delete(string? fileName)
     {
         var path = ResolvePath(fileName);

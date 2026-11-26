@@ -15,7 +15,6 @@ public class CareerController : ControllerBase
     private readonly AppDbContext _db;
     public CareerController(AppDbContext db) => _db = db;
 
-    /// <summary>Career recommendations based on the student's major and completed courses.</summary>
     [HttpGet("recommendations")]
     public async Task<ActionResult<IReadOnlyList<object>>> GetRecommendations()
     {
@@ -84,7 +83,6 @@ public class CareerController : ControllerBase
         return Ok(recommendations);
     }
 
-    /// <summary>Skill gap analysis based on target career vs completed courses.</summary>
     [HttpGet("skill-gaps")]
     public async Task<ActionResult<object>> GetSkillGaps()
     {

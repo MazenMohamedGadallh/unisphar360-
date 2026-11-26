@@ -50,7 +50,7 @@
 
     private static readonly string[] PhotoExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".avif" };
 
-    // Sorted by file name, so the order can be controlled with 01-, 02-, … prefixes.
+    // Sorted by file name, so the order can be controlled with 01-, 02-, ... prefixes.
     private IEnumerable<string> CampusPhotos()
     {
         var dir = Path.Combine(Env.WebRootPath, "images", "campus");

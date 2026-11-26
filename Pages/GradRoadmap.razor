@@ -194,8 +194,6 @@ else
         _suggesting = true;
         _error = null;
         StateHasChanged();
-        // The API returns an envelope { suggestions, source } — a bare list
-        // would fail to deserialize here, so read the envelope first.
         var response = await GetJsonAsync<GradRoadmapSuggestionListModel>("/api/grad/roadmap/suggest");
         _suggesting = false;
         var suggestions = response?.Suggestions;

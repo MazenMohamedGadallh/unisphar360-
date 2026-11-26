@@ -5,20 +5,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Real in-app career notifications for graduates, shown on the shared
-/// /notifications page and counted by the graduate overview. Generation is
-/// idempotent: each notification carries a per-user dedupe key, so running
-/// the generator twice never duplicates rows (the store enforces the same
-/// rule with a partial unique index).
-///
-/// Sources, all backed by real database rows:
-///   - Strong new job matches (score &gt;= the graduate's alert threshold),
-///     one per job — regenerated when the catalog syncs or the profile grows.
-///   - Application follow-up reminders (interviews/deadlines in the next
-///     7 days, or lately overdue active applications).
-///   - University career-office announcements (category "career").
-/// </summary>
 public class GraduateNotificationService(
     AppDbContext db,
     JobMatchingService matching,
@@ -29,13 +15,9 @@ public class GraduateNotificationService(
     public const string CategoryFollowUp = "FollowUp";
     public const string CategoryAnnouncement = "CareerAnnouncement";
 
-    // Application statuses that end a follow-up lifecycle (plain strings:
-    // JobApplications stores free-text statuses).
     private const string StatusRejected = "Rejected";
     private const string StatusWithdrawn = "Withdrawn";
 
-    /// <summary>Run every generator for one graduate. Returns how many
-    /// new notifications were created.</summary>
     public async Task<int> GenerateAllAsync(int userId)
     {
         int created = 0;
@@ -46,11 +28,6 @@ public class GraduateNotificationService(
         return created;
     }
 
-    /// <summary>Notifications for strong NEW matches. Settings gate it
-    /// (NotifyNewMatches + threshold). Dedupe key "match:{jobId}" keeps one
-    /// notification per job regardless of how the score changes afterwards.
-    /// Precomputed matches (overview flow) are reused to avoid a second
-    /// scoring pass.</summary>
     public async Task<int> EnsureMatchAlertsAsync(int userId, IReadOnlyList<JobMatchDto>? precomputed = null)
     {
         var settings = await EnsureSettingsAsync(userId);
@@ -58,8 +35,6 @@ public class GraduateNotificationService(
 
         var matches = precomputed ?? await matching.MatchForUserAsync(userId, limit: 50, minScore: 0);
 
-        // Alert-targeting filters from the settings page (defaults = "everything").
-        // Empty lists never filter: an empty alert box would be silent confusion.
         var keywords = SplitFilter(settings.AlertKeywords);
         var locations = SplitFilter(settings.AlertLocations);
         var candidates = matches.ToList();
@@ -103,10 +78,6 @@ public class GraduateNotificationService(
         return rows.Count;
     }
 
-    /// <summary>Application follow-ups: remind about dates in the next 7 days
-    /// (one reminder per application per follow-up date) and stale overdue
-    /// dates on still-active applications (one row per application). Settings
-    /// gate it (NotifyFollowUps).</summary>
     public async Task<int> EnsureFollowUpRemindersAsync(int userId)
     {
         var settings = await EnsureSettingsAsync(userId);
@@ -168,9 +139,6 @@ public class GraduateNotificationService(
         return rows.Count;
     }
 
-    /// <summary>University career office announcements: the last 30 days of
-    /// "career" category rows. Dedupe key "announcement:{id}"; no settings
-    /// toggle for these because they are university-wide messages.</summary>
     public async Task<int> EnsureAnnouncementNoticesAsync(int userId)
     {
         var cutoff = DateTime.UtcNow.AddDays(-30);
@@ -203,7 +171,7 @@ public class GraduateNotificationService(
         return rows.Count;
     }
 
-    // ---------------- helpers ----------------
+    // helpers
 
     private Task<List<string>> ExistingKeysAsync(int userId, IReadOnlyList<string> keys) =>
         db.Notifications.AsNoTracking()
@@ -227,8 +195,6 @@ public class GraduateNotificationService(
     private static string Truncate(string text, int max) =>
         text.Length <= max ? text : text[..max].TrimEnd() + "…";
 
-    /// <summary>Parses the comma-separated alert filters from GraduateSettings;
-    /// null input means "no filter configured" and returns an empty list.</summary>
     private static IReadOnlyList<string> SplitFilter(string? raw) =>
         string.IsNullOrWhiteSpace(raw)
             ? []

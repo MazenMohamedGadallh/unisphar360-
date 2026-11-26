@@ -5,13 +5,9 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>One course's inputs for the study plan (all real data).</summary>
 public record StudyPlanCourseInput(
     string Course, double GradePoints, int AttendancePercent, int Credits, double ClassAverageGradePoints);
 
-/// <summary>Builds a personal weekly study plan: more hours for courses the
-/// student is weak in, that are hard for the whole class (low class average),
-/// that carry more credits, or where attendance is low.</summary>
 public class StudyPlanGenerator
 {
     public const string PlanNote = "AI study plan";
@@ -27,8 +23,6 @@ public class StudyPlanGenerator
         _weights = weights;
     }
 
-    /// <summary>Weekly hours per course, proportional to need. Every course
-    /// gets at least 1 hour; the total equals <paramref name="totalHours"/>.</summary>
     public static IReadOnlyList<StudyPlanCourseDto> Allocate(IReadOnlyList<StudyPlanCourseInput> courses, int totalHours)
     {
         if (courses.Count == 0) return Array.Empty<StudyPlanCourseDto>();
@@ -73,8 +67,6 @@ public class StudyPlanGenerator
         .ToList();
     }
 
-    /// <summary>Spreads the weekly hours over the study days in 1-2 hour
-    /// sessions, highest-priority courses first, at most 4 hours a day.</summary>
     public static IReadOnlyList<StudyPlanSessionDto> Schedule(IReadOnlyList<StudyPlanCourseDto> courses, DateTime weekStart)
     {
         var blocks = new List<(string Course, int Hours)>();
@@ -135,8 +127,6 @@ public class StudyPlanGenerator
         return new StudyPlanSuggestionDto(start, courses.Sum(c => c.WeeklyHours), courses, Schedule(courses, start));
     }
 
-    /// <summary>Writes the suggested sessions into the study planner for the next 7 days,
-    /// replacing an earlier unfinished AI plan. Manual items are never touched.</summary>
     public async Task<int> ApplyAsync(int userId)
     {
         var plan = await SuggestAsync(userId);

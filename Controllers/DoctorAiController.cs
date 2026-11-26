@@ -5,11 +5,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>
-/// Doctor AI teaching assistant. Provider availability is honest: when no AI
-/// provider is configured the endpoints return 503 with a clear message
-/// (never a fake success). Course content is always authorized server-side.
-/// </summary>
 [Authorize(Roles = "Doctor")]
 [ApiController]
 [Route("api/doctor/ai")]
@@ -57,11 +52,6 @@ public class DoctorAiController : ControllerBase
         return await RunAsync(() => _ai.GenerateQuizAsync(MeId, req, ct));
     }
 
-    /// <summary>Publish the generated quiz to eligible enrolled students by
-    /// reusing the exam infrastructure (draft + publish + notify, one
-    /// transaction). Course existence, doctor assignment and material
-    /// ownership are recomputed server-side; the draft rolls back if the
-    /// publication step fails.</summary>
     [HttpPost("quiz/publish")]
     public async Task<ActionResult<QuizPublishResponse>> PublishQuiz(
         [FromBody] QuizPublishRequest req,

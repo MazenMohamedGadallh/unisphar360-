@@ -6,11 +6,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Components;
 
-/// <summary>
-/// Shared plumbing for graduate pages: role guard (bounces non-graduates to
-/// the student dashboard), typed GET/POST helpers with consistent error
-/// extraction from { error } / ProblemDetails bodies.
-/// </summary>
 public abstract class GradPageBase : ComponentBase
 {
     [Inject] protected HttpClient Http { get; set; } = default!;
@@ -20,11 +15,8 @@ public abstract class GradPageBase : ComponentBase
     protected bool _loading;
     protected string? _error;
 
-    // Populated after GuardGraduateAsync succeeds (kept for potential
-    // diagnostics); pages read the role from AuthService directly when needed.
     private string? _role;
 
-    /// <summary>True when the signed-in account is a Graduate; else bounce.</summary>
     protected async Task<bool> GuardGraduateAsync()
     {
         try
@@ -69,9 +61,6 @@ public abstract class GradPageBase : ComponentBase
         }
     }
 
-    /// <summary>POST with a JSON body; returns error text or null. Exceptions
-    /// (network, circuit, serialization) are converted into error text so calling
-    /// pages never abort before clearing their busy flags (no infinite loaders).</summary>
     protected async Task<(T? Value, string? Error)> PostJsonAsync<T>(string url, object payload)
     {
         try
@@ -102,7 +91,6 @@ public abstract class GradPageBase : ComponentBase
         }
     }
 
-    /// <summary>POST multipart form data (file uploads); returns error text or null.</summary>
     protected async Task<(T? Value, string? Error)> PostMultipartAsync<T>(string url, MultipartFormDataContent content)
     {
         try
@@ -121,7 +109,6 @@ public abstract class GradPageBase : ComponentBase
         }
     }
 
-    /// <summary>POST with a JSON body; success may return an empty body.</summary>
     protected async Task<string?> PostExpectNoBodyAsync(string url, object payload)
     {
         try
@@ -136,7 +123,6 @@ public abstract class GradPageBase : ComponentBase
         }
     }
 
-    /// <summary>PUT with a JSON body; success may return an empty body.</summary>
     protected async Task<string?> PutExpectNoBodyAsync(string url, object payload)
     {
         try

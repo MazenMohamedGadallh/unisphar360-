@@ -5,8 +5,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>Personal performance analytics for the logged-in student.
-/// The user id always comes from the JWT claims, never from the client.</summary>
 [Authorize(Roles = "Student")]
 [ApiController]
 [Route("api/analytics")]

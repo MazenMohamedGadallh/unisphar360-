@@ -29,8 +29,6 @@ public class DoctorModuleTests : IClassFixture<ApiFactory>
         resp.EnsureSuccessStatusCode();
         var list = await resp.Content.ReadFromJsonAsync<List<DoctorCourse>>();
         Assert.NotNull(list);
-        // This project's seed/backfill assigns the demo doctor to six courses
-        // (CS350, CS330, CS240, CS320, CS210, CS120), not the friend's four.
         Assert.Equal(6, list.Count);
         Assert.All(list, c => Assert.Contains(c.Code,
             new[] { "CS350", "CS330", "CS240", "CS320", "CS210", "CS120" }));
@@ -145,9 +143,6 @@ public class DoctorModuleTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task GradeUpdate_UnassignedCourse_Forbidden()
     {
-        // A doctor who is not assigned to the course cannot grade it. The
-        // server keeps the id indistinguishable (404, never 403) so foreign
-        // ids reveal nothing about other doctors' enrollments.
         var email = $"doc3-{Guid.NewGuid():N}@unisphere.edu";
         var reg = await _factory.CreateClient().PostAsJsonAsync("/api/auth/register", new Dictionary<string, object?>
         {

@@ -1,0 +1,35 @@
+Code,Title,Description,Track,Credits,Department,AcademicYear,Semester,Prerequisites
+CS101,Programming Fundamentals,"Problem solving with Python: variables, control flow, functions, lists and files.",CS,3,CS,1,Term 1,
+CS103,Introduction to Computing,"How computers work: number systems, hardware, operating systems and the internet.",CS,3,CS,1,Term 1,
+MATH101,Calculus I,"Limits, derivatives and integrals of one variable, with applications.",CS,3,CS,1,Term 1,
+PHY101,Physics I,"Mechanics, electricity and magnetism for engineering students.",CS,3,CS,1,Term 1,
+CS120,Discrete Mathematics,"Logic, sets, relations, combinatorics and graphs for computer science.",CS,3,Computer Engineering,1,Term 2,
+ENG101,Technical English,"Reading and writing technical documents, reports and presentations in English.",CS,3,CS,1,Term 2,
+HUM101,Ethics and Human Rights,"Professional ethics, human rights and the social impact of technology.",CS,3,CS,1,Term 2,
+MATH102,Calculus II,"Integration techniques, sequences, series and functions of several variables.",CS,3,CS,1,Term 2,MATH101
+CS202,Object-Oriented Programming,"Classes, inheritance, polymorphism and design principles in Java.",CS,3,CS,2,Term 1,CS101
+CS203,Digital Logic Design,"Boolean algebra, combinational and sequential circuits.",CS,3,Computer Engineering,2,Term 1,CS103
+MATH201,Linear Algebra,"Matrices, vector spaces, eigenvalues and linear transformations.",CS,3,CS,2,Term 1,MATH101
+STAT201,Probability and Statistics,"Probability, random variables, distributions and statistical inference.",CS,3,CS,2,Term 1,MATH102
+CS204,Computer Organization,"CPU design, memory hierarchy, assembly language and I/O.",CS,3,Computer Engineering,2,Term 2,CS203
+CS210,Data Structures & Algorithms,"Lists, stacks, queues, trees, graphs, sorting and complexity analysis.",CS,3,Computer Engineering,2,Term 2,CS202;CS120
+CS240,Web Development,"HTML, CSS, JavaScript and building a simple backend.",Software,3,Computer Engineering,2,Term 2,CS202
+MATH202,Numerical Methods,"Root finding, interpolation, numerical integration and linear systems.",CS,3,CS,2,Term 2,MATH201
+AI310,Artificial Intelligence,"Search, knowledge representation, reasoning and an introduction to learning.",CS,3,CS,3,Term 1,CS210;STAT201
+CS301,Algorithms,"Algorithm design: greedy, divide and conquer, dynamic programming and graph algorithms.",CS,3,CS,3,Term 1,CS210
+CS302,Operating Systems,"Processes, threads, scheduling, memory management and file systems.",CS,3,Computer Engineering,3,Term 1,CS204
+CS320,Computer Networks,"TCP/IP, routing, switching and network design.",IT,3,Computer Engineering,3,Term 1,CS204
+CS330,Database Systems,"Relational modeling, SQL, normalization and transactions.",CS,3,Computer Engineering,3,Term 1,CS210
+AI320,Data Mining,"Finding patterns in data: association rules, clustering and classification.",CS,3,CS,3,Term 2,CS330;STAT201
+CS304,Human-Computer Interaction,"Designing usable interfaces: user research, prototyping and evaluation.",CS,3,CS,3,Term 2,CS240
+CS340,Mobile App Development,Building cross-platform mobile apps with Flutter.,Software,3,CS,3,Term 2,CS240
+CS350,Machine Learning,"Supervised and unsupervised learning, model evaluation and feature engineering.",AI,3,Computer Engineering,3,Term 2,AI310;MATH201
+SE301,Software Engineering,"Requirements, design, testing and project management in software teams.",CS,3,CS,3,Term 2,CS202
+CS351,Deep Learning,"Neural networks, CNNs, RNNs and transformers.",AI,3,CS,4,Term 1,CS350
+CS362,Natural Language Processing,"Text processing, language models and retrieval-augmented generation.",AI,3,CS,4,Term 1,CS350
+CS420,Cloud Computing,"Virtualization, containers and cloud services.",IT,3,CS,4,Term 1,CS320
+CS440,Information Security,"Cryptography, network security and secure software development.",CS,3,CS,4,Term 1,CS320
+GP401,Graduation Project,A two-term team project that builds and presents a complete system.,CS,6,CS,4,Term 1,SE301
+AI430,Computer Vision,"Image processing, object detection and segmentation.",CS,3,CS,4,Term 2,CS351
+CS430,Advanced Databases,"Query optimization, NoSQL and distributed databases.",CS,3,CS,4,Term 2,CS330
+CS470,Distributed Systems,"Replication, consistency, consensus and fault tolerance.",CS,3,CS,4,Term 2,CS420;CS302

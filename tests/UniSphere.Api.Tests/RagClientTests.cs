@@ -7,8 +7,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>Mocked-HTTP coverage for the shared server-side RAG client. These
-/// tests never contact the local RAG service or a real model provider.</summary>
 public class RagClientTests
 {
     private sealed class ScriptedHandler : HttpMessageHandler

@@ -10,12 +10,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>
-/// Exam Assistant for doctors. Generate exams from selected lecture materials,
-/// review/edit, then publish to eligible students with per-student
-/// notifications. All endpoints enforce server-side course ownership:
-/// foreign courses return 404, students get 403.
-/// </summary>
 [Authorize(Roles = "Doctor")]
 [ApiController]
 [Route("api/doctor/exam-assistant")]
@@ -34,11 +28,8 @@ public class DoctorExamAssistantController : ControllerBase
 
     private int MeId => User.GetUserId();
 
-    // ------------------------------------------------------------------
     // Courses + materials for the doctor
-    // ------------------------------------------------------------------
 
-    /// <summary>Courses assigned to this doctor (dropdown).</summary>
     [HttpGet("courses")]
     public async Task<ActionResult<IReadOnlyList<ExamCatalogCourseDto>>> Courses(CancellationToken ct)
     {
@@ -59,7 +50,6 @@ public class DoctorExamAssistantController : ControllerBase
         return Ok(courses);
     }
 
-    /// <summary>Materials of a course (title + content preview) for selection.</summary>
     [HttpGet("courses/{courseId:int}/materials")]
     public async Task<ActionResult<IReadOnlyList<MaterialDto>>> Materials(int courseId, CancellationToken ct)
     {
@@ -79,11 +69,8 @@ public class DoctorExamAssistantController : ControllerBase
         return Ok(materials);
     }
 
-    // ------------------------------------------------------------------
     // Generate
-    // ------------------------------------------------------------------
 
-    /// <summary>Generate exam questions from selected materials.</summary>
     [HttpPost("generate")]
     [EnableRateLimiting("exam-generator")]
     public async Task<ActionResult<ExamGenerationResponse>> Generate(
@@ -114,11 +101,28 @@ public class DoctorExamAssistantController : ControllerBase
         }
     }
 
-    // ------------------------------------------------------------------
-    // Exams (doctor CRUD)
-    // ------------------------------------------------------------------
+    [HttpPost("translate")]
+    [EnableRateLimiting("exam-generator")]
+    public async Task<ActionResult<IReadOnlyList<GeneratedExamQuestionDto>>> Translate(
+        [FromBody] TranslateQuestionsRequest req, CancellationToken ct)
+    {
+        if (req.Questions is null) return BadRequest(new { message = "Questions are required." });
+        try
+        {
+            return Ok(await _examAssistant.TranslateQuestionsAsync(req.Questions, req.Language, ct));
+        }
+        catch (AiUnavailableException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = ex.Message });
+        }
+        catch (AiInvalidResponseException ex)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = ex.Message });
+        }
+    }
 
-    /// <summary>Save a draft exam with its questions.</summary>
+    // Exams (doctor CRUD)
+
     [HttpPost("exams")]
     [EnableRateLimiting("exam-generator")]
     public async Task<ActionResult<ExamDto>> SaveExam(
@@ -145,7 +149,6 @@ public class DoctorExamAssistantController : ControllerBase
         }
     }
 
-    /// <summary>List the doctor's exams (drafts and published).</summary>
     [HttpGet("exams")]
     public async Task<ActionResult<IReadOnlyList<ExamListDto>>> ListExams(CancellationToken ct)
     {
@@ -153,7 +156,6 @@ public class DoctorExamAssistantController : ControllerBase
         return Ok(exams);
     }
 
-    /// <summary>Get one exam with its questions.</summary>
     [HttpGet("exams/{examId:int}")]
     public async Task<ActionResult<ExamDto>> GetExam(int examId, CancellationToken ct)
     {
@@ -162,7 +164,6 @@ public class DoctorExamAssistantController : ControllerBase
         return Ok(exam);
     }
 
-    /// <summary>Update a draft exam (title, questions).</summary>
     [HttpPut("exams/{examId:int}")]
     [EnableRateLimiting("exam-generator")]
     public async Task<ActionResult<ExamDto>> UpdateExam(
@@ -191,7 +192,6 @@ public class DoctorExamAssistantController : ControllerBase
         }
     }
 
-    /// <summary>Delete a draft exam.</summary>
     [HttpDelete("exams/{examId:int}")]
     public async Task<IActionResult> DeleteExam(int examId, CancellationToken ct)
     {
@@ -200,7 +200,6 @@ public class DoctorExamAssistantController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Publish a draft exam and notify eligible students.</summary>
     [HttpPost("exams/{examId:int}/publish")]
     [EnableRateLimiting("exam-generator")]
     public async Task<ActionResult<ExamDto>> PublishExam(
@@ -221,11 +220,6 @@ public class DoctorExamAssistantController : ControllerBase
     }
 }
 
-/// <summary>
-/// Student-facing exam endpoints. Visibility is evaluated at query time:
-/// only published exams for currently-enrolled courses at the student's
-/// university. Correct answers are never returned.
-/// </summary>
 [Authorize(Roles = "Student")]
 [ApiController]
 [Route("api/student/exams")]
@@ -240,7 +234,6 @@ public class StudentExamsController : ControllerBase
 
     private int MeId => User.GetUserId();
 
-    /// <summary>List published exams visible to this student.</summary>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<StudentExamDto>>> List(CancellationToken ct)
     {
@@ -248,9 +241,6 @@ public class StudentExamsController : ControllerBase
         return Ok(exams);
     }
 
-    /// <summary>Get one published exam as a full detail view: metadata plus
-    /// its questions in the safe StudentExamQuestionDto shape (correct
-    /// answers and explanations are never selected server-side).</summary>
     [HttpGet("{examId:int}")]
     public async Task<ActionResult<StudentExamDetailDto>> Get(int examId, CancellationToken ct)
     {
@@ -260,10 +250,6 @@ public class StudentExamsController : ControllerBase
     }
 }
 
-/// <summary>
-/// User notification settings. Each user can set On / MuteUntil / Off.
-/// Applied server-side when publishing exams.
-/// </summary>
 [Authorize]
 [ApiController]
 [Route("api/user/notification-settings")]

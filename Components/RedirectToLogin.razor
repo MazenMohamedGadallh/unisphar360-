@@ -2,10 +2,6 @@
 @inject AuthenticationStateProvider AuthState
 @inject UniSphere.Api.Services.BlazorAuthService AuthService
 
-@* Shown while the persisted session is still being read from
-   ProtectedLocalStorage (prerender / first interactive render).
-   This replaces the old immediate redirect, which signed users
-   out on every F5 because the token had not been loaded yet. *@
 @if (_loading)
 {
     <div class="flex min-h-[80vh] flex-col items-center justify-center gap-3.5 text-sm text-text-secondary" role="status">
@@ -20,8 +16,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Fresh render with an already-resolved state (e.g. an SPA
-        // navigation to a protected page while signed out): decide now.
         var state = await AuthState.GetAuthenticationStateAsync();
         _loading = BlazorAuthService.IsLoadingState(state.User);
         if (!_loading)
@@ -32,9 +26,6 @@
     {
         if (firstRender && _loading)
         {
-            // JS interop is available now: re-read the persisted token
-            // and raise the state change so the router (AuthorizeRouteView)
-            // re-evaluates the route with the final auth state.
             await AuthService.RestoreSessionAsync();
             var state = await AuthState.GetAuthenticationStateAsync();
             _loading = BlazorAuthService.IsLoadingState(state.User);
@@ -42,10 +33,6 @@
             return;
         }
 
-        // Reached only when this component is still rendered after the
-        // auth state resolved — i.e. the route really is off-limits:
-        // the session ended (anonymous) or the user's role does not
-        // allow this page. Redirect exactly once, with replace: true.
         var current = await AuthState.GetAuthenticationStateAsync();
         if (BlazorAuthService.IsLoadingState(current.User) || _redirected)
             return;
@@ -59,15 +46,11 @@
         _redirected = true;
         if (state.User.Identity?.IsAuthenticated == true)
         {
-            // Authenticated but not authorized for this page: send the user
-            // to the home route for their own role.
             var role = state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
             Nav.NavigateTo(UniSphere.Api.Services.RoleRoutes.HomeFor(role), replace: true);
         }
         else
         {
-            // Truly anonymous: to the login page (replace, no loop —
-            // /login itself is AllowAnonymous).
             Nav.NavigateTo("/login", replace: true);
         }
     }

@@ -12,21 +12,9 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>
-/// Acceptance tests for publishing AI-generated doctor quizzes to enrolled
-/// students, reusing the existing exam infrastructure end to end (no separate
-/// quiz tables). Covers: publish success + status, question mapping
-/// (CorrectAnswer resolved server-side to the option TEXT, OptionsJson),
-/// eligible-student visibility, no answer leakage to students, exclusion of
-/// ineligible students, authorization failures, payload validation,
-/// notification counts, rollback of orphan drafts when publication fails, and
-/// the best-effort duplicate guard (409).
-/// Everything here runs against the factory's throw-away SQLite database —
-/// the developer's unisphere-v6.db is never touched.
-/// </summary>
 public class QuizPublishTests : IClassFixture<ApiFactory>
 {
-    // ---- one-time seed shared by every test in this class ----
+    // one-time seed shared by every test in this class
     private static readonly SemaphoreSlim SeedLock = new(1, 1);
     private static bool _seeded;
 
@@ -46,7 +34,7 @@ public class QuizPublishTests : IClassFixture<ApiFactory>
 
     public QuizPublishTests(ApiFactory factory) => _factory = factory;
 
-    // ---------- seed ----------
+    // seed
 
     private async Task SeedAsync()
     {
@@ -143,7 +131,7 @@ public class QuizPublishTests : IClassFixture<ApiFactory>
             PasswordHash = PasswordService.Hash(role == UserRole.Doctor ? "Doctor123!" : "Student123!"),
         };
 
-    // ---------- clients ----------
+    // clients
 
     private async Task<HttpClient> DoctorAsync()
     {
@@ -165,7 +153,7 @@ public class QuizPublishTests : IClassFixture<ApiFactory>
         return _factory.AuthedClient(await _factory.LoginAsync(email, "Student123!"));
     }
 
-    // ---------- request helpers ----------
+    // request helpers
 
     private const string ExplanationSecret = "EXPLANATIONSECRET";
 
@@ -202,7 +190,7 @@ public class QuizPublishTests : IClassFixture<ApiFactory>
         return client.PostAsJsonAsync(PublishEndpoint, req);
     }
 
-    // ---------- 1-8: happy paths ----------
+    // 1-8: happy paths
 
     [Fact]
     public async Task Publish_Succeeds_And_Returns_Counts()
@@ -276,8 +264,6 @@ public class QuizPublishTests : IClassFixture<ApiFactory>
             .Where(q => q.ExamId == examId)
             .ToListAsync();
         Assert.NotEmpty(rows);
-        // CorrectIndex=1 => the option text "Option B", stored as text; a
-        // client-supplied answer field could never inject anything else.
         Assert.All(rows, q => Assert.Equal("Option B", q.CorrectAnswer));
         Assert.All(rows, q => Assert.Equal("MCQ", q.QuestionType));
     }
@@ -375,7 +361,7 @@ public class QuizPublishTests : IClassFixture<ApiFactory>
             (await lonely.GetAsync($"/api/student/exams/{examId}")).StatusCode);
     }
 
-    // ---------- 9-14: authorization + validation ----------
+    // 9-14: authorization + validation
 
     [Fact]
     public async Task Unassigned_Doctor_Gets_400()
@@ -448,7 +434,7 @@ public class QuizPublishTests : IClassFixture<ApiFactory>
         Assert.Contains("material", raw, StringComparison.OrdinalIgnoreCase);
     }
 
-    // ---------- 15-17: notifications, rollback, duplicates ----------
+    // 15-17: notifications, rollback, duplicates
 
     [Fact]
     public async Task Notification_Count_Equals_Eligible_Recipients()
@@ -480,9 +466,6 @@ public class QuizPublishTests : IClassFixture<ApiFactory>
         await SeedAsync();
         var title = UniqueTitle("Rollback");
 
-        // Swap in a failing publish step: the fake persists a real draft exam
-        // through the scoped AppDbContext (inside the quiz service's ambient
-        // transaction) and then throws during publication.
         var host = _factory.WithWebHostBuilder(b => b.ConfigureServices(services =>
         {
             services.RemoveAll<IExamAssistantService>();
@@ -491,9 +474,6 @@ public class QuizPublishTests : IClassFixture<ApiFactory>
         }));
 
         var client = host.CreateClient();
-        // The derived host shares the base factory's database + signing key,
-        // so a token minted there is valid here. The publish endpooint is
-        // doctor-only; Authentication must be attached explicitly.
         var token = await _factory.LoginAsync(_doctorEmail, "Doctor123!");
         client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
@@ -503,8 +483,6 @@ public class QuizPublishTests : IClassFixture<ApiFactory>
         var resp = await client.PostAsJsonAsync(PublishEndpoint, req);
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
 
-        // The draft staged by the fake must be gone — publication failing
-        // inside the transaction rolls the whole draft back.
         using var scope = host.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         Assert.False(await db.Exams.AsNoTracking().AnyAsync(e => e.Title == title));
@@ -525,13 +503,17 @@ public class QuizPublishTests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
     }
 
-    // ---------- fake used only by the orphan-draft rollback test ----------
+    // fake used only by the orphan-draft rollback test
 
     private sealed class PublishFailingExamAssistant(AppDbContext db)
         : IExamAssistantService
     {
         public Task<ExamGenerationResponse> GenerateFromMaterialsAsync(
             int doctorUserId, ExamAssistantGenerationRequest req, CancellationToken ct)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<GeneratedExamQuestionDto>> TranslateQuestionsAsync(
+            IReadOnlyList<GeneratedExamQuestionDto> questions, string language, CancellationToken ct)
             => throw new NotSupportedException();
 
         public async Task<ExamDto> CreateDraftExamAsync(

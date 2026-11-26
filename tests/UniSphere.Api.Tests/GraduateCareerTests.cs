@@ -4,18 +4,13 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>
-/// Graduate career platform (api/grad/*): profile, skills, CV, jobs,
-/// applications, roadmap, interview, matches, skill-gap, overview,
-/// alumni and settings — against freshly seeded demo data.
-/// </summary>
 public class GraduateCareerTests : IClassFixture<ApiFactory>
 {
     private readonly ApiFactory _factory;
 
     public GraduateCareerTests(ApiFactory factory) => _factory = factory;
 
-    // ---------- Profile ----------
+    // Profile
 
     [Fact]
     public async Task Profile_ReturnsSeededGraduate()
@@ -77,7 +72,7 @@ public class GraduateCareerTests : IClassFixture<ApiFactory>
         Assert.InRange(completion!.Percent, 60, 100);
     }
 
-    // ---------- CV ----------
+    // CV
 
     [Fact]
     public async Task Cv_UploadTxt_ParsesText()
@@ -116,7 +111,7 @@ public class GraduateCareerTests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    // ---------- Jobs ----------
+    // Jobs
 
     [Fact]
     public async Task Jobs_SearchSeededCatalog()
@@ -181,7 +176,7 @@ public class GraduateCareerTests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
     }
 
-    // ---------- Applications ----------
+    // Applications
 
     [Fact]
     public async Task Applications_CrudAndSummary()
@@ -221,7 +216,7 @@ public class GraduateCareerTests : IClassFixture<ApiFactory>
         delete.EnsureSuccessStatusCode();
     }
 
-    // ---------- Roadmap ----------
+    // Roadmap
 
     [Fact]
     public async Task Roadmap_CrudAndProgress()
@@ -261,7 +256,7 @@ public class GraduateCareerTests : IClassFixture<ApiFactory>
         delete.EnsureSuccessStatusCode();
     }
 
-    // ---------- Interview ----------
+    // Interview
 
     [Fact]
     public async Task Interview_CuratedSession_NoAiNeeded()
@@ -278,7 +273,7 @@ public class GraduateCareerTests : IClassFixture<ApiFactory>
         Assert.Equal(5, session.Questions.Count);
         Assert.All(session.Questions, q => Assert.True(q.QuestionText.Length > 10));
 
-        // Feedback always needs a provider: none is configured in tests → 503.
+        // Feedback always needs a provider: none is configured in tests -> 503.
         var answer = await _factory.GraduateClient.PostAsJsonAsync(
             $"/api/grad/interview/sessions/{session.Id}/questions/{session.Questions[0].Id}/answer",
             new { answerText = "I measured latency before and after, then published an internal post with the graphs and follow-up tickets." });
@@ -297,7 +292,7 @@ public class GraduateCareerTests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.ServiceUnavailable, create.StatusCode);
     }
 
-    // ---------- Overview / Alumni / Settings ----------
+    // Overview / Alumni / Settings
 
     [Fact]
     public async Task Overview_ReturnsAggregates()
@@ -349,7 +344,7 @@ public class GraduateCareerTests : IClassFixture<ApiFactory>
             .Content.ReadFromJsonAsync<GradSettingsRow>())!.MatchAlertThresholdPercent);
     }
 
-    // ---------- Access control ----------
+    // Access control
 
     [Fact]
     public async Task Student_CannotUseGraduateEndpoints()
@@ -361,7 +356,7 @@ public class GraduateCareerTests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.Forbidden, jobs.StatusCode);
     }
 
-    // ---------- helpers ----------
+    // helpers
 
     private async Task<List<GradMatchRow>> GetMatchesAsync()
     {

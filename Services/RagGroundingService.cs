@@ -2,19 +2,12 @@ using System.Text;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>Result of a grounding attempt: a prompt-ready block plus the source
-/// titles that were retrieved. <see cref="Context"/> is empty when RAG was
-/// unavailable or found nothing — callers just continue without it.</summary>
 public sealed record RagGrounding(string Context, IReadOnlyList<string> Sources)
 {
     public static readonly RagGrounding None = new("", Array.Empty<string>());
     public bool HasContext => !string.IsNullOrWhiteSpace(Context);
 }
 
-/// <summary>Lets EVERY AI assistant (student, graduate, doctor, general chat)
-/// use the RAG service for retrieval, whichever cloud provider writes the
-/// answer. It never throws: when the RAG service is off, down or slow the
-/// assistant simply answers without retrieved context.</summary>
 public interface IRagGroundingService
 {
     Task<RagGrounding> GroundAsync(
@@ -23,8 +16,6 @@ public interface IRagGroundingService
 
 public sealed class RagGroundingService : IRagGroundingService
 {
-    // Shared across requests: avoids a 3s health probe on every message when
-    // the RAG service is simply not running.
     private static long _unhealthyUntilTicks;
 
     private readonly IRagClient _rag;

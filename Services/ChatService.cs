@@ -45,9 +45,6 @@ public class ChatProviderRegistry
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>Providers in auto-selection order: Chat:DefaultProvider first (when
-    /// set), then Gemini → OpenRouter → OpenAI → Claude → Ollama, then anything else.
-    /// The first entry of every availability list is therefore the best choice.</summary>
     private IEnumerable<IChatProvider> Ordered()
     {
         var order = new List<string>();
@@ -61,8 +58,6 @@ public class ChatProviderRegistry
         return _all.Values.OrderBy(p => Rank(p.Name)).ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>Live providers in failover order. <paramref name="preferred"/> (when
-    /// live) goes first, then the auto-selection order.</summary>
     public async Task<IReadOnlyList<IChatProvider>> OrderedLiveAsync(string? preferred = null, CancellationToken ct = default)
     {
         var live = new List<IChatProvider>();
@@ -85,7 +80,6 @@ public class ChatProviderRegistry
         return live;
     }
 
-    /// <summary>Sync snapshot (IsConfigured only). Prefer <see cref="AvailableAsync"/>.</summary>
     public IReadOnlyList<Dtos.ChatProviderDto> Available() =>
         Ordered()
             .Where(p => p is not IProviderStatus status || status.IsConfigured)
@@ -95,7 +89,6 @@ public class ChatProviderRegistry
                 ResolveModel(p.Name)))
             .ToList();
 
-    /// <summary>Live availability (probes Ollama, hides it when down). No keys logged.</summary>
     public async Task<IReadOnlyList<Dtos.ChatProviderDto>> AvailableAsync(CancellationToken ct = default)
     {
         var list = new List<Dtos.ChatProviderDto>();
@@ -122,7 +115,6 @@ public class ChatProviderRegistry
         return list;
     }
 
-    /// <summary>All providers with availability + human-readable reason (key names only, never values).</summary>
     public async Task<IReadOnlyList<Dtos.ChatProviderStatusDto>> DescribeAsync(CancellationToken ct = default)
     {
         var list = new List<Dtos.ChatProviderStatusDto>();
@@ -167,7 +159,6 @@ public class ChatProviderRegistry
         return list;
     }
 
-    /// <summary>Startup log: which providers are enabled and why others are hidden. No keys.</summary>
     public async Task LogStartupAsync(CancellationToken ct = default)
     {
         IReadOnlyList<Dtos.ChatProviderStatusDto> statuses;
@@ -195,7 +186,6 @@ public class ChatProviderRegistry
         return !string.IsNullOrWhiteSpace(name) && _all.TryGetValue(name.Trim(), out provider);
     }
 
-    /// <summary>Availability-aware lookup (hides Ollama when down).</summary>
     public async Task<(bool Found, IChatProvider? Provider)> TryGetAsync(string? name, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(name) || !_all.TryGetValue(name.Trim(), out var provider))
@@ -213,9 +203,6 @@ public class ChatProviderRegistry
         return (true, provider);
     }
 
-    /// <summary>Model name with user-secrets/env override priority
-    /// (OPENAI_MODEL, ANTHROPIC_MODEL, GEMINI_MODEL, OLLAMA_MODEL, OPENROUTER_MODEL),
-    /// read at call time so only a restart is needed after changing a secret.</summary>
     public string ResolveModel(string providerName) =>
         ProviderSettings.GetModel(_config, _options, providerName);
 }
@@ -277,11 +264,6 @@ public class ChatService
     {
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
 
-        // The RAG provider is routed through the RAG service for every role that
-        // has documents to ground on (AiGroundingService.BuildDocumentsAsync:
-        // student/doctor course materials, graduate CV). Admins keep the normal
-        // providers, and anyone who explicitly picks another provider keeps
-        // that choice instead of being silently redirected.
         var useRag = user?.Role is UserRole.Student or UserRole.Doctor or UserRole.Graduate
             && string.Equals(providerName, "rag", StringComparison.OrdinalIgnoreCase)
             && _ragOptions.Enabled
@@ -298,9 +280,6 @@ public class ChatService
         }
         else
         {
-            // RAG is down / not selected-able, or the requested provider has no
-            // key: never fail while any cloud provider is live. Order: the
-            // requested one, Chat:DefaultProvider, then any other live provider.
             var (found, resolved) = wantsRag
                 ? (false, (IChatProvider?)null)
                 : await _registry.TryGetAsync(providerName, ct);
@@ -311,8 +290,6 @@ public class ChatService
                            ?? live.FirstOrDefault();
                 if (pick is null)
                 {
-                    // Nothing live anywhere. Keep RAG (when usable) so the stream
-                    // reports a clear, safe error event instead of an HTTP failure.
                     if (!useRag) throw new ChatProviderException(AiSetupHint.Message);
                     resolved = _ragProvider;
                     found = true;
@@ -381,9 +358,6 @@ public class ChatService
 
         if (regenerate)
         {
-            // Regeneration replaces the last assistant answer: don't feed it
-            // back to the provider as context (the previous user turn is
-            // already the last remaining message).
             var lastAssistant = history.FindLastIndex(m => m.Role == "assistant");
             if (lastAssistant >= 0) history.RemoveAt(lastAssistant);
         }
@@ -393,18 +367,11 @@ public class ChatService
         if (user is not null && useRag && !degradedFromRag)
         {
             ragDocuments = await _grounding.BuildDocumentsAsync(user, content, ct);
-            // Hybrid: the RAG provider also gets live platform data (it was
-            // dropped before), and the Python service answers from general
-            // knowledge when no passage matches instead of refusing.
-            try { context = (await _grounding.BuildAsync(userId, content, ct, null, 3000)).Context; }
+            try { context = (await _grounding.BuildAsync(userId, content, ct, null, 3000, retrieve: false)).Context; }
             catch (Exception ex) when (ex is not OperationCanceledException) { /* optional */ }
         }
         else if (user is not null)
         {
-            // Unified grounding for EVERY role: RAG retrieval when the service is
-            // up, plus live UniSphere data (courses, grades, schedule, career
-            // profile, analytics...). If RAG is down the database context alone
-            // is passed to whichever LLM provider answers.
             var grounding = await _grounding.BuildAsync(userId, content, ct);
             context = grounding.Context;
         }
@@ -447,12 +414,6 @@ public class ChatService
         "Give concrete, actionable career advice (applications, interviews, skills, CVs). " +
         "Never invent job postings, employers or deadlines; say when unsure; refuse harmful content.";
 
-    /// <summary>Persists the assistant turn when the stream ends. On
-    /// <paramref name="replaceLastAssistant"/> (regenerate) the previous
-    /// assistant answer is overwritten instead of adding a duplicate.
-    /// Partial text (user pressed Stop) is saved the same way. Every query
-    /// is scoped to <paramref name="userId"/>; foreign conversations are
-    /// silently ignored (the controller already returned 404 earlier).</summary>
     public async Task CompleteAssistantMessageAsync(
         int userId, int conversationId, string providerName, string model,
         string fullText, bool replaceLastAssistant, CancellationToken ct)

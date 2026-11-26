@@ -5,18 +5,10 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Graduate profile lifecycle + deterministic completion scoring.
-/// Input is validated in the controller (FluentValidation convention used by
-/// the other modules); every read/write is scoped to the userId passed by the
-/// controller (from the JWT), so a client can never touch another account.
-/// </summary>
 public class GraduateProfileService(AppDbContext db)
 {
     private static readonly string[] EntryKinds = ["Experience", "Project", "Certification", "Education"];
 
-    // Profile completion model: each item carries its weight; the missing list
-    // is computed in one place and reused by the profile page and overview.
     internal static readonly (string Field, string Label, int Weight)[] CompletionItems =
     [
         ("Headline", "Professional headline", 15),
@@ -71,7 +63,7 @@ public class GraduateProfileService(AppDbContext db)
         return await BuildDtoAsync(profile);
     }
 
-    // ---- Skills ----
+    // Skills
 
     public async Task<GraduateSkillDto> AddSkillAsync(int userId, GraduateSkillCreateRequest req)
     {
@@ -83,7 +75,7 @@ public class GraduateProfileService(AppDbContext db)
             if (!string.IsNullOrWhiteSpace(req.Level)) existing.Level = req.Level!.Trim();
             else if (string.Equals(existing.Source, "System", StringComparison.OrdinalIgnoreCase))
             {
-                // The user typed the same skill the system bootstrapped — promote it to claimed.
+                // The user typed the same skill the system bootstrapped - promote it to claimed.
                 existing.Source = "Profile";
                 existing.Level ??= "Intermediate";
             }
@@ -109,7 +101,7 @@ public class GraduateProfileService(AppDbContext db)
             .Where(s => s.UserId == userId && s.Id == id)
             .ExecuteDeleteAsync() > 0;
 
-    // ---- Profile entries ----
+    // Profile entries
 
     public async Task<ProfileEntryDto> AddEntryAsync(int userId, ProfileEntryCreateRequest req)
     {
@@ -147,7 +139,6 @@ public class GraduateProfileService(AppDbContext db)
     private static string NormalizeKind(string kind) =>
         EntryKinds.FirstOrDefault(k => string.Equals(k, kind, StringComparison.OrdinalIgnoreCase)) ?? "Experience";
 
-    /// <summary>Completion audit: weighted fields with a human-readable missing list.</summary>
     public async Task<ProfileCompletionDto> GetCompletionAsync(int userId)
     {
         var profile = await GetOrCreateProfileEntityAsync(userId);

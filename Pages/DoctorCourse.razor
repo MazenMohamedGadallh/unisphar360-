@@ -624,8 +624,6 @@ else
         }
         finally
         {
-            // Save stays disabled until the upload finishes: a material must
-            // never be created without the file the user attached.
             _uploadingFile = false;
             StateHasChanged();
         }
@@ -750,8 +748,6 @@ else
     private void EditStudentGrade(DoctorStudentDto s)
     {
         _gradeStudent = s;
-        // Never default to "A": preselect the real grade (or the
-        // "no grade assigned" option) so a quick Save can't assign an A by accident.
         _gradeLetter = string.IsNullOrWhiteSpace(s.GradeLetter) ? "" : s.GradeLetter;
     }
 

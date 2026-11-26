@@ -10,24 +10,14 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>
-/// Unit coverage for the chat provider layer, using a fake HttpMessageHandler —
-/// never a real or billed provider call. Covers provider selection/registration,
-/// Authorization header rules, OpenAI-compatible SSE parsing, error mapping and
-/// retry behavior, plus the appsettings.Local.json priority chain
-/// (Chat:Providers:&lt;Name&gt;:ApiKey|BaseUrl vs the flat OPENAI_API_KEY-style keys).
-/// </summary>
 public class ChatProviderTests
 {
-    // ---------- fake ASP.NET provider transport ----------
+    // fake ASP.NET provider transport
 
     private sealed class ScriptedHandler : HttpMessageHandler
     {
         private readonly Queue<HttpResponseMessage> _script = new();
         public List<HttpRequestMessage> Requests { get; } = new();
-        /// <summary>Bodies captured at send time — the provider base class
-        /// disposes request+content after the response, so tests must not
-        /// read request content afterwards.</summary>
         public List<string> RequestBodies { get; } = new();
 
         public void Respond(HttpStatusCode status, string body) =>
@@ -53,7 +43,6 @@ public class ChatProviderTests
         return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
     }
 
-    /// <summary>OpenAI-compatible SSE body: one delta frame per text, then [DONE].</summary>
     private static string Sse(params string[] deltaTexts)
     {
         var sb = new StringBuilder();
@@ -86,7 +75,7 @@ public class ChatProviderTests
     private static HttpRequestMessage SentChat(ScriptedHandler handler) =>
         handler.Requests.First(r => r.RequestUri!.ToString().Contains("chat/completions"));
 
-    // ---------- OpenAI provider ----------
+    // OpenAI provider
 
     [Fact]
     public async Task OpenAI_ParsesDeltas_StopsAtDone()
@@ -208,7 +197,7 @@ public class ChatProviderTests
         Assert.Equal(3, handler.Requests.Count);
     }
 
-    // ---------- OpenRouter provider ----------
+    // OpenRouter provider
 
     [Fact]
     public async Task OpenRouter_SendsAuthAndOpenRouterHeaders()
@@ -260,7 +249,7 @@ public class ChatProviderTests
         Assert.Equal(16, doc.RootElement.GetProperty("max_tokens").GetInt32());
     }
 
-    // ---------- Ollama provider ----------
+    // Ollama provider
 
     [Fact]
     public async Task Ollama_MissingModel_FailsWithPullHint()
@@ -341,7 +330,7 @@ public class ChatProviderTests
 
         var chat = handler.Requests
             .First(r => r.RequestUri!.ToString().Contains("chat/completions"));
-        // BaseUrl carried /v1 → chat posts /chat/completions, never /v1/v1/...
+        // BaseUrl carried /v1 -> chat posts /chat/completions, never /v1/v1/...
         Assert.EndsWith("/chat/completions", chat.RequestUri!.ToString());
         // The /api/tags probe must still hit the server root.
         var tags = handler.Requests.FirstOrDefault(r => r.RequestUri!.ToString().Contains("/api/tags"));
@@ -349,7 +338,7 @@ public class ChatProviderTests
         Assert.StartsWith("http://remote:11434/api/tags", tags!.RequestUri!.ToString());
     }
 
-    // ---------- provider registry ----------
+    // provider registry
 
     private sealed class StubProvider : IChatProvider, IProviderStatus
     {
@@ -381,9 +370,6 @@ public class ChatProviderTests
         var available = registry.Available();
         Assert.Equal(new[] { "openai" }, available.Select(p => p.Name).ToArray());
 
-        // Sync TryGet is a pure name lookup (case-insensitive) and does NOT
-        // filter by availability — that is the availability-filtered
-        // TryGetAsync's job.
         Assert.True(registry.TryGet("OpenAI", out var found));
         Assert.Equal("openai", found!.Name);
         Assert.False(registry.TryGet(null, out _));
@@ -412,13 +398,11 @@ public class ChatProviderTests
         Assert.Equal("http://x/v1/", options.Providers["OpenAI"].BaseUrl);
     }
 
-    // ---------- provider settings priority chain ----------
+    // provider settings priority chain
 
     [Fact]
     public void GetBaseUrl_Section_Wins_Over_FlatName_Over_Default()
     {
-        // GetBaseUrl returns the raw trimmed value; trailing-slash
-        // normalization is the caller's job (Program.cs appends "/").
         Assert.Equal("http://section",
             ProviderSettings.GetBaseUrl(
                 Config(("Chat:Providers:OpenRouter:BaseUrl", "http://section")),
@@ -444,13 +428,8 @@ public class ChatProviderTests
             ProviderSettings.GetApiKey(Config(), "OpenAI")));
     }
 
-    // ---------- local user-secrets file shape (flat names) ----------
+    // local user-secrets file shape (flat names)
 
-    /// <summary>The real dev secrets file carries exactly these flat names
-    /// (dotnet user-secrets with id unisphere-360-plus-dev merges them into
-    /// IConfiguration as root keys). This test proves the REAL provider
-    /// classes resolve the actual secret names end-to-end, with placeholder
-    /// values standing in for the real secrets.</summary>
     [Fact]
     public async Task UserSecrets_FlatNames_FlowThroughProvidersEndToEnd()
     {
@@ -474,9 +453,6 @@ public class ChatProviderTests
 
         Assert.True(openRouter.IsConfigured);
 
-        // Model resolution goes through the central resolver first (this is
-        // exactly what registry.ResolveModel does upstream), then the feature
-        // wrapper passes it into the ChatRequest the provider sends.
         var resolvedModel = ProviderSettings.GetModel(cfg, new ChatOptions(), "openrouter");
         Assert.Equal("test-free-model", resolvedModel);
 
@@ -505,10 +481,10 @@ public class ChatProviderTests
     [Fact]
     public void GetApiKey_HierarchicalSectionName_IsWeakestFallback()
     {
-        // "OpenRouter:ApiKey"-style root sections resolve through the chain…
+        // "OpenRouter:ApiKey"-style root sections resolve through the chain...
         Assert.Equal("hier",
             ProviderSettings.GetApiKey(Config(("OPENROUTER:ApiKey", "hier")), "OpenRouter"));
-        // …but the flat user-secrets name still wins, matching today's file.
+        // ...but the flat user-secrets name still wins, matching today's file.
         Assert.Equal("flat",
             ProviderSettings.GetApiKey(
                 Config(("OPENROUTER:ApiKey", "hier"), ("OPENROUTER_API_KEY", "flat")), "OpenRouter"));
@@ -536,11 +512,9 @@ public class ChatProviderTests
     {
         var options = new ChatOptions { Providers = new() { ["OpenRouter"] = new ChatProviderOptions { Model = "appsettings-model" } } };
 
-        // A hierarchical model entry (e.g. OpenRouter:Model in a local secret
-        // file) overrides the committed appsettings model…
         Assert.Equal("hier-model",
             ProviderSettings.GetModel(Config(("OpenRouter:Model", "hier-model")), options, "openrouter"));
-        // …but the flat user-secrets name remains strongest.
+        // ...but the flat user-secrets name remains strongest.
         Assert.Equal("flat-model",
             ProviderSettings.GetModel(
                 Config(("OPENROUTER_MODEL", "flat-model"), ("OpenRouter:Model", "hier-model")), options, "openrouter"));
@@ -564,11 +538,6 @@ public class ChatProviderTests
     }
 }
 
-/// <summary>
-/// Resolves every AI-related service through the real application's
-/// dependency container (in-process host) to prove the shared AI
-/// infrastructure is registered exactly once and injectable everywhere.
-/// </summary>
 public class AiDependencyResolutionTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     [Fact]

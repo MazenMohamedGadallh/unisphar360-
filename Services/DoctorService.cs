@@ -5,13 +5,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Read-only aggregation for the Doctor Module. Every metric is derived from
-/// real, course-scoped database rows; nothing is fabricated. Missing grades
-/// are handled explicitly: averages and distributions only consider
-/// enrollments that actually have a grade letter, and return null / an
-/// "Ungraded" bucket otherwise.
-/// </summary>
 public class DoctorService
 {
     private readonly AppDbContext _db;
@@ -130,8 +123,6 @@ public class DoctorService
             alerts);
     }
 
-    /// <summary>Advisory, explainable alerts. Never punitive: they only flag
-    /// students whose real grade/attendance data suggests extra support.</summary>
     private async Task<IReadOnlyList<DoctorAlertDto>> BuildAlertsAsync(IReadOnlyCollection<Enrollment> rows)
     {
         var alerts = new List<DoctorAlertDto>();

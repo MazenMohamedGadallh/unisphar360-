@@ -8,7 +8,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>Deterministic test double for the server-side RAG contract.</summary>
 public sealed class FakeRagClient : IRagClient
 {
     public bool IsConfigured => true;
@@ -85,7 +84,6 @@ public sealed class FakeRagClient : IRagClient
     public Task<bool> IsHealthyAsync(CancellationToken ct) => Task.FromResult(!ThrowUnavailable);
 }
 
-/// <summary>Minimal deterministic doctor AI double used only for exam tests.</summary>
 public sealed class FakeDoctorAiService : IDoctorAiService
 {
     public string? LastUserPrompt { get; private set; }
@@ -121,7 +119,6 @@ public sealed class FakeDoctorAiService : IDoctorAiService
         throw new NotSupportedException();
 }
 
-/// <summary>Test host with RAG enabled and both external AI dependencies faked.</summary>
 public sealed class RagApiFactory : ApiFactory
 {
     public FakeRagClient FakeRag { get; } = new();
