@@ -45,7 +45,7 @@ else
 
     @if (_tab == "mine")
     {
-        // ---- My research (owner CRUD) ----
+        // My research (owner CRUD)
         <div class="card">
             <div class="card-header"><h3>My papers</h3></div>
             @if (_mineLoading)
@@ -105,7 +105,7 @@ else
     }
     else
     {
-        // ---- Cross-university browse (published only) ----
+        // Cross-university browse (published only)
         <div class="card">
             <div class="card-header"><h3>Browse published research</h3></div>
             <div class="research-filters">
@@ -199,7 +199,7 @@ else
         </div>
     }
 
-    // ---- Upload / edit modal (multipart: metadata + optional PDF) ----
+    // Upload / edit modal (multipart: metadata + optional PDF)
     @if (_formOpen)
     {
         <div class="modal-overlay" @onclick="CloseForm">
@@ -271,7 +271,7 @@ else
         </div>
     }
 
-    // ---- Delete confirmation ----
+    // Delete confirmation
     @if (_confirmDeleteId is not null)
     {
         <div class="modal-overlay" @onclick="CancelDelete">
@@ -393,8 +393,6 @@ else
         _success = null;
         if (tab == "browse")
         {
-            // Re-fetch every time: the user may have published/unpublished a
-            // paper since the last visit, so a cached list would lie.
             if (!_filtersLoaded) _ = LoadFiltersAsync();
             else if (!_browseLoading) _ = LoadBrowseAsync();
         }
@@ -402,7 +400,7 @@ else
             _ = LoadMineAsync();
     }
 
-    // ---- My research ----
+    // My research
 
     private async Task LoadMineAsync()
     {
@@ -434,7 +432,7 @@ else
         }
     }
 
-    // ---- Browse tab ----
+    // Browse tab
 
     private async Task LoadFiltersAsync()
     {
@@ -528,7 +526,7 @@ else
         }
     }
 
-    // ---- Upload / edit form ----
+    // Upload / edit form
 
     private void OpenCreateModal()
     {
@@ -705,7 +703,7 @@ else
     private static bool ContainsAngleBrackets(string text) =>
         text.Contains('<') || text.Contains('>');
 
-    // ---- Publish toggle / delete / download ----
+    // Publish toggle / delete / download
 
     private async Task TogglePublishAsync(ResearchHubItemDto r)
     {
@@ -803,8 +801,6 @@ else
         }
     }
 
-    /// <summary>Reads the ValidationProblemDetails / plain-text body of an
-    /// error response and turns it into a short friendly message.</summary>
     private async Task<string?> DescribeErrorAsync(HttpResponseMessage resp)
     {
         try

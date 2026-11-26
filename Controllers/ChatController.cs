@@ -12,7 +12,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>AI chat (OpenAI + Claude). Every query is scoped to the JWT user id.</summary>
 [Authorize]
 [ApiController]
 [Route("api/chat")]
@@ -44,9 +43,6 @@ public class ChatController : ControllerBase
     // Roles with their own RAG documents (student/doctor: course materials, graduate: CV); admins have none.
     private bool UsesRag => User.IsInRole("Student") || User.IsInRole("Doctor") || User.IsInRole("Graduate");
 
-    /// <summary>Only providers that are currently available (keys set, Ollama up).
-    /// Students, doctors and graduates also see the grounded RAG assistant when its
-    /// service is actually reachable.</summary>
     [HttpGet("providers")]
     public async Task<ActionResult<IReadOnlyList<ChatProviderDto>>> Providers(CancellationToken ct)
     {
@@ -72,11 +68,6 @@ public class ChatController : ControllerBase
         return Ok(providers);
     }
 
-    /// <summary>All providers with availability + reason (no keys). Used by the UI
-    /// to explain why the dropdown is empty.</summary>
-    /// <summary>All providers with availability + reason (no keys). Used by the UI
-    /// to explain why the dropdown is empty. The Student RAG row reports the
-    /// live service health instead of assuming it is up.</summary>
     [HttpGet("providers/status")]
     public async Task<ActionResult<IReadOnlyList<ChatProviderStatusDto>>> ProviderStatuses(CancellationToken ct)
     {
@@ -175,8 +166,6 @@ public class ChatController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Streams the assistant reply with Server-Sent Events.
-    /// Use id "new" to start a conversation (created + auto-titled).</summary>
     [HttpPost("conversations/{id}/messages")]
     [EnableRateLimiting("chat-per-minute")]
     public async Task SendMessage(string id, SendChatMessageRequest req, CancellationToken ct)
@@ -244,9 +233,6 @@ public class ChatController : ControllerBase
 
             if (reply.Length == 0)
             {
-                // Empty answer (e.g. the model refused or the provider sent
-                // only reasoning/keep-alives): tell the user the real reason,
-                // save nothing (an empty assistant turn would be noise).
                 _logger.LogWarning("Chat provider {Provider} ({Model}) ended the stream without answer content",
                     prepared.Provider.Name, prepared.Request.Model);
                 await WriteErrorEventAsync("The AI provider returned an empty answer. Please try again.");
@@ -258,29 +244,19 @@ public class ChatController : ControllerBase
         }
         catch (OperationCanceledException)
         {
-            // Client went away (Stop button / disconnect): keep what the
-            // user already saw and persist it below.
             wasCancelled = true;
         }
         catch (ChatProviderException ex)
         {
-            // Real safe reason from the provider mapping (already logged
-            // server-side with the response body, truncated to 500 chars).
             providerError = ex.Message;
         }
         catch (Exception ex) when (ex is IOException or HttpRequestException or TimeoutException)
         {
-            // The connection dropped mid-answer: same treatment as a provider
-            // error (safe reason to the UI, partial text kept below) instead
-            // of letting the exception escape after the SSE response started.
             _logger.LogWarning(ex, "Chat provider {Provider} ({Model}) stream interrupted",
                 prepared.Provider.Name, prepared.Request.Model);
             providerError = "The AI provider connection dropped while answering. Please try again.";
         }
 
-        // Persist whatever was generated: the full answer, or the partial
-        // text when the user pressed Stop. Regenerate replaces the last
-        // assistant message instead of appending a duplicate.
         if (reply.Length > 0)
         {
             try
@@ -303,8 +279,6 @@ public class ChatController : ControllerBase
                 prepared.Conversation.Id, reply.Length);
     }
 
-    /// <summary>SSE error frame with the JSON shape the chat UI reads:
-    /// {"error":"..."}. Best-effort: the client may already be gone.</summary>
     private async Task WriteErrorEventAsync(string message)
     {
         try

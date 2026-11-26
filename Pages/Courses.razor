@@ -2,12 +2,6 @@
 @page "/courses/{Id:int}"
 @* Second home under My Courses so the sidebar item stays highlighted. *@
 @page "/university/browse"
-@*
-[Authorize] removed on purpose (see Dashboard.razor): the server
-challenges every F5 to /login because the browser never sends the
-localStorage JWT as a bearer header. /api stays [Authorize]-guarded
-and MainLayout bounces anonymous users to /login after auth resolves.
-*@
 @inject HttpClient Http
 @inject NavigationManager Nav
 
@@ -43,6 +37,50 @@ and MainLayout bounces anonymous users to /login after auth resolves.
                 <h4>Description</h4>
                 <p>@_course.Description</p>
             </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h3>Materials</h3>
+            </div>
+            @if (_materials is null)
+            {
+                <div class="loading">Loading materials...</div>
+            }
+            else if (!_materialsAllowed)
+            {
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="lock" /></div>Enroll in this course to see its materials.</div>
+            }
+            else if (!_materials.Any())
+            {
+                <div class="empty-state"><div class="empty-icon"><UiIcon Name="file-text" /></div>No materials uploaded yet.</div>
+            }
+            else
+            {
+                <div class="recommendation-list">
+                    @foreach (var m in _materials)
+                    {
+                        <div class="recommendation-item" @onclick="() => _openMaterialId = _openMaterialId == m.Id ? null : m.Id">
+                            <div class="rec-info">
+                                <span class="rec-code">@m.Type</span>
+                                <span class="rec-title">@m.Title</span>
+                                <span class="rec-track">
+                                    @m.Description
+                                    @if (m.DeadlineUtc is DateTime due)
+                                    {
+                                        <text> &middot; Due @due.ToLocalTime().ToString("MMM d, yyyy")</text>
+                                    }
+                                </span>
+                            </div>
+                            <button type="button" class="rec-btn">@(_openMaterialId == m.Id ? "Close" : "Open")</button>
+                        </div>
+                        @if (_openMaterialId == m.Id && !string.IsNullOrWhiteSpace(m.Content))
+                        {
+                            <div class="card-body"><div class="material-content" dir="auto">@m.Content</div></div>
+                        }
+                    }
+                </div>
+            }
         </div>
     }
 }
@@ -104,13 +142,15 @@ else
     </div>
 }
 
-
 </RoleGate>
 @code {
     [Parameter] public int? Id { get; set; }
 
     private List<CourseDto>? _courses;
     private CourseDto? _course;
+    private List<MaterialDto>? _materials;
+    private bool _materialsAllowed;
+    private int? _openMaterialId;
     private string _searchQuery = "";
 
     private IEnumerable<CourseDto> _filteredCourses =>
@@ -121,13 +161,24 @@ else
                 c.Code.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
                 c.Description.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase));
 
-    protected override async Task OnInitializedAsync()
+    // The list and detail routes share this component, so Blazor reuses it when moving between them.
+    protected override async Task OnParametersSetAsync()
     {
         if (Id.HasValue)
         {
+            if (_course?.Id == Id) return;
+            _course = null;
+            _materials = null;
+            _openMaterialId = null;
             _course = await Http.GetFromJsonAsync<CourseDto>($"/api/courses/{Id}");
+            // Students only see materials of courses they take or that belong to their year.
+            var response = await Http.GetAsync($"/api/university/me/materials?courseId={Id}&pageSize=50");
+            _materialsAllowed = response.IsSuccessStatusCode;
+            _materials = _materialsAllowed
+                ? (await response.Content.ReadFromJsonAsync<PagedResultDto<MaterialDto>>())?.Items.ToList() ?? new()
+                : new();
         }
-        else
+        else if (_courses is null)
         {
             _courses = await Http.GetFromJsonAsync<List<CourseDto>>("/api/courses");
         }

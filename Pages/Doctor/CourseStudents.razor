@@ -1,8 +1,4 @@
 @page "/doctor/courses/{courseId:int}/students"
-@*
-[Authorize] removed on purpose (see Dashboard.razor): access is enforced by
-RoleGate client-side and by [Authorize(Roles="Doctor")] on every /api endpoint.
-*@
 @using System.Net
 @using UniSphere.Api.Dtos
 @using UniSphere.Api.Services
@@ -130,8 +126,6 @@ RoleGate client-side and by [Authorize(Roles="Doctor")] on every /api endpoint.
         _students = null;
         try
         {
-            // The course must be one of my assigned courses; the students
-            // endpoint repeats the ownership check server-side (404 otherwise).
             var courses = await Http.GetFromJsonAsync<List<DoctorCourseDto>>("/api/doctor/courses") ?? new();
             _course = courses.FirstOrDefault(c => c.Id == CourseId);
             if (_course is null)

@@ -8,15 +8,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>
-/// Admin-only management of doctor ↔ course assignments for the doctor
-/// module. Doctors can never assign themselves to a course: only this
-/// controller (Admin role) can create or remove assignments.
-/// University isolation follows this project's rules: an admin whose account
-/// has a university sees and manages only that university's assignments;
-/// foreign or unmatched ids resolve to 404 as though they did not exist.
-/// A global admin (no university) keeps the wider view.
-/// </summary>
 [Authorize(Roles = "Admin")]
 [ApiController]
 [Route("api/course-assignments")]
@@ -43,8 +34,6 @@ public class CourseAssignmentsController : ControllerBase
             .Join(_db.Courses, a => a.CourseId, c => c.Id, (a, c) => new { a, c })
             .Join(_db.Users, x => x.a.DoctorUserId, u => u.Id, (x, u) => new { x.a, x.c, u });
 
-        // University isolation: an admin bound to a university only ever
-        // manages the assignments of that university's courses.
         if (scope.UniversityId is not null)
         {
             var universityId = scope.UniversityId.Value;
@@ -75,9 +64,6 @@ public class CourseAssignmentsController : ControllerBase
         var course = await _db.Courses.FirstOrDefaultAsync(c => c.Id == req.CourseId);
         if (course is null) return NotFound("Course not found.");
 
-        // University isolation: foreign/unmatched combinations are
-        // indistinguishable from missing rows. Admins bound to a university
-        // may only touch their own university's courses and doctors.
         if (scope.UniversityId is not null)
         {
             var universityId = scope.UniversityId.Value;

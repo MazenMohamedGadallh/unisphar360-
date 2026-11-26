@@ -428,7 +428,7 @@
         {
             _conversations = new();
         }
-        // No conversation to open (new user / none yet): show the empty state, not "Loading messages…" forever.
+        // No conversation to open (new user / none yet): show the empty state, not "Loading messages..." forever.
         if (_activeId is null) _messages ??= new();
     }
 
@@ -458,8 +458,6 @@
         return Task.CompletedTask;
     }
 
-    /// <summary>Prefills the composer from a suggestion chip and focuses it,
-    /// so the user can edit before sending.</summary>
     private async Task UseSuggestionAsync(string suggestion)
     {
         if (_streaming || string.IsNullOrEmpty(_provider)) return;
@@ -545,8 +543,6 @@
         }
         catch (OperationCanceledException)
         {
-            // Stopped by the user: the server keeps the partial answer, so
-            // show the same partial text here instead of dropping it.
             if (!string.IsNullOrEmpty(_streamingText))
                 (_messages ??= new()).Add(new ChatMessageDto(0, "assistant", _streamingText, providerName, providerModel, DateTime.UtcNow));
             _streamingText = "";
@@ -567,9 +563,6 @@
         }
     }
 
-    /// <summary>Reads the provider's safe error message out of an SSE error
-    /// frame. Supports {"error":"..."}, {"error":{"message":"..."}} and the
-    /// legacy bare JSON string.</summary>
     private static string ExtractErrorMessage(string payload)
     {
         try
@@ -677,9 +670,6 @@
 
     private async Task InputKeyDown(KeyboardEventArgs e)
     {
-        // Enter sends, Shift+Enter inserts a newline. The stray newline is
-        // suppressed by the JS keydown helper (preventDefault for Enter
-        // without Shift); see chat.js preventChatEnterNewline.
         if (e.Key == "Enter" && !e.ShiftKey)
             await SendAsync(false);
     }

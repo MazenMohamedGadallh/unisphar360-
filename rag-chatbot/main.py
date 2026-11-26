@@ -140,7 +140,6 @@ def get_llm():
         api_key=GROQ_API_KEY
     )
 
-
 SYSTEM_PROMPT = (
     "You are a concise, factual assistant.\n"
     "Answer the question strictly based ONLY on the context below.\n"
@@ -158,7 +157,6 @@ async def lifespan(app: FastAPI):
     get_vectorstore()
     yield
     logger.info("Shutting down RAG API service")
-
 
 app = FastAPI(
     title="RAG Knowledge Base API",
@@ -363,7 +361,6 @@ async def answer(request: AnswerRequest):
     
     logger.info(f"Answer generated for university_id={request.filters.university_id}")
     return AnswerResponse(answer=answer_text, sources=sources)
-
 
 if __name__ == "__main__":
     import uvicorn

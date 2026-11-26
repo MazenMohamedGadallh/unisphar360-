@@ -7,12 +7,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Graduation tracking: eligibility evaluation, degree audit applications,
-/// ceremony lookup, certificates and the admin review flow. An approved
-/// application is the conferral — the holder's GraduationYear/GraduatedFrom
-/// are stamped from it and notification + activity records are emitted.
-/// </summary>
 public class GraduationService
 {
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -20,7 +14,7 @@ public class GraduationService
     private const string DefaultInstitutionName = "UniSphere 360+";
     private static readonly string[] CeremonyKeywords = { "graduation", "ceremony" };
 
-    // ---- Degree policy (single source of truth for every endpoint) ----
+    // Degree policy (single source of truth for every endpoint)
     public const double MinGpa = 2.0;
     public const double HonorsSummaCumLaude = 3.9;
     public const double HonorsMagnaCumLaude = 3.7;
@@ -31,7 +25,6 @@ public class GraduationService
     private readonly AppDbContext _db;
     public GraduationService(AppDbContext db) => _db = db;
 
-    /// <summary>Latin honors label for the conferred GPA.</summary>
     public static string HonorsFor(double gpa) =>
         gpa >= HonorsSummaCumLaude ? "Summa Cum Laude"
         : gpa >= HonorsMagnaCumLaude ? "Magna Cum Laude"
@@ -39,7 +32,6 @@ public class GraduationService
         : gpa >= HonorsDistinction ? "With Distinction"
         : "Pass";
 
-    /// <summary>Everything the Graduation screen needs in one call.</summary>
     public async Task<GraduationOverviewResponse?> GetOverviewAsync(int userId)
     {
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
@@ -119,7 +111,7 @@ public class GraduationService
         return items;
     }
 
-    // ---- Eligibility engine ----
+    // Eligibility engine
 
     private sealed record EligibilitySnapshot(
         double Gpa,
@@ -170,7 +162,7 @@ public class GraduationService
             creditsCompleted, creditsInProgress, failed, reasons);
     }
 
-    // ---- Own application ----
+    // Own application
 
     private async Task<GraduationApplicationSummaryDto?> GetApplicationAsync(int userId)
     {
@@ -186,7 +178,7 @@ public class GraduationService
     private static GraduationApplicationSummaryDto ToSummary(GraduationApplication g) =>
         new(g.Id, g.Status, g.SubmittedAtUtc, g.ReviewedAtUtc, g.DecisionNote, g.ConferredGraduationYear);
 
-    // ---- Application lifecycle ----
+    // Application lifecycle
 
     public enum GraduationApplyOutcome
     {
@@ -248,8 +240,6 @@ public class GraduationService
         }
         catch (DbUpdateException ex) when (IsUniqueViolation(ex))
         {
-            // Lost a race (e.g. parallel request): the partial unique index on
-            // (UserId, Status) prevented a second active application. Surface it.
             _db.ChangeTracker.Clear();
             var dupe = await FindActiveApplicationAsync(userId);
             return new(GraduationApplyOutcome.ActiveApplicationExists,
@@ -264,8 +254,6 @@ public class GraduationService
     public sealed record GraduationWithdrawResult(
         GraduationWithdrawOutcome Outcome, GraduationApplicationSummaryDto? Application);
 
-    /// <summary>Closes a pending / in-review application; finalized ones
-    /// (approved, rejected, already withdrawn) cannot be withdrawn.</summary>
     public async Task<GraduationWithdrawResult> WithdrawAsync(int userId)
     {
         var app = await FindActiveApplicationAsync(userId);
@@ -299,9 +287,8 @@ public class GraduationService
         && se.SqliteErrorCode == 19
         && se.Message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase);
 
-    // ---- Ceremony ----
+    // Ceremony
 
-    /// <summary>The next upcoming graduation event from the events calendar.</summary>
     public async Task<GraduationCeremonyDto?> GetNextCeremonyAsync()
     {
         var now = DateTime.UtcNow;
@@ -319,7 +306,7 @@ public class GraduationService
             : new(found.Id, found.Title, found.Location, found.StartsAtUtc, found.Description);
     }
 
-    // ---- Certificate / diploma ----
+    // Certificate / diploma
 
     public enum GraduationCertificateOutcome { Issued, NotFound }
 
@@ -379,7 +366,7 @@ public class GraduationService
         return string.IsNullOrWhiteSpace(name) ? null : name;
     }
 
-    // ---- Admin flow ----
+    // Admin flow
 
     public async Task<PagedResultDto<GraduationApplicationAdminDto>> GetApplicationsAsync(
         string? status, int page, int pageSize)
@@ -436,9 +423,6 @@ public class GraduationService
         if (approve)
         {
             app.Status = GraduationStatus.Approved;
-            // Conferral: stamp the diploma holder — this unlocks the certificate
-            // and alumni screens. Role changes (Student -> Graduate) stay in the
-            // hands of an admin via the user management screen.
             student.GraduationYear = year;
             if (string.IsNullOrWhiteSpace(student.GraduatedFrom))
                 student.GraduatedFrom = await GetUniversityNameAsync(student.UniversityId) ?? DefaultInstitutionName;

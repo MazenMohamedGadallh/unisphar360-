@@ -5,11 +5,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// The graduate's personal application tracker. Every row records what the
-/// graduate actually did (applied/ interviewing/ rejected) — the platform
-/// never claims to submit anything to an employer on the user's behalf.
-/// </summary>
 public class JobApplicationService(AppDbContext db)
 {
     private static readonly string[] Statuses = ["Applied", "Interview", "Offer", "Rejected", "Withdrawn"];
@@ -52,8 +47,6 @@ public class JobApplicationService(AppDbContext db)
                 throw new KeyNotFoundException("The linked job listing does not exist.");
         }
 
-        // Manual rows need a company + title; catalog-linked rows inherit
-        // company/title/source URL from the listing itself.
         if (linkedJob is null)
         {
             if (company.Length == 0) throw new MissingFieldException("companyName");

@@ -4,11 +4,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>
-/// Phase 1 acceptance tests for the doctor workspace:
-/// locked profile identity fields, editable avatar/password, and the
-/// per-doctor course display title with its student-visible effect.
-/// </summary>
 public class DoctorPhase1Tests : IClassFixture<ApiFactory>
 {
     private readonly ApiFactory _factory;
@@ -24,7 +19,7 @@ public class DoctorPhase1Tests : IClassFixture<ApiFactory>
         _admin = factory.AdminClient;
     }
 
-    // ---- Profile: locked identity fields ----
+    // Profile: locked identity fields
 
     [Fact]
     public async Task Profile_ReturnsLockedIdentityFields()
@@ -58,9 +53,6 @@ public class DoctorPhase1Tests : IClassFixture<ApiFactory>
             (new() { ["address"] = "Somewhere else" }, new[] { "address" }),
             (new() { ["department"] = "Hacked Department" }, new[] { "department" }),
             (new() { ["universityId"] = 9999 }, new[] { "universityId" }),
-            // Mixed request: even a valid avatar must not be applied when a
-            // locked field is present (all-or-nothing). The avatar itself is
-            // editable, so only the locked key is reported as rejected.
             (new()
             {
                 ["avatarUrl"] = "https://evil.test/avatar.png",
@@ -74,8 +66,6 @@ public class DoctorPhase1Tests : IClassFixture<ApiFactory>
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
             var body = await response.Content.ReadAsStringAsync();
-            // The friend module's allowlist answer: "Profile contains locked
-            // fields." with a Fields list naming each unexpected key.
             Assert.Contains("Profile contains locked fields", body);
             foreach (var key in rejected)
                 Assert.Contains(key, body);
@@ -111,16 +101,13 @@ public class DoctorPhase1Tests : IClassFixture<ApiFactory>
     [Fact]
     public async Task Profile_Update_Avatar_WithNonUrl_IsRejected()
     {
-        // Adopted module contract: the avatar must be an absolute URL or an
-        // uploaded /uploads/... path. (Absolute URIs like "javascript:..."
-        // pass validation and stay inert when rendered as an <img src>.)
         var response = await _doctor.PutAsJsonAsync("/api/doctor/profile",
             new { avatarUrl = "not a url with spaces" });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    // ---- My courses: server-computed enrolled counts ----
+    // My courses: server-computed enrolled counts
 
     [Fact]
     public async Task MyCourses_EnrolledCounts_MatchServerStudentLists()
@@ -140,7 +127,7 @@ public class DoctorPhase1Tests : IClassFixture<ApiFactory>
         }
     }
 
-    // ---- Course display title ----
+    // Course display title
 
     [Fact]
     public async Task Course_DisplayTitle_IsVisibleToStudents_WhileCatalogTitleStays()
@@ -200,9 +187,6 @@ public class DoctorPhase1Tests : IClassFixture<ApiFactory>
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         }
 
-        // The display-title route binds a narrowly-typed request; unknown JSON
-        // fields (here the catalog code) are ignored and the catalog is never
-        // touched by this endpoint.
         var extraField = await _doctor.PutAsJsonAsync($"/api/doctor/courses/{course.CourseId}/display-title",
             new { displayTitle = "Valid New Title", code = "CS999" });
         Assert.Equal(HttpStatusCode.OK, extraField.StatusCode);
@@ -228,9 +212,6 @@ public class DoctorPhase1Tests : IClassFixture<ApiFactory>
             c.UniversityId == profile.UniversityId && !mineIds.Contains(c.Id));
         Assert.NotNull(foreign);
 
-        // Create a second doctor, move them into the same university (locked
-        // fields are admin-only) and assign the course via the doctor-module
-        // assignment API (the display-title endpoint is assignment-scoped).
         var email = $"doctor2-{Guid.NewGuid():N}@example.com";
         var register = await _factory.CreateClient().PostAsJsonAsync("/api/auth/register",
             DoctorPayload(email));
@@ -272,7 +253,7 @@ public class DoctorPhase1Tests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
     }
 
-    // ---- Generic profile endpoint must not bypass the lock ----
+    // Generic profile endpoint must not bypass the lock
 
     [Fact]
     public async Task Users_Put_CannotChangeDoctorNameOrMajor()
@@ -312,7 +293,7 @@ public class DoctorPhase1Tests : IClassFixture<ApiFactory>
         Assert.Equal(avatar, updated.AvatarUrl);
     }
 
-    // ---- Admin edit of locked fields + audit trail ----
+    // Admin edit of locked fields + audit trail
 
     [Fact]
     public async Task Admin_CanEditLockedDoctorFields_AndActionIsAudited()
@@ -358,7 +339,7 @@ public class DoctorPhase1Tests : IClassFixture<ApiFactory>
             l.UserId == adminMe!.Id);
     }
 
-    // ---- Password change (doctor profile page) ----
+    // Password change (doctor profile page)
 
     [Fact]
     public async Task DoctorPassword_ChangeRequiresCurrentPassword()
@@ -388,7 +369,7 @@ public class DoctorPhase1Tests : IClassFixture<ApiFactory>
         Assert.True(newLogin.IsSuccessStatusCode);
     }
 
-    // ---- Helpers ----
+    // Helpers
 
     private static object DoctorPayload(string email) => new
     {

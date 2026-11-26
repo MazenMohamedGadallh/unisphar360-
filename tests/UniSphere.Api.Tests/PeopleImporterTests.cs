@@ -10,13 +10,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>
-/// PeopleImporter tests on a throw-away SQLite database with TINY fixture
-/// CSVs (never the real Data/students-*.csv / doctors-*.csv files).
-/// Covers: idempotency, per-row skip with reasons, password requirement,
-/// passed/current enrollment shapes, doctor links + student counts and
-/// university resolution so nothing ever cross-links universities.
-/// </summary>
 public class PeopleImporterTests : IDisposable
 {
     private static readonly string TestUni = "Test Uni";
@@ -63,9 +56,6 @@ public class PeopleImporterTests : IDisposable
     private static void WriteCsv(string root, string fileName, string content) =>
         File.WriteAllText(Path.Combine(root, "Data", fileName), content, new UTF8Encoding(false));
 
-    // Fixture: 2 valid students (one with a passed course), 1 invalid email,
-    // 1 unknown course code, and 1 repeated email that exercises the
-    // same-university update path. Physical CSV line numbers are asserted.
     private const string StudentsCsv =
     // 1
 @"StudentCode,FirstName,MiddleName,LastName,Gender,Age,Email,Phone,Address,Department,DepartmentName,AcademicYear,CurrentCourses,PassedCourses
@@ -88,8 +78,6 @@ D1,Khaled,Ibrahim,Said,Male,44,khaled.doc@test.edu,0140,addr,CS,Computer Science
 // 3
 D2,Mona,,Tarek,Female,39,mona.doc@test.edu,0150,addr,CS,Computer Science,Data Science,CS 101";
 
-    // The comment markers above are only in this source file; the real
-    // fixtures are written through WriteFixture which strips them.
     private static string Clean(string raw) =>
         string.Join("\n", raw.Split('\n').Where(l => !l.TrimStart().StartsWith("//")));
 
@@ -174,9 +162,6 @@ D2,Mona,,Tarek,Female,39,mona.doc@test.edu,0150,addr,CS,Computer Science,Data Sc
         var mona = db.Users.Single(u => u.Email == "mona.doc@test.edu");
         Assert.False(db.CourseInstructors.Any(ci => ci.DoctorUserId == mona.Id));
 
-        // The doctor-module mirror (CourseAssignments) received the same two
-        // links and never a row for the skipped doctor — this is what the
-        // integrated module's dashboard and access checks read.
         Assert.Equal(2, db.CourseAssignments.Count());
         Assert.True(db.CourseAssignments.Any(ca => ca.CourseId == cs101.Id && ca.DoctorUserId == khaled.Id));
         Assert.True(db.CourseAssignments.Any(ca => ca.CourseId == cs102.Id && ca.DoctorUserId == khaled.Id));
@@ -189,16 +174,11 @@ D2,Mona,,Tarek,Female,39,mona.doc@test.edu,0150,addr,CS,Computer Science,Data Sc
             .Select(e => e.UserId).Distinct().Count();
         Assert.Equal(1, cs102Count);
 
-        // ---------- Second run: fully idempotent ----------
+        // Second run: fully idempotent
         var second = PeopleImporter.ImportAll(Db(), root, "DoNotLog123!", dryRun: false);
         Assert.Equal(0, second.CreatedUsers);
         Assert.Equal(0, second.EnrollmentsCreated);
         Assert.Equal(0, second.LinksCreated);
-        // S1 and S5 both carry ali@test.edu with DIFFERENT contact values, so
-        // every replay of the file legitimately re-applies them (last row
-        // wins, exactly like run 1): the counter stays at 2 and ali's final
-        // profile equals the run-1 outcome. The identity guarantee still
-        // holds — the updates never touch names — and nothing is created.
         Assert.Equal(2, second.UpdatedUsers);
         Assert.Equal(4, second.ExistingUsers);          // sara, nocourse, 2 doctors
 
@@ -225,7 +205,7 @@ D2,Mona,,Tarek,Female,39,mona.doc@test.edu,0150,addr,CS,Computer Science,Data Sc
         Assert.Equal(0, db.Enrollments.Count());
         Assert.Equal(0, db.CourseInstructors.Count());
         Assert.Equal(0, db.CourseAssignments.Count());  // dry run writes no module rows either
-        Assert.Equal(2, db.Universities.Count());       // Test Uni + Other Uni were pre-seeded —
+        Assert.Equal(2, db.Universities.Count());       // Test Uni + Other Uni were pre-seeded -
                                                         // the dry run added no third university
     }
 
@@ -234,11 +214,6 @@ D2,Mona,,Tarek,Female,39,mona.doc@test.edu,0150,addr,CS,Computer Science,Data Sc
     {
         var root = WriteFixtures();
 
-        // Empty and null mean "no user-secret set": the importer bootstraps
-        // NEW accounts with its built-in default password instead of
-        // refusing, and reports only the count of such users (spec change:
-        // the CSV files carry no password column, so the import must be
-        // able to run without a configured secret).
         var first = PeopleImporter.ImportAll(Db(), root, "", dryRun: false);
         Assert.Equal(5, first.CreatedUsers);
         Assert.Equal(5, first.UsersWithDefaultPassword);
@@ -246,14 +221,9 @@ D2,Mona,,Tarek,Female,39,mona.doc@test.edu,0150,addr,CS,Computer Science,Data Sc
         var second = PeopleImporter.ImportAll(Db(), root, null!, dryRun: true);
         Assert.Equal(0, second.CreatedUsers);              // the first call already created them
         Assert.Equal(0, second.UsersWithDefaultPassword);  // nothing new is bootstrapped
-        // The fixture's S1/S5 rows conflict on contact values (by design);
-        // every replay re-applies them (S1 then S5) — names are never
-        // rewritten. Dry run mirrors the real-run counters exactly.
         Assert.Equal(2, second.UpdatedUsers);
         Assert.Equal(4, second.ExistingUsers);             // sara, nocourse, 2 doctors
 
-        // An explicit password still overrides; existing users never get
-        // re-passworded, so the default counter stays at zero on replays.
         var third = PeopleImporter.ImportAll(Db(), root, "DoNotLog123!", dryRun: false);
         Assert.Equal(0, third.CreatedUsers);
         Assert.Equal(0, third.UsersWithDefaultPassword);
@@ -269,8 +239,6 @@ D2,Mona,,Tarek,Female,39,mona.doc@test.edu,0150,addr,CS,Computer Science,Data Sc
     }
 }
 
-/// <summary>University isolation through the REAL HTTP pipeline: a Cairo
-/// student never touches a Helwan course — foreign ids return 404.</summary>
 public class PeopleIsolationApiTests : IClassFixture<ApiFactory>
 {
     private readonly ApiFactory _factory;
@@ -304,7 +272,7 @@ public class PeopleIsolationApiTests : IClassFixture<ApiFactory>
         Assert.NotNull(helwanCoursesSeenByCairo);
         Assert.DoesNotContain(helwanCoursesSeenByCairo!, c => c.Id == helwanCourseId);
 
-        // Foreign course id → 404, indistinguishable from a missing id.
+        // Foreign course id -> 404, indistinguishable from a missing id.
         var enroll = await cairoClient.PostAsJsonAsync("/api/enrollments", new { courseId = helwanCourseId });
         Assert.Equal(HttpStatusCode.NotFound, enroll.StatusCode);
     }

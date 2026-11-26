@@ -5,8 +5,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>Builds the student performance analysis from real academic data
-/// and the rule-based at-risk list used by the admin panel.</summary>
 public class PerformanceAnalysisService
 {
     private readonly AppDbContext _db;
@@ -110,14 +108,9 @@ public class PerformanceAnalysisService
             courseRisks, output.Factors);
     }
 
-    /// <summary>Whether the user has any enrollments to score. Users without
-    /// courses carry no signal, so they are left out of risk listings
-    /// instead of being flagged on empty data.</summary>
     public async Task<bool> HasEnrollmentsAsync(int userId) =>
         await _db.Enrollments.AnyAsync(e => e.UserId == userId);
 
-    /// <summary>Every active student/graduate with enrollment data, scored by
-    /// the model and filtered to AtRisk, worst first.</summary>
     public async Task<IReadOnlyList<AtRiskStudentDto>> GetAtRiskStudentsAsync()
     {
         var users = await _db.Users.AsNoTracking()

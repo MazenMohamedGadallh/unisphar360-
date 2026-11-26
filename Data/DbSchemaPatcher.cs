@@ -2,13 +2,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace UniSphere.Api.Data;
 
-/// <summary>
-/// EnsureCreated() never ALTERs a database that already exists, so objects added
-/// to the model after a database was first created are missing in older files.
-/// This patcher runs CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS for
-/// every object added later. It is a no-op on fresh databases (EnsureCreated
-/// created those objects) and on already-patched databases.
-/// </summary>
 public static class DbSchemaPatcher
 {
     public static void Patch(AppDbContext db)
@@ -246,18 +239,12 @@ public static class DbSchemaPatcher
                 "ALTER TABLE Notifications ADD COLUMN Category TEXT NOT NULL DEFAULT 'System'");
             EnsureTableColumn(cmd, "Notifications", "DedupeKey",
                 "ALTER TABLE Notifications ADD COLUMN DedupeKey TEXT");
-            // Graduate preferences added after the settings row was introduced.
-            // Split joining the alert keywords/locations and the UI theme sync.
             EnsureTableColumn(cmd, "GraduateSettings", "ThemePreference",
                 "ALTER TABLE GraduateSettings ADD COLUMN ThemePreference TEXT NOT NULL DEFAULT 'system'");
             EnsureTableColumn(cmd, "GraduateSettings", "AlertKeywords",
                 "ALTER TABLE GraduateSettings ADD COLUMN AlertKeywords TEXT NULL");
             EnsureTableColumn(cmd, "GraduateSettings", "AlertLocations",
                 "ALTER TABLE GraduateSettings ADD COLUMN AlertLocations TEXT NULL");
-            // Doctor module objects reintroduced alongside the graduate system:
-            // course assignments (join table), research-hub papers and the
-            // course-scoped announcement columns. All additive; existing rows
-            // are unaffected (CourseId stays NULL = university-wide).
             EnsureTableColumn(cmd, "Announcements", "CourseId",
                 "ALTER TABLE Announcements ADD COLUMN CourseId INTEGER NULL");
             EnsureTableColumn(cmd, "Users", "Address",
@@ -307,8 +294,6 @@ public static class DbSchemaPatcher
                 CREATE INDEX IF NOT EXISTS IX_Announcements_CourseId ON Announcements(CourseId);
                 """;
             cmd.ExecuteNonQuery();
-            // Partial unique index: NULL keys never collide, generated career
-            // rows do. Runs on every startup (no-op when it already exists).
             using (var idx = conn.CreateCommand())
             {
                 idx.Transaction = tx;
@@ -327,9 +312,6 @@ public static class DbSchemaPatcher
         }
     }
 
-    /// <summary>Adds a column to an existing table (SQL Server-style IF NOT
-    /// EXISTS is not available for ALTER TABLE ADD COLUMN in SQLite). No-op
-    /// on fresh databases where EnsureCreated already created the column.</summary>
     private static void EnsureTableColumn(System.Data.Common.DbCommand cmd, string table, string column, string alterSql)
     {
         bool exists = false;

@@ -1,6 +1,5 @@
 namespace UniSphere.Api.Models;
 
-/// <summary>Career path recommendation for a student.</summary>
 public class CareerRecommendation
 {
     public int Id { get; set; }

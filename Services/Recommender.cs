@@ -2,7 +2,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>Simple rule-based recommender. Replace with the AI team's service later.</summary>
 public static class Recommender
 {
     public static string TrackFor(string major)
@@ -13,7 +12,6 @@ public static class Recommender
         return "Software";
     }
 
-    /// <summary>Courses in the user's track first, then the rest.</summary>
     public static IEnumerable<Course> Rank(IEnumerable<Course> courses, User user)
     {
         var track = TrackFor(user.Major);

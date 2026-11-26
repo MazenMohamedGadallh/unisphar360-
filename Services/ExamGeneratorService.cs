@@ -8,52 +8,32 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Exam generation for doctors. Builds a prompt from a course's own materials,
-/// asks the configured AI provider for JSON-formatted questions, validates and
-/// repairs the output, and returns a draft question set ready for saving.
-///
-/// Every step is scoped to the doctor's own assigned courses: materials are
-/// only read for courses the doctor teaches, and unknown/invalid output is
-/// rejected loudly rather than published as garbage.
-/// </summary>
 public interface IExamGeneratorService
 {
-    /// <summary>List the courses this doctor is assigned to (for the dropdown).</summary>
     Task<IReadOnlyList<ExamCatalogCourseDto>> GetAssignedCoursesAsync(int doctorUserId, CancellationToken ct = default);
 
-    /// <summary>Generate exam questions from a course's materials. Returns
-    /// drafted questions (not saved) plus course info.</summary>
     Task<ExamGenerationResponse> GenerateAsync(
         int doctorUserId, ExamGenerationRequest req, CancellationToken ct);
 
-    /// <summary>Save a generated exam with its questions.</summary>
     Task<ExamDto> SaveExamAsync(
         int doctorUserId, UpdateExamRequest req, CancellationToken ct);
 
-    /// <summary>List the caller's saved exams.</summary>
     Task<IReadOnlyList<ExamListDto>> ListExamsAsync(int doctorUserId, CancellationToken ct);
 
-    /// <summary>Get one saved exam with its questions.</summary>
     Task<ExamDto?> GetExamAsync(int doctorUserId, int examId, CancellationToken ct);
 
-    /// <summary>Update an existing exam (title, question edits).</summary>
     Task<ExamDto?> UpdateExamAsync(
         int doctorUserId, int examId, UpdateExamRequest req, CancellationToken ct);
 
-    /// <summary>Delete an exam and its questions.</summary>
     Task<bool> DeleteExamAsync(int doctorUserId, int examId, CancellationToken ct);
 
-    /// <summary>Update a single question inside an exam.</summary>
     Task<ExamQuestionDto?> UpdateQuestionAsync(
         int doctorUserId, int examId, int questionId,
         UpdateExamQuestionRequest req, CancellationToken ct);
 
-    /// <summary>Delete a single question from an exam.</summary>
     Task<bool> DeleteQuestionAsync(int doctorUserId, int examId, int questionId, CancellationToken ct);
 }
 
-/// <summary>One course exposed to the doctor for exam generation.</summary>
 public record ExamCatalogCourseDto(
     int Id, string Code, string Title, string Department,
     int? AcademicYear, string Semester);
@@ -122,8 +102,6 @@ public class ExamGeneratorService : IExamGeneratorService
             throw new AiUnavailableException(
                 $"Language must be one of: {string.Join(", ", ValidLanguages)}.");
 
-        // Authorize: doctor must be assigned to this course (legacy
-        // CourseInstructors rows and CourseAssignments both count).
         if (!await _access.IsAssignedToCourseAsync(doctorUserId, req.CourseId))
             throw new AiUnavailableException("You are not assigned to teach this course.");
 
@@ -131,8 +109,6 @@ public class ExamGeneratorService : IExamGeneratorService
             .FirstOrDefaultAsync(c => c.Id == req.CourseId, ct)
             ?? throw new AiUnavailableException("Course not found.");
 
-        // Load this course's materials (content first) — same university,
-        // same course, teacher-scoped.
         var materials = await _db.CourseMaterials.AsNoTracking()
             .Where(m => m.CourseId == req.CourseId && !string.IsNullOrWhiteSpace(m.Content))
             .OrderByDescending(m => m.CreatedAtUtc)
@@ -327,9 +303,7 @@ public class ExamGeneratorService : IExamGeneratorService
         return true;
     }
 
-    // ------------------------------------------------------------------
     // Helpers
-    // ------------------------------------------------------------------
 
     private static List<GeneratedExamQuestionDto> ParseQuestions(
         string raw, int expectedCount)
@@ -338,8 +312,6 @@ public class ExamGeneratorService : IExamGeneratorService
             throw new AiInvalidResponseException(
                 "The AI response did not contain a valid JSON array of questions. Please try again.");
 
-        // The requested shape is {"questions":[...]}; a bare JSON array is
-        // tolerated as well.
         JsonElement array;
         if (extracted.ValueKind == JsonValueKind.Object)
         {
@@ -374,8 +346,6 @@ public class ExamGeneratorService : IExamGeneratorService
             string? optionsJson = null;
             if (item.TryGetProperty("optionsJson", out var oj))
             {
-                // The prompt asks for a JSON-encoded string array; some models
-                // return a real array instead — accept both shapes.
                 if (oj.ValueKind == JsonValueKind.String)
                     optionsJson = oj.GetString();
                 else if (oj.ValueKind == JsonValueKind.Array)

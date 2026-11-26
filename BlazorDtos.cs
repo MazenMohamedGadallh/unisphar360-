@@ -1,8 +1,5 @@
 namespace UniSphere.Api;
 
-// DTOs used by Blazor pages — kept here so generic types like List<T>
-// don't get interpreted as HTML tags by the Razor compiler.
-
 public class AnalyticsResponse
 {
     public int TotalStudents { get; set; }
@@ -109,7 +106,7 @@ public class AnnouncementDto
     public string? CourseName { get; set; }
 }
 
-// ---- Graduate career platform (api/grad/*) ----
+// Graduate career platform (api/grad/*)
 
 public class GradProfileModel
 {

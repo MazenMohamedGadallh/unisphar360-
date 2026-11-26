@@ -3,34 +3,15 @@ using System.Text.RegularExpressions;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Tolerant extraction of the JSON payload from an LLM completion. Real models
-/// (reasoning models in particular) occasionally wrap the requested JSON in
-/// reasoning tag blocks, markdown fences, or prose — and can truncate long
-/// outputs mid-array. Blind slicing from the first '[' to the last ']' then
-/// parses garbage. This extractor, in order:
-/// 1. strips reasoning-tag wrapper blocks (the open/close think-tag pair);
-/// 2. tries the whole remaining text as JSON;
-/// 3. tries the body of a markdown code fence;
-/// 4. scans for the first balanced {'...'} or [...] span, ignoring bracket
-///    characters inside JSON string literals;
-/// 5. otherwise salvages every complete top-level {'...'} object that fully
-///    arrived (handles outputs truncated mid-array).
-/// It never invents content: everything must still parse as valid JSON.
-/// </summary>
 public static class AiJsonExtractor
 {
-    /// <summary>Strips reasoning-tag blocks, e.g. the 'think'-tag pair some
-    /// reasoning models emit inline in the message text.</summary>
     private static readonly Regex ThinkRegex = new(
         "<" + "think" + ">" + "[\\s\\S]*?" + "<" + "/" + "think" + ">",
         RegexOptions.Compiled);
 
-    /// <summary>Matches a markdown code fence, capturing its body.</summary>
     private static readonly Regex FenceRegex =
         new("```(?:json|JSON)?\\s*([\\s\\S]*?)```", RegexOptions.Compiled);
 
-    /// <summary>Attempts to pull a JSON element out of a raw completion.</summary>
     public static bool TryExtract(string raw, out JsonElement element)
     {
         element = default;
@@ -46,14 +27,9 @@ public static class AiJsonExtractor
         var (start, end, balanced) = FindFirstBalancedSpan(text);
         if (balanced && TryParse(text[start..(end + 1)], out element)) return true;
 
-        // No balanced span (e.g. truncated output): salvage every complete
-        // top-level JSON object the text still contains.
         return TrySalvageObjects(text, out element);
     }
 
-    /// <summary>Reads the correct-answer position of a multiple-choice item
-    /// tolerantly: 0-based number, numeric string, letter ("B"), or the text of
-    /// the right option. Returns -1 when it cannot be resolved.</summary>
     public static int ReadAnswerIndex(JsonElement item, IReadOnlyList<string> options)
     {
         foreach (var name in new[] { "correctIndex", "correct_index", "answerIndex", "correctAnswer", "answer" })
@@ -90,9 +66,6 @@ public static class AiJsonExtractor
         }
     }
 
-    /// <summary>Scans from the first object/array opener with a closers stack,
-    /// so same-type nesting pairs correctly. Returns the balanced span, or
-    /// the opener index with balanced=false when it never closes.</summary>
     private static (int Start, int End, bool Balanced) FindFirstBalancedSpan(string text)
     {
         var start = -1;
@@ -137,7 +110,7 @@ public static class AiJsonExtractor
         {
             if (text[i] != '{') { i++; continue; }
             var end = FindMatchingClose(text, i, '{', '}');
-            if (end < 0) { i++; continue; }             // unclosed (truncated) — look inside for complete elements
+            if (end < 0) { i++; continue; }             // unclosed (truncated) - look inside for complete elements
             if (!TryParse(text[i..(end + 1)], out var obj)) { i++; continue; }
             items.Add(obj);
             i = end + 1;
@@ -157,9 +130,6 @@ public static class AiJsonExtractor
         return true;
     }
 
-    /// <summary>Index of the close character matching the same-type opener at
-    /// 'start' (nested same-type openers tracked by depth), or -1 when never
-    /// closed. Brackets inside string literals are skipped.</summary>
     private static int FindMatchingClose(string text, int start, char open, char close)
     {
         var depth = 0;

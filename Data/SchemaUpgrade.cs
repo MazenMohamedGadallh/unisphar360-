@@ -3,11 +3,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace UniSphere.Api.Data;
 
-/// <summary>
-/// Small, idempotent schema upgrades for installations created before EF
-/// migrations were introduced. A backup (unisphere-backup.db) is taken before
-/// applying these. Fresh databases get the same shape from EnsureCreated.
-/// </summary>
 public static class SchemaUpgrade
 {
     public static void Apply(AppDbContext db, ILogger? logger = null)
@@ -25,8 +20,6 @@ public static class SchemaUpgrade
             // Phase 1: locked doctor profile address.
             AddColumnIfMissing(connection, "Users", "Address", "TEXT NOT NULL DEFAULT ''");
 
-            // Part 1: doctor assignments (fresh databases get this table from
-            // EnsureCreated; existing installations get it here).
             Execute(connection,
                 "CREATE TABLE IF NOT EXISTS \"CourseInstructors\" (" +
                 "\"Id\" INTEGER NOT NULL CONSTRAINT \"PK_CourseInstructors\" PRIMARY KEY AUTOINCREMENT, " +
@@ -37,8 +30,6 @@ public static class SchemaUpgrade
                 "CONSTRAINT \"FK_CourseInstructors_Courses_CourseId\" FOREIGN KEY (\"CourseId\") " +
                 "REFERENCES \"Courses\" (\"Id\") ON DELETE CASCADE)");
 
-            // Phase 1: doctor-editable course display title (catalog
-            // title/code stay untouched). After the table is guaranteed.
             AddColumnIfMissing(connection, "CourseInstructors", "DisplayTitle", "TEXT NULL");
 
             Execute(connection,
@@ -57,9 +48,6 @@ public static class SchemaUpgrade
                 "CREATE INDEX IF NOT EXISTS \"IX_CourseInstructors_DoctorUserId\" " +
                 "ON \"CourseInstructors\" (\"DoctorUserId\")");
 
-            // Phase 2: research papers uploaded by doctors. Fresh databases
-            // get this table from EnsureCreated; existing installations get it
-            // here. PdfPath stores only the generated file name (no paths).
             Execute(connection,
                 "CREATE TABLE IF NOT EXISTS \"DoctorResearch\" (" +
                 "\"Id\" INTEGER NOT NULL CONSTRAINT \"PK_DoctorResearch\" PRIMARY KEY AUTOINCREMENT, " +

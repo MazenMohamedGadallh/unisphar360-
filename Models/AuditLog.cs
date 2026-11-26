@@ -1,6 +1,5 @@
 namespace UniSphere.Api.Models;
 
-/// <summary>Audit trail for every authenticated API call.</summary>
 public class AuditLog
 {
     public int Id { get; set; }

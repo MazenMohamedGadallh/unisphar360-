@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 
@@ -51,7 +52,6 @@ def _load_env() -> None:
             name, value = name.strip(), value.strip().strip('"').strip("'")
             if name and value and not os.environ.get(name):
                 os.environ[name] = value
-
 
 _load_env()
 RAG_API_KEY = os.getenv("RAG_API_KEY", "")
@@ -84,10 +84,6 @@ class QueryRequest(BaseModel):
     top_k: int = Field(default=4, ge=1, le=8)
     system_prompt: Optional[str] = None
 
-
-# ----------------------------------------------------------------------------
-# Chunking + BM25
-# ----------------------------------------------------------------------------
 _TOKEN = re.compile(r"[\w؀-ۿ]+", re.UNICODE)
 _STOP = {"the", "and", "for", "are", "how", "what", "why", "when", "with", "from", "that",
          "this", "please", "explain", "about", "does", "can", "you", "ما", "هل", "كيف", "في",
@@ -115,7 +111,6 @@ def chunk(text: str, size: int = 800, overlap: int = 100) -> List[str]:
         i = max(end - overlap, i + 1)
     return [c for c in out if c]
 
-
 SMALL_DOCS_CHARS = 9000
 
 
@@ -140,8 +135,6 @@ def rank(query: str, docs: List[Doc], top_k: int) -> List[Dict[str, Any]]:
             idf = math.log(1 + (N - df[t] + 0.5) / (df[t] + 0.5))
             score += idf * tf[t] * (k1 + 1) / (tf[t] + k1 * (1 - b + b * len(c["tok"]) / avg))
         c["score"] = score
-    # Small document sets (a single CV, a short handout) fit whole: keep every chunk
-    # in reading order so nothing is dropped by top_k.
     if sum(len(c["text"]) for c in chunks) <= SMALL_DOCS_CHARS:
         return chunks
     best = sorted((c for c in chunks if c["score"] > 0), key=lambda c: -c["score"])[:top_k]
@@ -157,9 +150,6 @@ def to_context(best: List[Dict[str, Any]]) -> str:
     return "\n\n".join(f"[{c['title']}]\n{c['text']}" for c in best)
 
 
-# ----------------------------------------------------------------------------
-# Routes
-# ----------------------------------------------------------------------------
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
@@ -195,8 +185,6 @@ def _gemini(system: str, prompt: str) -> Optional[str]:
 def _ollama(system: str, prompt: str) -> Optional[str]:
     """Local fallback writer: a running Ollama (OLLAMA_BASE_URL / OLLAMA_MODEL)."""
     base = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/").removesuffix("/v1")
-    # keep_alive: reloading the model after Ollama's default 5 idle minutes takes 30s+ on this CPU.
-    # num_ctx: Ollama's default window (2-4k tokens) silently cuts long prompts (a CV + instructions).
     body = {"model": os.getenv("OLLAMA_MODEL", "qwen3:1.7b"), "stream": False, "think": False, "keep_alive": "30m",
             "options": {"num_ctx": 8192},
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
@@ -220,14 +208,75 @@ def _write(system: str, prompt: str) -> tuple[Optional[str], str, str]:
     return answer, "ollama", os.getenv("OLLAMA_MODEL", "qwen3:1.7b")
 
 
+def _system(req: QueryRequest) -> str:
+    return (req.system_prompt or "You are a university teaching assistant.") + \
+        " Use the provided document excerpts first when relevant and cite the excerpt title. If they do not cover the" \
+        " question, do NOT refuse: answer helpfully from general knowledge and say briefly that it came from general" \
+        " knowledge rather than the provided documents."
+
+
+def _prompt(req: QueryRequest, best: List[Dict[str, Any]]) -> str:
+    excerpts = to_context(best) if best else "(none matched)"
+    return f"Document excerpts:\n{excerpts}\n\nQuestion: {req.question}"
+
+
+def _gemini_stream(system: str, prompt: str):
+    """Yields answer text pieces from Gemini as they are generated (SSE)."""
+    key = os.getenv("GEMINI_API_KEY", "")
+    if not key:
+        return
+    body = {"systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": 3072}}
+    req = urllib.request.Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:streamGenerateContent?alt=sse",
+        data=json.dumps(body).encode(), method="POST",
+        headers={"Content-Type": "application/json", "x-goog-api-key": key})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        for raw in r:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            try:
+                parts = json.loads(line[5:])["candidates"][0]["content"]["parts"]
+            except (KeyError, IndexError, ValueError):
+                continue
+            text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+            if text:
+                yield text
+
+
+@app.post("/query/stream", dependencies=[Depends(verify_key)])
+def query_stream(req: QueryRequest) -> StreamingResponse:
+    """Same answer as /query, streamed as NDJSON: {"delta": "..."} lines, then one
+    {"done": true, "sources": [...], ...} line. Falls back to the whole /query
+    answer in a single delta when streaming is not possible."""
+    best = rank(req.question, req.documents, req.top_k)
+
+    def events():
+        sent = False
+        try:
+            for piece in _gemini_stream(_system(req), _prompt(req, best)):
+                sent = True
+                yield json.dumps({"delta": piece}) + "\n"
+        except (urllib.error.URLError, TimeoutError, OSError):
+            pass  # nothing usable streamed: fall back below; mid-answer failure ends the answer
+        if sent:
+            yield json.dumps({"done": True, "sources": to_sources(best), "grounded": bool(best),
+                              "provider": "gemini", "model": GEMINI_MODEL}) + "\n"
+            return
+        full = query(req)
+        yield json.dumps({"delta": full["answer"]}) + "\n"
+        yield json.dumps({"done": True, **{k: v for k, v in full.items() if k != "answer"}}) + "\n"
+
+    return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
 @app.post("/query", dependencies=[Depends(verify_key)])
 def query(req: QueryRequest) -> Dict[str, Any]:
     best = rank(req.question, req.documents, req.top_k)
     sources = to_sources(best)
-    system = (req.system_prompt or "You are a university teaching assistant.") + \
-        " Use the provided document excerpts first when relevant and cite the excerpt title. If they do not cover the" \
-        " question, do NOT refuse: answer helpfully from general knowledge and say briefly that it came from general" \
-        " knowledge rather than the provided documents."
+    system = _system(req)
     if not best:
         answer, provider, model = _write(system, f"Document excerpts: (none matched)\n\nQuestion: {req.question}")
         if answer:

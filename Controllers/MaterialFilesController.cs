@@ -7,17 +7,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>
-/// Authenticated course-material attachment downloads. The endpoint accepts
-/// only a material id — never a file name or path. Authorization is decided
-/// from the authenticated user:
-///  - Admin: global access under the existing admin rules.
-///  - Doctor: must be assigned to the material's course (same university).
-///  - Student: must be enrolled in the material's course and in the same
-///    university as that course.
-/// Every authenticated caller who fails those checks receives 404, never a
-/// 403 that would reveal a foreign material exists.
-/// </summary>
 [Authorize]
 [ApiController]
 [Route("api/materials")]

@@ -1,6 +1,5 @@
 namespace UniSphere.Api.Models;
 
-/// <summary>Research paper metadata for discovery and summarization.</summary>
 public class ResearchPaper
 {
     public int Id { get; set; }

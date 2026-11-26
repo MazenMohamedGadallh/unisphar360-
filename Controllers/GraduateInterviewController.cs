@@ -16,10 +16,6 @@ public class GraduateInterviewController(
 {
     private int UserId => User.GetUserId();
 
-    /// <summary>Quiz start: real AI questions when a provider is configured,
-    /// otherwise the curated bank is used and clearly labeled ("Curated").
-    /// Pass useAi=false to force the curated bank, or useAi=true to fail
-    /// loudly (503) when no provider is configured.</summary>
     [HttpPost("sessions")]
     public async Task<IActionResult> CreateSession(InterviewSessionCreateRequest request)
     {
@@ -48,8 +44,6 @@ public class GraduateInterviewController(
     public async Task<IActionResult> Delete(int id) =>
         await interviews.DeleteSessionAsync(UserId, id) ? NoContent() : NotFound(new { error = "Interview session not found." });
 
-    /// <summary>Submit an answer; REAL provider-generated feedback is attached
-    /// (never faked) or a 503 explains exactly why feedback is unavailable.</summary>
     [HttpPost("sessions/{sessionId:int}/questions/{questionId:int}/answer")]
     public async Task<IActionResult> Answer(int sessionId, int questionId, InterviewAnswerRequest request)
     {

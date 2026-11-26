@@ -9,12 +9,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// CV upload, storage, text extraction and deletion.
-/// Files live under {ContentRoot}/uploads/cv/{userId}/ with random storage
-/// names (original names are only kept in the DB for display). Extraction is
-/// best-effort per format; failures surface as real ParseStatus values.
-/// </summary>
 public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvFileService> logger)
 {
     public const int MaxBytes = 10 * 1024 * 1024;
@@ -125,8 +119,6 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
     public async Task<CvDocument?> GetAsync(int userId, int cvId) =>
         await db.CvDocuments.FirstOrDefaultAsync(c => c.UserId == userId && c.Id == cvId);
 
-    /// <summary>Attach user-typed CV text (e.g., when extraction failed or the
-    /// user wants to edit it). Replaces existing manual text.</summary>
     public async Task<CvDocumentDto> SaveManualTextAsync(int userId, int cvId, string text)
     {
         var doc = await db.CvDocuments.FirstOrDefaultAsync(c => c.UserId == userId && c.Id == cvId)
@@ -142,8 +134,6 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
         if (!string.IsNullOrWhiteSpace(doc.ManualText)) return doc.ManualText;
         if (string.IsNullOrWhiteSpace(doc.ExtractedText) && File.Exists(doc.StoragePath))
         {
-            // Re-read files whose earlier extraction failed (the extractor improves over
-            // time, and re-uploading the same file is deduplicated back to this record).
             var (text, status, error) = ExtractText(doc.StoragePath, Path.GetExtension(doc.StoragePath).ToLowerInvariant());
             if (text is not null)
             {
@@ -164,7 +154,7 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
             lastAnalysis is not null, lastAnalysis?.Id, (d.ExtractedText ?? "").Length);
     }
 
-    // ---------------- extraction and file validation ----------------
+    // extraction and file validation
 
     internal static bool ValidatePdf(string path)
     {
@@ -212,7 +202,6 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
 
     private const int MinUsefulChars = 80;
 
-    /// <summary>DOCX = zip; concatenate w:t runs from word/document.xml.</summary>
     internal static string ExtractDocx(string path)
     {
         using var zip = ZipFile.OpenRead(path);
@@ -231,10 +220,6 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
         return sb.ToString();
     }
 
-    /// <summary>PDF best-effort: decode ASCII85 + FlateDecode streams and pull text
-    /// shown with Tj/TJ operators, starting a new line on Td/TD/T*/ET. Works for
-    /// many simple text-based PDFs; scanned or encrypted PDFs fail gracefully into
-    /// ParseStatus=Failed.</summary>
     public static string ExtractPdf(string path)
     {
         var bytes = File.ReadAllBytes(path);
@@ -282,7 +267,6 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
         return sb.ToString();
     }
 
-    /// <summary>ASCII85 (Adobe "~>"-terminated) to bytes; false when the stream is not ASCII85.</summary>
     internal static bool TryAscii85(byte[] input, out byte[] output)
     {
         output = [];
@@ -317,7 +301,7 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
 
     private static bool TryInflate(byte[] input, out byte[] output)
     {
-        // zlib (RFC1950, starts with 0x78) → ZLibStream; raw Deflate (RFC1951) → DeflateStream.
+        // zlib (RFC1950, starts with 0x78) -> ZLibStream; raw Deflate (RFC1951) -> DeflateStream.
         var attempts = new Func<Stream>[]
         {
             () => new ZLibStream(new MemoryStream(input), CompressionMode.Decompress),

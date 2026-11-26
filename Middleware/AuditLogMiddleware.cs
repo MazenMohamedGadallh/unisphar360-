@@ -8,7 +8,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Middleware;
 
-/// <summary>Logs every API call to the AuditLogs table for administrative review.</summary>
 public class AuditLogMiddleware
 {
     private readonly RequestDelegate _next;
@@ -27,7 +26,7 @@ public class AuditLogMiddleware
         _logger = logger;
     }
 
-    public async Task InvokeAsync(HttpContext context, AppDbContext db)
+    public async Task InvokeAsync(HttpContext context)
     {
         var sw = Stopwatch.StartNew();
         var path = context.Request.Path.Value ?? "";
@@ -39,9 +38,6 @@ public class AuditLogMiddleware
             return;
         }
 
-        // Chat SSE streams must flow token-by-token: capturing the body
-        // would buffer the whole reply until it finishes. Pass through and
-        // log only the metadata below.
         var isChatStream = HttpMethods.IsPost(context.Request.Method)
             && context.Request.Path.StartsWithSegments("/api/chat", StringComparison.OrdinalIgnoreCase)
             && path.EndsWith("/messages", StringComparison.OrdinalIgnoreCase);
@@ -86,8 +82,22 @@ public class AuditLogMiddleware
                         UserAgent = context.Request.Headers.UserAgent.ToString()
                     };
 
-                    db.AuditLogs.Add(audit);
-                    await db.SaveChangesAsync();
+                    // Written after the response is sent so the user never waits on the SQLite write lock.
+                    var scopes = context.RequestServices.GetRequiredService<IServiceScopeFactory>();
+                    context.Response.OnCompleted(async () =>
+                    {
+                        try
+                        {
+                            using var scope = scopes.CreateScope();
+                            var auditDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                            auditDb.AuditLogs.Add(audit);
+                            await auditDb.SaveChangesAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to write audit log for {Path}", path);
+                        }
+                    });
                 }
             }
             catch (Exception ex)
@@ -95,9 +105,6 @@ public class AuditLogMiddleware
                 _logger.LogWarning(ex, "Failed to write audit log for {Path}", path);
             }
 
-            // Restore response body (rewind the capture buffer first —
-            // otherwise CopyToAsync copies zero bytes and every response
-            // goes out with an empty body). Streams were never captured.
             if (responseBody is not null)
             {
                 responseBody.Seek(0, SeekOrigin.Begin);

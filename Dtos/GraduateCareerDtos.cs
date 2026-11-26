@@ -1,10 +1,5 @@
 namespace UniSphere.Api.Dtos;
 
-// ---------------------------------------------------------------------------
-// Graduate career platform DTOs (api/grad/*). All user-owned data returns the
-// authenticated owner's records only.
-// ---------------------------------------------------------------------------
-
 public record GraduateSkillDto(int Id, string Name, string? Level, string Source);
 
 public record GraduateSkillCreateRequest(string Name, string? Level);

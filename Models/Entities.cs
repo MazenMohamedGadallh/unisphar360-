@@ -49,8 +49,6 @@ public class EventItem
     public DateTime StartsAtUtc { get; set; }
     public string? ImageUrl { get; set; }
     public string? Description { get; set; }
-    /// <summary>University that owns this event. Null only on legacy rows
-    /// before the scope backfill; scoped users never see those.</summary>
     public int? UniversityId { get; set; }
 }
 
@@ -62,13 +60,7 @@ public class Notification
     public string Body { get; set; } = "";
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public bool IsRead { get; set; }
-    // Career notification fields (added post-launch; see DbSchemaPatcher).
-    // "System" covers every row created before career notifications existed
-    // and all non-career notifications (welcome, announcements, graduation).
     public string Category { get; set; } = "System";
-    /// <summary>Stable per-user key that makes regenerated career
-    /// notifications idempotent (e.g. "match:42"). Null for rows that are
-    /// inserted once by explicit feature writes.</summary>
     public string? DedupeKey { get; set; }
 }
 
@@ -84,14 +76,9 @@ public class Course
     public string Department { get; set; } = ""; // "" = all departments
     public int? AcademicYear { get; set; }       // null = all years
     public string Semester { get; set; } = "";   // e.g. "Fall 2025"
-    /// <summary>Comma-separated prerequisite course codes. The importer
-    /// only keeps codes that resolve inside the same university.</summary>
     public string Prerequisites { get; set; } = "";
 }
 
-/// <summary>Assignment of a doctor to teach a course in a term. Unique per
-/// course + doctor + term. Managed by admins; doctors only ever see and
-/// write to courses they are assigned to.</summary>
 public class CourseInstructor
 {
     public int Id { get; set; }
@@ -99,13 +86,10 @@ public class CourseInstructor
     public Course? Course { get; set; }
     public int DoctorUserId { get; set; }
     public string Term { get; set; } = "";   // e.g. "Fall 2025"
-    /// <summary>Doctor-editable title shown to students. The catalog
-    /// Course.Title and Course.Code are never changed.</summary>
     public string? DisplayTitle { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>A course the student takes in the current semester, with grade and attendance.</summary>
 public class Enrollment
 {
     public int Id { get; set; }
@@ -119,7 +103,6 @@ public class Enrollment
     public string Status { get; set; } = "Good";     // Excellent | Good | Needs Attention
 }
 
-/// <summary>GPA / attendance snapshot per semester (used for "vs. last semester").</summary>
 public class SemesterRecord
 {
     public int Id { get; set; }
@@ -152,7 +135,6 @@ public class ActivityItem
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>One row per successful login — powers "active users" and "logins per day" admin stats.</summary>
 public class LoginRecord
 {
     public int Id { get; set; }
@@ -160,7 +142,6 @@ public class LoginRecord
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>One AI chat thread owned by a user.</summary>
 public class ChatConversation
 {
     public int Id { get; set; }
@@ -185,7 +166,6 @@ public class ChatMessage
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>Per-user daily chat usage for the daily message limit.</summary>
 public class ChatUsage
 {
     public int Id { get; set; }
@@ -194,7 +174,6 @@ public class ChatUsage
     public int Count { get; set; }
 }
 
-/// <summary>Role numbers: 1 Student, 2 Graduate, 3 Doctor, 4 Admin.</summary>
 public enum UserRole
 {
     Student = 1,
@@ -221,27 +200,20 @@ public class CourseMaterial
     public string Content { get; set; } = "";
     public string? FileUrl { get; set; }
     public int? UploadedByUserId { get; set; }
-    /// <summary>Server-generated GUID + allowed extension for an uploaded
-    /// attachment. Only this bare file name is persisted; no absolute path is
-    /// ever stored in the database.</summary>
     public string? StoredFileName { get; set; }
-    /// <summary>Sanitized client-facing name of the uploaded attachment.</summary>
     public string? OriginalFileName { get; set; }
     public long? FileSizeBytes { get; set; }
     public string? FileContentType { get; set; }
-    /// <summary>Assignment-style submission deadline (doctor module).</summary>
     public DateTime? DeadlineUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>Roles table (1 Student, 2 Graduate, 3 Doctor, 4 Admin) so roles can be looked up in the database.</summary>
 public class RoleItem
 {
     public int Id { get; set; }
     public string Name { get; set; } = "";
 }
 
-/// <summary>Lifecycle of a graduation application.</summary>
 public static class GraduationStatus
 {
     public const string Pending = "Pending";
@@ -250,19 +222,12 @@ public static class GraduationStatus
     public const string Rejected = "Rejected";
     public const string Withdrawn = "Withdrawn";
 
-    /// <summary>Statuses that block a second application for the same student.</summary>
     public static readonly string[] ActiveStatuses = { Pending, InReview };
 
-    /// <summary>Statuses an application cannot leave (a new one must be filed instead).</summary>
     public static bool IsFinal(string status) =>
         status is Approved or Rejected or Withdrawn;
 }
 
-/// <summary>
-/// A student's graduation application (degree audit). Submitted once the student
-/// believes they are done; the registrar approves or rejects it, and an approval
-/// is the conferral — the user's GraduationYear/GraduatedFrom are stamped from it.
-/// </summary>
 public class GraduationApplication
 {
     public int Id { get; set; }
@@ -288,9 +253,6 @@ public class GraduationApplication
     public DateTime SubmittedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>One generated exam owned by a doctor for one of their assigned
-/// courses. Contains the generation settings and a snapshot of which
-/// source materials were used.</summary>
 public class Exam
 {
     public int Id { get; set; }
@@ -310,20 +272,12 @@ public class Exam
     public int? Marks { get; set; }                   // total marks for the exam
     public ICollection<ExamQuestion> Questions { get; set; } = new List<ExamQuestion>();
 
-    // Optional exam window (set at publish time for quiz/exam publication):
-    // OpensAtUtc gates starting an attempt, ClosesAtUtc is the hard
-    // server-side submit deadline, DurationMinutes is the advertised time
-    // budget (soft — displayed to students, not auto-enforced), and
-    // ShowAnswersAfterSubmit controls whether students see per-question
-    // correctness after their attempt is graded. Null dates = always open.
     public DateTime? OpensAtUtc { get; set; }
     public DateTime? ClosesAtUtc { get; set; }
     public int? DurationMinutes { get; set; }
     public bool ShowAnswersAfterSubmit { get; set; }
 }
 
-/// <summary>One question inside an exam, with its answer hidden behind a
-/// "Show answers" toggle until the doctor or student chooses to reveal it.</summary>
 public class ExamQuestion
 {
     public int Id { get; set; }

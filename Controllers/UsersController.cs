@@ -31,8 +31,6 @@ public class UsersController : ControllerBase
     private static UserDto ToDto(AppUser u) =>
         new(u.Id, u.FullName, u.FullName.Split(' ')[0], u.AvatarUrl, u.Major);
 
-    /// <summary>List the users that have a role number (Admin or Doctor only).
-    /// Doctors only see users of their own university; Admin is global.</summary>
     [Authorize(Roles = "Admin,Doctor")]
     [HttpGet("by-role/{roleId:int}")]
     public async Task<ActionResult<IReadOnlyList<AuthUserDto>>> GetByRole(int roleId)
@@ -56,8 +54,6 @@ public class UsersController : ControllerBase
 ;
     }
 
-    /// <summary>Which role does this user have? (Admin or Doctor only).
-    /// A user from another university is reported as missing.</summary>
     [Authorize(Roles = "Admin,Doctor")]
     [HttpGet("{userId:int}/role")]
     public async Task<ActionResult<RoleDto>> GetUserRole(int userId)
@@ -76,8 +72,6 @@ public class UsersController : ControllerBase
         return new RoleDto((int)user.Role, user.Role.ToString());
     }
 
-    /// <summary>Least-trivial self-profile read: any authenticated user can
-    /// always read their own account row (used by the shared Profile page).</summary>
     [HttpGet("me")]
     public async Task<ActionResult<MeDto>> Me()
     {
@@ -153,9 +147,6 @@ public class UsersController : ControllerBase
         var u = await _db.Users.FindAsync(id);
         if (u is null) return NotFound();
 
-        // Doctor identity fields are locked to the admin panel; from the
-        // generic profile endpoint a doctor may only change the avatar.
-        // (/api/doctor/profile is the dedicated doctor endpoint.)
         if (u.Role == UserRole.Doctor
             && (!string.Equals(fullName, u.FullName, StringComparison.Ordinal)
                 || !string.Equals(major, u.Major, StringComparison.Ordinal)))

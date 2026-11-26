@@ -14,8 +14,6 @@ public interface IChatProvider
     IAsyncEnumerable<string> StreamAsync(ChatRequest request, CancellationToken ct);
 }
 
-/// <summary>Implemented by every provider so the registry can hide
-/// providers whose key is not configured (without crashing).</summary>
 public interface IProviderStatus
 {
     bool IsConfigured { get; }
@@ -36,21 +34,16 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
     public abstract string Name { get; }
     public abstract bool IsConfigured { get; }
 
-    /// <summary>Model of the in-flight request, for stream-error logs.
-    /// One provider instance serves one request at a time.</summary>
     protected string CurrentModel { get; private set; } = "";
 
     public virtual Task<bool> IsAvailableAsync(CancellationToken ct = default) =>
         Task.FromResult(IsConfigured);
 
-    /// <summary>HTTP attempts per request for transient errors (429/5xx/network).</summary>
     protected virtual int MaxAttempts => 3;
 
     protected abstract HttpRequestMessage BuildRequest(ChatRequest request);
     protected abstract IAsyncEnumerable<string> ReadTokensAsync(Stream stream, CancellationToken ct);
 
-    /// <summary>Body/detail text for logs: truncated so a huge provider error
-    /// can never flood the log file (never contains keys: only response bodies).</summary>
     protected static string Truncate(string? text, int max = 500)
     {
         if (string.IsNullOrEmpty(text)) return "";
@@ -68,14 +61,8 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
         _ => $"The AI provider returned an unexpected error (HTTP {statusCode})."
     };
 
-    /// <summary>Per-provider error mapping. Defaults to <see cref="MapStatusToMessage"/>. The
-    /// server-side body is passed for providers that refine the message (e.g. invalid-key
-    /// detection). Bodies are provider diagnostic output — never log or echo API keys.</summary>
     protected virtual string MapError(int statusCode, string body) => MapStatusToMessage(statusCode);
 
-    /// <summary>Logs (Warning) and maps an error object received INSIDE a stream,
-    /// e.g. OpenRouter's {"error":{"message":"...","code":429}}. Provider details
-    /// are logged truncated server-side; the client only gets the safe mapping.</summary>
     protected string MapStreamError(string? model, JsonElement error)
     {
         string? message = null;
@@ -108,8 +95,6 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
     {
         CurrentModel = request.Model;
 
-        // Retry loop only establishes the response (no yields inside try:
-        // C# forbids yield in a try block with a catch clause).
         var maxAttempts = MaxAttempts;
         HttpResponseMessage? response = null;
 
@@ -224,9 +209,6 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
         while ((line = await reader.ReadLineAsync(ct)) is not null)
         {
             ct.ThrowIfCancellationRequested();
-            // SSE comments are keep-alives (OpenRouter sends
-            // ": OPENROUTER PROCESSING" while a slow model is thinking):
-            // they carry no data and must never reach the JSON parser.
             if (line.StartsWith(':')) continue;
             if (line.StartsWith("event:", StringComparison.Ordinal))
             {
@@ -238,11 +220,6 @@ public abstract class StreamingChatProviderBase : IChatProvider, IProviderStatus
         }
     }
 
-    /// <summary>Shared token parser for OpenAI-compatible chat/completions SSE
-    /// (OpenAI, OpenRouter, and Ollama's /v1 endpoint). Yields only
-    /// delta.content text (reasoning fields are ignored), stops at [DONE],
-    /// skips malformed lines, and surfaces in-stream {"error":{...}} objects
-    /// (e.g. OpenRouter 429) through <see cref="MapStreamError"/>.</summary>
     protected async IAsyncEnumerable<string> ReadOpenAiCompatibleTokensAsync(
         Stream stream, [EnumeratorCancellation] CancellationToken ct)
     {
@@ -302,7 +279,7 @@ public class OpenAiChatProvider : StreamingChatProviderBase
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        // Priority: Chat:Providers:OpenAI:ApiKey (appsettings.Local.json) → OPENAI_API_KEY (env/user-secrets/secret.json).
+        // Priority: Chat:Providers:OpenAI:ApiKey (appsettings.Local.json) -> OPENAI_API_KEY (env/user-secrets/secret.json).
         var key = ProviderSettings.GetApiKey(_config, Name);
         if (string.IsNullOrWhiteSpace(key))
             throw new ChatProviderException(
@@ -345,9 +322,6 @@ public class OpenRouterChatProvider : StreamingChatProviderBase
     public override string Name => "openrouter";
     public override bool IsConfigured => !string.IsNullOrWhiteSpace(ProviderSettings.GetApiKey(_config, Name));
 
-    // A configured key is enough: the old live "auth/key" probe turned any
-    // network blip / slow response into "No AI provider is configured".
-    // A bad key surfaces on the real request with an actionable message.
     public override Task<bool> IsAvailableAsync(CancellationToken ct = default) =>
         Task.FromResult(IsConfigured);
 
@@ -363,7 +337,7 @@ public class OpenRouterChatProvider : StreamingChatProviderBase
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        // Priority: Chat:Providers:OpenRouter:ApiKey (appsettings.Local.json) → OPENROUTER_API_KEY (env/user-secrets/secret.json).
+        // Priority: Chat:Providers:OpenRouter:ApiKey (appsettings.Local.json) -> OPENROUTER_API_KEY (env/user-secrets/secret.json).
         var key = ProviderSettings.GetApiKey(_config, Name);
         if (string.IsNullOrWhiteSpace(key))
             throw new ChatProviderException(
@@ -390,8 +364,6 @@ public class OpenRouterChatProvider : StreamingChatProviderBase
     protected override async IAsyncEnumerable<string> ReadTokensAsync(
         Stream stream, [EnumeratorCancellation] CancellationToken ct)
     {
-        // OpenAI-compatible SSE; comment/keep-alive lines and reasoning
-        // fields are handled inside the shared parser.
         await foreach (var token in ReadOpenAiCompatibleTokensAsync(stream, ct).WithCancellation(ct))
             yield return token;
     }
@@ -415,7 +387,7 @@ public class AnthropicChatProvider : StreamingChatProviderBase
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        // Priority: Chat:Providers:Anthropic:ApiKey → ANTHROPIC_API_KEY.
+        // Priority: Chat:Providers:Anthropic:ApiKey -> ANTHROPIC_API_KEY.
         var key = ProviderSettings.GetApiKey(_config, Name);
         if (string.IsNullOrWhiteSpace(key))
             throw new ChatProviderException(
@@ -502,17 +474,11 @@ public class GeminiChatProvider : StreamingChatProviderBase
     public override string Name => "gemini";
     public override bool IsConfigured => !string.IsNullOrWhiteSpace(ProviderSettings.GetApiKey(_config, Name));
 
-    // One attempt per model: when a model is overloaded (503), retired (404) or
-    // rate limited (429) we move to the next model instead of waiting on it.
     protected override int MaxAttempts => 1;
 
-    /// <summary>Models tried in order. Google retires/overloads individual Flash
-    /// models often, so keep lighter aliases behind the configured one.</summary>
     private static readonly string[] FallbackModels =
         ["gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-flash-latest"];
 
-    /// <summary>Overloaded Gemini models can hold the connection open for a minute or
-    /// more before answering 503. If no token arrives in this time, try the next model.</summary>
     private static readonly TimeSpan FirstTokenTimeout = TimeSpan.FromSeconds(25);
 
     public override async IAsyncEnumerable<string> StreamAsync(
@@ -576,10 +542,6 @@ public class GeminiChatProvider : StreamingChatProviderBase
         || ex.Message.Contains("API_KEY_INVALID", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("not configured", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Gemini signals an invalid/absent key with HTTP 400 + "API key not
-    /// valid" in the body. Turn that into an actionable message (spell out the exact
-    /// configuration path) instead of a vague "request rejected". The key itself is
-    /// never included in any error output.</summary>
     protected override string MapError(int statusCode, string body) =>
         statusCode == 400 && (body.Contains("API_KEY_INVALID", StringComparison.OrdinalIgnoreCase)
             || body.Contains("API key not valid", StringComparison.OrdinalIgnoreCase))
@@ -596,7 +558,7 @@ public class GeminiChatProvider : StreamingChatProviderBase
 
     protected override HttpRequestMessage BuildRequest(ChatRequest request)
     {
-        // Priority: Chat:Providers:Gemini:ApiKey → GEMINI_API_KEY.
+        // Priority: Chat:Providers:Gemini:ApiKey -> GEMINI_API_KEY.
         var key = ProviderSettings.GetApiKey(_config, Name)
             ?? throw new ChatProviderException(
                 "The AI provider 'Gemini' is not configured right now (set GEMINI_API_KEY or Chat:Providers:Gemini:ApiKey).");
@@ -616,10 +578,6 @@ public class GeminiChatProvider : StreamingChatProviderBase
             ? null
             : new { parts = new[] { new { text = request.SystemPrompt } } };
 
-        // Gemini "thinking" tokens count against maxOutputTokens, so a short
-        // budget can come back empty/truncated. The 2.5 Flash family accepts
-        // thinkingBudget=0 (turn it off). Newer models (gemini-flash-latest /
-        // 3.x) reject that knob, so give them headroom for thinking instead.
         var model = request.Model;
         object generationConfig = model.StartsWith("gemini-2.5-flash", StringComparison.OrdinalIgnoreCase)
             ? new { maxOutputTokens = request.MaxTokens, thinkingConfig = new { thinkingBudget = 0 } }
@@ -711,14 +669,8 @@ public class OllamaChatProvider : StreamingChatProviderBase
 
     public override string Name => "ollama";
 
-    /// <summary>Ollama server root. Priority: Chat:Providers:Ollama:BaseUrl →
-    /// OLLAMA_BASE_URL → http://localhost:11434. A "/v1"-suffixed value is
-    /// acceptable and is normalized away for the tags probe below.</summary>
     public string BaseUrl => ProviderSettings.GetBaseUrl(_config, Name, "http://localhost:11434");
 
-    /// <summary>Server root without any trailing "/v1" segment, so both
-    /// "{root}/v1/chat/completions" (chat) and "{root}/api/tags" (probe) stay
-    /// correct regardless of how the BaseUrl was configured.</summary>
     public string ServerRoot
     {
         get
@@ -752,8 +704,6 @@ public class OllamaChatProvider : StreamingChatProviderBase
         return $"Ollama is not reachable ({BaseUrl} — is Ollama running?)";
     }
 
-    // Cache the /api/tags response (30s) to avoid hammering Ollama on every request.
-    // Callers treat failure as "not available" (hidden from dropdown, no crash).
     public async Task<List<string>> GetAvailableModelsAsync(CancellationToken ct)
     {
         if (_availableModels != null
@@ -761,17 +711,14 @@ public class OllamaChatProvider : StreamingChatProviderBase
             && DateTime.UtcNow - _tagsCacheTime < _tagsCacheExpiry)
             return _availableModels;
 
-        // A refused localhost connection takes ~4s on Windows, and pages probe on every load:
-        // remember the failure for the same 30s so a stopped Ollama doesn't stall the UI.
-        if (_failedRoot == ServerRoot && DateTime.UtcNow - _failedAt < _tagsCacheExpiry)
+        if (_failedRoot == ServerRoot && DateTime.UtcNow - _failedAt < TimeSpan.FromMinutes(2))
             throw new HttpRequestException("Ollama unreachable (cached)");
 
         try
         {
-            // Absolute URL against the server root so a BaseUrl containing
-            // "/v1" cannot redirect the probe to the wrong path.
             using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            probeCts.CancelAfter(TimeSpan.FromSeconds(2));
+            // A closed port takes ~2s to refuse on Windows; a running Ollama answers in ms.
+            probeCts.CancelAfter(TimeSpan.FromMilliseconds(500));
             using var response = await _http.GetAsync($"{ServerRoot}/api/tags", probeCts.Token);
             if (response.IsSuccessStatusCode)
             {
@@ -790,8 +737,6 @@ public class OllamaChatProvider : StreamingChatProviderBase
                 }
                 _availableModels = models;
                 _tagsCacheTime = DateTime.UtcNow;
-                // Key the cache on the server root: a BaseUrl config change
-                // must not keep serving the previous server's model list.
                 _cachedRoot = ServerRoot;
                 return models;
             }
@@ -836,8 +781,6 @@ public class OllamaChatProvider : StreamingChatProviderBase
         }
         catch
         {
-            // Probe failed (Ollama down): let the base attempt stream so the
-            // user gets the standard "temporarily unavailable" mapping.
         }
 
         await foreach (var token in base.StreamAsync(request, ct).WithCancellation(ct))
@@ -848,9 +791,6 @@ public class OllamaChatProvider : StreamingChatProviderBase
     {
         var model = ProviderSettings.GetModel(_config, _options, Name);
 
-        // OpenAI-compatible endpoint on the Ollama server: {root}/v1/chat/completions.
-        // (If the configured BaseUrl already ends with "/v1", use
-        // {root}/chat/completions so the path must not read "/v1/v1/...".
         var root = ServerRoot;
         var chatPath = BaseUrl.TrimEnd('/').EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
             ? $"{root}/chat/completions"
@@ -858,14 +798,10 @@ public class OllamaChatProvider : StreamingChatProviderBase
         var req = new HttpRequestMessage(HttpMethod.Post, chatPath);
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
-        // Ollama servers normally need no Authorization; a hardened deployment
-        // behind a proxy may — send Bearer ONLY when a key IS configured.
         var key = ProviderSettings.GetApiKey(_config, Name);
         if (!string.IsNullOrWhiteSpace(key))
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
 
-        // OpenAI chat format: {model, messages: [{role, content}], stream}.
-        // System prompt goes first as a system message.
         var messages = new List<object> { new { role = "system", content = request.SystemPrompt } };
         messages.AddRange(request.Messages.Select(m => new { role = m.Role, content = m.Content }));
 
@@ -884,8 +820,6 @@ public class OllamaChatProvider : StreamingChatProviderBase
     protected override async IAsyncEnumerable<string> ReadTokensAsync(
         Stream stream, [EnumeratorCancellation] CancellationToken ct)
     {
-        // Ollama's /v1 endpoint speaks OpenAI-compatible SSE, so the shared
-        // parser applies (NDJSON-only api/chat is no longer used).
         await foreach (var token in ReadOpenAiCompatibleTokensAsync(stream, ct).WithCancellation(ct))
             yield return token;
     }

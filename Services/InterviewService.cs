@@ -6,12 +6,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Interview practice: sessions persist real questions either from the
-/// configured AI provider (source "Ai") or the curated question bank
-/// (source "Curated" — real content, never labeled as AI output).
-/// Answer feedback always requires a real provider.
-/// </summary>
 public class InterviewService(AppDbContext db, GraduateAiService ai)
 {
     public const int DefaultQuestionCount = 5;
@@ -60,9 +54,6 @@ public class InterviewService(AppDbContext db, GraduateAiService ai)
             source = "Curated";
         }
 
-        // Persist the real provenance: without this the entity keeps its
-        // "Curated" default and the AI source label + provider/model audit
-        // trail are lost for every reloaded session.
         session.QuestionSource = source;
         session.ProviderName = providerName;
         session.Model = model;
@@ -125,9 +116,6 @@ public class InterviewService(AppDbContext db, GraduateAiService ai)
     public async Task<bool> DeleteSessionAsync(int userId, int id) =>
         await db.InterviewSessions.Where(s => s.UserId == userId && s.Id == id).ExecuteDeleteAsync() > 0;
 
-    /// <summary>Save the candidate's answer and request REAL feedback from the
-    /// provider. Without a provider this throws ChatProviderException (surfaced
-    /// to the client as an explicit error) — feedback is never faked.</summary>
     public async Task<InterviewQuestionDto> AnswerAsync(
         int userId, int sessionId, int questionId, string answer, CancellationToken ct)
     {
@@ -155,7 +143,7 @@ public class InterviewService(AppDbContext db, GraduateAiService ai)
         return MapQuestion(question);
     }
 
-    // ---- curated fallback (never presented as AI) ----
+    // curated fallback (never presented as AI)
 
     internal static string[] CuratedRoleQuestions(string role)
     {

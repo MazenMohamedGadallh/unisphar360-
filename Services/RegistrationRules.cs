@@ -1,7 +1,5 @@
 namespace UniSphere.Api.Services;
 
-/// <summary>Account types that can self-register. Note: there is deliberately
-/// no Admin member — Admin accounts can never be created through registration.</summary>
 public enum UserType
 {
     Student = 1,
@@ -9,8 +7,6 @@ public enum UserType
     Doctor = 3
 }
 
-/// <summary>Single source of truth for registration business rules shared by
-/// the API validator and the Blazor registration form.</summary>
 public static class RegistrationRules
 {
     public const int MaxAge = 100;

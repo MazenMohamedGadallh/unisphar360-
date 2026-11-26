@@ -2,9 +2,6 @@ using System.Runtime.CompilerServices;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>Student-only chat provider backed by the existing RAG service.
-/// It is intentionally not registered in <see cref="ChatProviderRegistry"/>, so
-/// unrelated AI features cannot select it by accident.</summary>
 public sealed class RagChatProvider : IChatProvider, IProviderStatus
 {
     private readonly IRagClient _rag;
@@ -18,8 +15,6 @@ public sealed class RagChatProvider : IChatProvider, IProviderStatus
     public string ModelName => _rag.ModelName;
     public bool IsConfigured => _rag.IsConfigured;
 
-    /// <summary>Live health probe (short timeout) so callers can degrade to
-    /// another provider instead of failing mid-conversation.</summary>
     public async Task<bool> IsAvailableAsync(CancellationToken ct = default)
     {
         if (!IsConfigured) return false;
@@ -43,34 +38,38 @@ public sealed class RagChatProvider : IChatProvider, IProviderStatus
             .LastOrDefault(m => string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase))
             ?.Content ?? "";
 
-        RagAnswer answer;
-        try
+        // Stream the answer as it is written; the sources list comes last.
+        await using var events = _rag.QueryStreamAsync(question, request.RagDocuments, request.SystemPrompt, ct)
+            .GetAsyncEnumerator(ct);
+        IReadOnlyList<RagSource>? sources = null;
+        var any = false;
+        while (true)
         {
-            answer = await _rag.QueryAsync(
-                question,
-                request.RagDocuments,
-                request.SystemPrompt,
-                ct);
-        }
-        catch (RagUnavailableException ex)
-        {
-            throw new ChatProviderException(ex.Message);
-        }
-        catch (RagInvalidResponseException ex)
-        {
-            throw new ChatProviderException(ex.Message);
+            RagStreamEvent item;
+            try
+            {
+                if (!await events.MoveNextAsync()) break;
+                item = events.Current;
+            }
+            catch (RagUnavailableException ex) { throw new ChatProviderException(ex.Message); }
+            catch (RagInvalidResponseException ex) { throw new ChatProviderException(ex.Message); }
+
+            if (item.Sources is not null) sources = item.Sources;
+            if (string.IsNullOrEmpty(item.Delta)) continue;
+            // Trim leading whitespace of the answer only, never inside it.
+            var text = any ? item.Delta : item.Delta.TrimStart();
+            if (text.Length == 0) continue;
+            any = true;
+            yield return text;
         }
 
-        var text = answer.Answer.Trim();
-        if (answer.Sources.Count > 0)
+        if (any && sources is { Count: > 0 })
         {
-            var references = answer.Sources
+            var references = sources
                 .Select(s => s.Page.HasValue ? $"- {s.Title} (page {s.Page})" : $"- {s.Title}")
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            text += "\n\nSources:\n" + string.Join("\n", references);
+            yield return "\n\nSources:\n" + string.Join("\n", references);
         }
-
-        yield return text;
     }
 }

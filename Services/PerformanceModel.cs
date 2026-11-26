@@ -2,7 +2,6 @@ using UniSphere.Api.Dtos;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>All knobs of the performance model in one place.</summary>
 public class PerformanceModelWeights
 {
     public double GradeWeight { get; set; } = 0.40;
@@ -16,7 +15,6 @@ public class PerformanceModelWeights
     public double ExcellentGradePoints { get; set; } = 3.7;
 }
 
-/// <summary>Normalized inputs for the model (all real student data).</summary>
 public record PerformanceModelInput(
     double AvgGradePoints,
     double AvgAttendance,
@@ -27,7 +25,6 @@ public record PerformanceModelInput(
     bool HasTrend,
     bool HasPlan);
 
-/// <summary>Transparent model output: score, label and what drove it.</summary>
 public record PerformanceModelOutput(
     string RiskLevel,
     double Score,
@@ -35,15 +32,11 @@ public record PerformanceModelOutput(
     double Confidence,
     IReadOnlyList<FactorContributionDto> Factors);
 
-/// <summary>Implemented today by a weighted explainable model; a trained
-/// ML.NET model can replace it later without touching callers.</summary>
 public interface IPerformanceModel
 {
     PerformanceModelOutput Analyze(PerformanceModelInput input, double currentGpa);
 }
 
-/// <summary>Weighted scoring + trend-adjusted GPA projection. Every factor is
-/// normalized to 0-100 first, so contributions are directly comparable.</summary>
 public class WeightedPerformanceModel : IPerformanceModel
 {
     private readonly PerformanceModelWeights _w;

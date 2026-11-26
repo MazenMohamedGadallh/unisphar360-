@@ -2,16 +2,8 @@ using System.Text.RegularExpressions;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Static career taxonomy used by matching and skill-gap analysis.
-/// Matching is deterministic: weights and rules are documented here so a score
-/// can always be reproduced and reasoned about (no LLM-generated scores, no
-/// randomness). Skill detection uses regex variants so both English and
-/// common spellings appear consistently.
-/// </summary>
 public static class CareerCatalog
 {
-    /// <summary>Canonical skill name -> regex variants detected in job descriptions / CV text.</summary>
     public static readonly Dictionary<string, string> SkillRegexes = new(StringComparer.OrdinalIgnoreCase)
     {
         ["C#"] = @"\bc#|csharp|\bnet\b|\.net\b",
@@ -58,7 +50,6 @@ public static class CareerCatalog
         ["Excel"] = @"\bexcel\b",
     };
 
-    /// <summary>Target roles -> required skills (ordering = priority).</summary>
     public static readonly Dictionary<string, string[]> RoleSkills = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Machine Learning Engineer"] = ["Python", "Machine Learning", "Deep Learning", "TensorFlow", "SQL", "Git", "Docker"],
@@ -74,11 +65,8 @@ public static class CareerCatalog
         ["NLP Engineer"] = ["Python", "NLP", "Machine Learning", "Deep Learning", "Git"]
     };
 
-    /// <summary>Common skills offered for the default profile bootstrap.</summary>
     public static readonly string[] DefaultSkills = ["Communication", "Teamwork", "Problem Solving", "Time Management"];
 
-    /// <summary>Curated interview question bank per role family (deterministic fallback
-    /// when no AI provider is configured — real questions, collected per role skill set).</summary>
     public static readonly Dictionary<string, string[]> InterviewQuestions = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Technical"] =
@@ -106,7 +94,6 @@ public static class CareerCatalog
         ]
     };
 
-    /// <summary>Detect canonical skills present in a text block (case-insensitive regex).</summary>
     public static List<string> DetectSkills(string? text)
     {
         var result = new List<string>();
@@ -120,7 +107,6 @@ public static class CareerCatalog
         return result;
     }
 
-    /// <summary>True when the rule matches the skill name (loose, forgiving matching).</summary>
     public static bool MatchesSkill(string canonicalSkill, string candidate) =>
         SkillRegexes.TryGetValue(canonicalSkill, out var pattern)
             ? Regex.IsMatch(candidate, pattern, RegexOptions.IgnoreCase)

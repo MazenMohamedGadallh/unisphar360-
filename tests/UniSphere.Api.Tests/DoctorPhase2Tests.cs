@@ -13,12 +13,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>
-/// Phase 2 acceptance tests for the doctor research hub: server-derived
-/// ownership, cross-university Browse, draft privacy, authenticated PDF
-/// download, PDF magic-byte/size checks, owner-only mutations, audit logging
-/// and rejection of student access.
-/// </summary>
 public class DoctorPhase2Tests : IClassFixture<ApiFactory>
 {
     private readonly ApiFactory _factory;
@@ -34,7 +28,7 @@ public class DoctorPhase2Tests : IClassFixture<ApiFactory>
         _admin = factory.AdminClient;
     }
 
-    // ---- Storage / ownership ----
+    // Storage / ownership
 
     [Fact]
     public async Task Upload_ValidPdf_UsesJwtOwnerAndUniversity_AndStoresOnlyAFileName()
@@ -92,7 +86,7 @@ public class DoctorPhase2Tests : IClassFixture<ApiFactory>
         Assert.Equal(owner.UniversityId, rowUniversityId);
     }
 
-    // ---- Cross-university Browse + download ----
+    // Cross-university Browse + download
 
     [Fact]
     public async Task Browse_IsCrossUniversity_AndDownloadWorks_ButForeignEditsAre404()
@@ -215,7 +209,7 @@ public class DoctorPhase2Tests : IClassFixture<ApiFactory>
             (await other.GetAsync($"/api/doctor/research/{paper.Id}/pdf")).StatusCode);
     }
 
-    // ---- PDF validation ----
+    // PDF validation
 
     [Fact]
     public async Task NonPdf_AndWrongMimeType_AreRejected_WithoutCreatingRows()
@@ -256,7 +250,7 @@ public class DoctorPhase2Tests : IClassFixture<ApiFactory>
         Assert.Equal(before, await CountMyPapersAsync());
     }
 
-    // ---- Update / delete file lifecycle ----
+    // Update / delete file lifecycle
 
     [Fact]
     public async Task Update_WithNewPdf_ReplacesOldFile_AndKeepsOwnership()
@@ -309,7 +303,7 @@ public class DoctorPhase2Tests : IClassFixture<ApiFactory>
         Assert.Equal(0, page.Total);
     }
 
-    // ---- Filters ----
+    // Filters
 
     [Fact]
     public async Task Browse_FiltersByFieldAndYear_AndFiltersEndpointListsOptions()
@@ -350,7 +344,7 @@ public class DoctorPhase2Tests : IClassFixture<ApiFactory>
         Assert.Contains(2024, filters.Years);
     }
 
-    // ---- Authorization ----
+    // Authorization
 
     [Fact]
     public async Task Students_Get403_AndAnonymous_Get401_OnDoctorResearchEndpoints()
@@ -377,7 +371,7 @@ public class DoctorPhase2Tests : IClassFixture<ApiFactory>
             (await anonymous.GetAsync("/api/doctor/research/1/pdf")).StatusCode);
     }
 
-    // ---- Helpers ----
+    // Helpers
 
     private static string UniqueTitle(string prefix) =>
         $"{prefix} {Guid.NewGuid():N}";

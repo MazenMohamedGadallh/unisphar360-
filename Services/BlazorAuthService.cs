@@ -10,11 +10,6 @@ using UniSphere.Api.Dtos;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>Authentication state provider for Blazor Server that validates JWT tokens.
-/// The token lives in browser local storage (not just scoped memory), so full
-/// page reloads, reconnects and prerender-then-interactive transitions keep
-/// the user signed in. The JWT itself is the session: expiry is validated
-/// locally against the exp claim (UTC).</summary>
 public class BlazorAuthService : AuthenticationStateProvider
 {
     private const string TokenStorageKey = "unisphere.auth.token";
@@ -22,24 +17,9 @@ public class BlazorAuthService : AuthenticationStateProvider
     private readonly ProtectedLocalStorage _storage;
     private readonly ILogger<BlazorAuthService> _logger;
     private string? _token;
-    // Set once the persisted token has been read from storage (or the
-    // in-memory token is usable): the auth state is final for this
-    // circuit and can no longer turn from "loading" into authenticated.
     private bool _resolved;
-    // Explicit "auth resolving" gate for UI: MainLayout and data pages
-    // render the full shell (sidebar + Logout) / wait while this is false,
-    // and only treat the user as anonymous after it becomes true.
-    // Mirrors _resolved; kept as a separate public flag so layouts never
-    // have to infer readiness from token presence.
     public bool IsInitialized => _resolved;
-    // Single-flight restore: MainLayout, RedirectToLogin and data pages
-    // may all ask for a restore on the first interactive render. They share
-    // one storage read and therefore one NotifyAuthenticationStateChanged,
-    // so the layout can never flip authenticated -> anonymous -> ... .
     private Task<bool>? _restoreTask;
-    // Bumped on every explicit session change (login/register/logout). An
-    // in-flight restore that started before the bump must not adopt the
-    // stale stored token (e.g. resurrecting a session after logout).
     private int _generation;
 
     public BlazorAuthService(HttpClient http, ProtectedLocalStorage storage, ILogger<BlazorAuthService> logger)
@@ -68,8 +48,6 @@ public class BlazorAuthService : AuthenticationStateProvider
 
     private async Task PersistTokenAsync()
     {
-        // Must never break login/logout: storage needs JS interop, which is
-        // unavailable during prerendering. Memory always wins for the circuit.
         try
         {
             if (string.IsNullOrEmpty(_token))
@@ -110,8 +88,6 @@ public class BlazorAuthService : AuthenticationStateProvider
 
     private static ClaimsPrincipal BuildPrincipal(string token)
     {
-        // Claim names are matched tolerantly: some issuers emit full
-        // ClaimTypes URIs, others short JWT names.
         var jwt = new JsonWebToken(token);
         if (jwt.ValidTo <= DateTime.UtcNow)
             return new ClaimsPrincipal(new ClaimsIdentity());
@@ -133,13 +109,6 @@ public class BlazorAuthService : AuthenticationStateProvider
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "JWT"));
     }
 
-    /// <summary>Restores the session from browser storage (full reloads,
-    /// reconnects). Call from OnAfterRenderAsync(firstRender): JS interop
-    /// is available there but not during prerender. Raises
-    /// NotifyAuthenticationStateChanged exactly once so the whole component
-    /// tree (AuthorizeView / AuthorizeRouteView included) re-renders with
-    /// the resolved state — authenticated, or truly anonymous.
-    /// Single-flight: concurrent callers share one storage read.</summary>
     public Task<bool> RestoreSessionAsync()
     {
         if (IsTokenUsable(_token))
@@ -157,8 +126,6 @@ public class BlazorAuthService : AuthenticationStateProvider
         try
         {
             var stored = await _storage.GetAsync<string>(TokenStorageKey);
-            // Superseded by an explicit login/logout while reading: never
-            // adopt the stale value, never resolve someone else's session.
             if (generation != _generation) return false;
             _resolved = true;
             if (stored.Success && IsTokenUsable(stored.Value))
@@ -175,8 +142,6 @@ public class BlazorAuthService : AuthenticationStateProvider
                 ApplyTokenToHttpClient();
                 await PersistTokenAsync();
             }
-            // Resolve the loading state (to anonymous when no usable
-            // token exists) so consumers stop waiting and react.
             NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
             return false;
         }
@@ -252,8 +217,6 @@ public class BlazorAuthService : AuthenticationStateProvider
                     string.IsNullOrEmpty(message) ? "This email is already registered." : message);
             }
 
-            // 400 ValidationProblem ({"errors": {"Email": [...]}}) or other
-            // failures: surface per-field errors when present.
             Dictionary<string, string[]>? fields = null;
             try
             {
@@ -285,32 +248,18 @@ public class BlazorAuthService : AuthenticationStateProvider
         }
     }
 
-    /// <summary>Claim type marking the temporary principal returned
-    /// while the persisted token is still being read (prerender and
-    /// the first interactive render). It is NOT an authenticated
-    /// identity: consumers show a small loading state instead of
-    /// redirecting or locking the user out.</summary>
     public const string LoadingClaimType = "unisphere.auth.loading";
 
     private static readonly ClaimsPrincipal LoadingPrincipal =
         new(new ClaimsIdentity(new[] { new Claim(LoadingClaimType, bool.TrueString) }));
 
-    /// <summary>True while the persisted token has not been read yet
-    /// (prerender / first interactive render). Never redirect to
-    /// /login and never log out while loading: the session may still
-    /// be restored from storage a moment later.</summary>
     public bool IsLoading => !IsTokenUsable(_token) && !_resolved;
 
-    /// <summary>True when the principal marks the auth state as still
-    /// being resolved (see <see cref="LoadingClaimType"/>).</summary>
     public static bool IsLoadingState(ClaimsPrincipal user) =>
         user.HasClaim(LoadingClaimType, bool.TrueString);
 
     public override async Task<AuthenticationState> GetAuthenticationStateAsync()
     {
-        // No HTTP round-trip here on purpose: the JWT itself is the session.
-        // (The old /api/auth/me call turned any blip into an anonymous
-        // identity and bounced the user to /login.)
 
         // In-memory token (login on this circuit): fast path, no JS interop.
         if (IsTokenUsable(_token))
@@ -342,12 +291,6 @@ public class BlazorAuthService : AuthenticationStateProvider
         }
         catch (InvalidOperationException)
         {
-            // Prerendering: JS interop is unavailable, so the token in
-            // ProtectedLocalStorage cannot be read yet. Return a "loading"
-            // state instead of anonymous — consumers must wait (show a
-            // small loading state), not redirect to /login. The token is
-            // re-read in OnAfterRenderAsync(firstRender), which then raises
-            // NotifyAuthenticationStateChanged with the final state.
             return new AuthenticationState(LoadingPrincipal);
         }
         catch (Exception ex)
@@ -386,8 +329,6 @@ public class BlazorAuthService : AuthenticationStateProvider
 
     public string? GetToken() => _token;
 
-    /// <summary>Raised after the signed-in user's profile photo changes so the
-    /// layout (sidebar chip + top-bar badge) refreshes without a reload.</summary>
     public event Action<string?>? AvatarChanged;
 
     public void NotifyAvatarChanged(string? url) => AvatarChanged?.Invoke(url);

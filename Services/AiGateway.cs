@@ -6,19 +6,10 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-// =============================================================================
-// 1) Provider failover: ONE place that every non-streaming AI feature uses
-//    (graduate CV/interview/roadmap, doctor quiz/summary/exam, student quiz).
-// =============================================================================
-
 public sealed record AiCompletion(string Text, string Provider, string Model);
 
 public interface IAiCompletionService
 {
-    /// <summary>Runs a one-shot prompt on the best live provider and fails over to
-    /// the next one on auth/quota/network/empty-answer errors. Throws
-    /// <see cref="ChatProviderException"/> (safe message) only when every live
-    /// provider failed or none is configured.</summary>
     Task<AiCompletion> CompleteAsync(
         string systemPrompt, string userPrompt, int maxTokens, CancellationToken ct,
         int timeoutSeconds = 90, string? preferredProvider = null);
@@ -92,18 +83,6 @@ public sealed class AiCompletionService : IAiCompletionService
     }
 }
 
-// =============================================================================
-// 2) Unified grounding: RAG service (when running) + live UniSphere database
-//    context for the user's role. Never throws because RAG is down: the
-//    database context alone is then enriched with larger material excerpts so
-//    the LLM can still answer from real data.
-// =============================================================================
-
-/// <summary>
-/// Hybrid Grounding policy shared by every role's assistant: retrieved course
-/// passages and live UniSphere data come first, but a question is NEVER refused
-/// just because the uploaded materials do not cover it.
-/// </summary>
 public static class HybridGroundingPolicy
 {
     public const string Instructions =
@@ -130,11 +109,8 @@ public sealed record AiGrounding(string Context, IReadOnlyList<string> Sources, 
 
 public interface IAiGroundingService
 {
-    /// <summary>Role-aware context (+ RAG retrieval when available) for
-    /// <paramref name="query"/>. Optionally narrowed to one course.</summary>
-    Task<AiGrounding> BuildAsync(int userId, string query, CancellationToken ct, int? courseId = null, int maxChars = 9000);
+    Task<AiGrounding> BuildAsync(int userId, string query, CancellationToken ct, int? courseId = null, int maxChars = 9000, bool retrieve = true);
 
-    /// <summary>Authorised documents the RAG service may retrieve from.</summary>
     Task<List<RagDocument>> BuildDocumentsAsync(User user, string question, CancellationToken ct, int? courseId = null);
 }
 
@@ -160,19 +136,18 @@ public sealed class AiGroundingService : IAiGroundingService
     }
 
     public async Task<AiGrounding> BuildAsync(
-        int userId, string query, CancellationToken ct, int? courseId = null, int maxChars = 9000)
+        int userId, string query, CancellationToken ct, int? courseId = null, int maxChars = 9000, bool retrieve = true)
     {
         var user = await _db.Users.AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted, ct);
         if (user is null) return AiGrounding.Empty;
 
         // 1) RAG (silent no-op when the service is off/unreachable).
-        var docs = await BuildDocumentsAsync(user, query, ct, courseId);
-        var rag = await _rag.GroundAsync(query, docs, ct);
+        var rag = retrieve
+            ? await _rag.GroundAsync(query, await BuildDocumentsAsync(user, query, ct, courseId), ct)
+            : RagGrounding.None;
 
-        // 2) Live database context. Without RAG, give the LLM much longer
-        //    material excerpts so answers stay grounded in uploaded content.
-        var excerptChars = rag.HasContext ? 500 : 1800;
+        var excerptChars = rag.HasContext || !retrieve ? 500 : 1800;
         string db;
         try
         {
@@ -208,7 +183,7 @@ public sealed class AiGroundingService : IAiGroundingService
         return new AiGrounding(context, rag.Sources, rag.HasContext);
     }
 
-    // ------------------------------------------------------------------ docs
+    // docs
 
     public async Task<List<RagDocument>> BuildDocumentsAsync(
         User user, string question, CancellationToken ct, int? courseId = null)
@@ -303,7 +278,7 @@ public sealed class AiGroundingService : IAiGroundingService
             });
     }
 
-    // --------------------------------------------------------------- student
+    // student
 
     private async Task<string> StudentContextAsync(
         User user, string query, int? courseId, int excerptChars, CancellationToken ct)
@@ -380,7 +355,7 @@ public sealed class AiGroundingService : IAiGroundingService
         return sb.ToString();
     }
 
-    // ---------------------------------------------------------------- doctor
+    // doctor
 
     private async Task<string> DoctorContextAsync(
         User user, string query, int? courseId, int excerptChars, CancellationToken ct)
@@ -421,7 +396,7 @@ public sealed class AiGroundingService : IAiGroundingService
         return sb.ToString();
     }
 
-    // -------------------------------------------------------------- graduate
+    // graduate
 
     private async Task<string> GraduateContextAsync(User user, string query, CancellationToken ct)
     {
@@ -485,7 +460,7 @@ public sealed class AiGroundingService : IAiGroundingService
         return sb.ToString();
     }
 
-    // ----------------------------------------------------------------- admin
+    // admin
 
     private async Task<string> AdminContextAsync(CancellationToken ct)
     {
@@ -517,7 +492,7 @@ public sealed class AiGroundingService : IAiGroundingService
         return sb.ToString();
     }
 
-    // --------------------------------------------------------------- helpers
+    // helpers
 
     private async Task<List<int>> AssignedCourseIdsAsync(int doctorId, CancellationToken ct)
     {
@@ -532,7 +507,6 @@ public sealed class AiGroundingService : IAiGroundingService
                 .Select(u => u.Name).FirstOrDefaultAsync(ct)
             : null;
 
-    /// <summary>All material titles per course plus the best keyword matches with excerpts.</summary>
     private static void AppendMaterials(StringBuilder sb, List<CourseMaterial> materials, string query, int excerptChars)
     {
         if (materials.Count == 0) return;

@@ -21,10 +21,6 @@ public class AnnouncementsController : ControllerBase
         _scope = scope;
     }
 
-    /// <summary>Announcements for the caller's university. Admin sees all.
-    /// Students additionally see course announcements only for courses they
-    /// are enrolled in; doctors only for courses they teach; graduates never
-    /// see course-specific announcements.</summary>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<object>>> GetAll()
     {

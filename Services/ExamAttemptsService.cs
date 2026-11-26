@@ -6,9 +6,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>Why an attempt operation was refused. NotFound is used for
-/// foreign/hidden resources so ids stay indistinguishable; the other
-/// failures map to HTTP 409 order-of-flow conflicts.</summary>
 public enum ExamAttemptFailure
 {
     NotFound,
@@ -18,8 +15,6 @@ public enum ExamAttemptFailure
     NotStarted,
 }
 
-/// <summary>Outcome for one attempt operation: <see cref="Value"/> when
-/// <see cref="Failure"/> is null, otherwise the refusal reason + message.</summary>
 public sealed record ExamAttemptResult<T>(T? Value, ExamAttemptFailure? Failure = null, string? Error = null)
 {
     public bool Ok => Failure is null;
@@ -29,22 +24,8 @@ public sealed record ExamAttemptResult<T>(T? Value, ExamAttemptFailure? Failure 
         new(default, failure, error);
 }
 
-/// <summary>Exam + display info of one course-scoped, student-visible exam.</summary>
 internal sealed record VisibleExamView(Exam Exam, string CourseCode, string CourseTitle);
 
-/// <summary>
-/// Persistence for published-exam student attempts: start/resume attempts
-/// (one per student per exam, unique-indexed), server-side grading at
-/// submit, own-attempt listings and doctor per-exam results.
-///
-/// Authorization is recomputed here for every call: a student may only take
-/// exams that are published, for a currently-enrolled (ungraded) course at
-/// their university; a doctor may only read results for their OWN exams
-/// (foreign exams read as 404). Grading ignores everything the client sends
-/// except the raw option choice — the correct option index is derived
-/// server-side from the stored question data, so a score can never be
-/// injected from a payload.
-/// </summary>
 public interface IExamAttemptsService
 {
     Task<ExamAttemptResult<StudentExamAttemptStateDto>> GetAttemptStateAsync(
@@ -61,24 +42,33 @@ public interface IExamAttemptsService
 
     Task<ExamAttemptResult<DoctorExamResultsDto>> GetDoctorResultsAsync(
         int doctorUserId, int examId, CancellationToken ct);
+
+    Task<ExamAttemptResult<IReadOnlyList<DoctorWrittenAnswerDto>>> ListWrittenAnswersAsync(
+        int doctorUserId, int examId, CancellationToken ct);
+
+    Task<ExamAttemptResult<DoctorWrittenAnswerDto>> GradeWrittenAnswerAsync(
+        int doctorUserId, int examId, int answerId, bool isCorrect, CancellationToken ct);
 }
 
 public class ExamAttemptsService : IExamAttemptsService
 {
+    private const int MaxTextAnswerLength = 5000;
     private readonly AppDbContext _db;
+
+    /// Questions the student answers in writing and the doctor grades by hand.
+    public static bool IsWritten(string? questionType) =>
+        questionType is not null &&
+        (questionType.Equals("Essay", StringComparison.OrdinalIgnoreCase) ||
+         questionType.Equals("Definition", StringComparison.OrdinalIgnoreCase) ||
+         questionType.Equals("ShortAnswer", StringComparison.OrdinalIgnoreCase));
 
     public ExamAttemptsService(AppDbContext db)
     {
         _db = db;
     }
 
-    // ------------------------------------------------------------------
     // State
-    // ------------------------------------------------------------------
 
-    /// <summary>Read-only attempt state for the student pages: window
-    /// metadata, current attempt (null = not started), take-able questions
-    /// while active, review after submit. Never starts an attempt.</summary>
     public async Task<ExamAttemptResult<StudentExamAttemptStateDto>> GetAttemptStateAsync(
         int studentUserId, int examId, CancellationToken ct)
     {
@@ -91,9 +81,7 @@ public class ExamAttemptsService : IExamAttemptsService
             BuildState(view, attempt));
     }
 
-    // ------------------------------------------------------------------
     // Start / resume (one attempt per student per exam)
-    // ------------------------------------------------------------------
 
     public async Task<ExamAttemptResult<StudentExamAttemptStateDto>> StartAttemptAsync(
         int studentUserId, int examId, CancellationToken ct)
@@ -129,8 +117,6 @@ public class ExamAttemptsService : IExamAttemptsService
             }
             catch (DbUpdateException)
             {
-                // Concurrent double-start: the unique (ExamId, StudentUserId)
-                // index fired, so just work with the row that won.
                 attempt = await LoadAttemptAsync(examId, studentUserId, ct)
                     ?? throw new InvalidOperationException(
                         "Attempt row vanished during concurrent start.");
@@ -141,9 +127,7 @@ public class ExamAttemptsService : IExamAttemptsService
             BuildState(view, attempt));
     }
 
-    // ------------------------------------------------------------------
     // Submit + server-side grading
-    // ------------------------------------------------------------------
 
     public async Task<ExamAttemptResult<StudentExamAttemptStateDto>> SubmitAttemptAsync(
         int studentUserId, int examId, SubmitExamAttemptRequest req, CancellationToken ct)
@@ -162,27 +146,37 @@ public class ExamAttemptsService : IExamAttemptsService
                 ExamAttemptFailure.AlreadySubmitted,
                 "This attempt was already submitted and graded.");
 
-        // The close date is the hard server-side deadline; the client clock
-        // is never consulted.
         var now = DateTime.UtcNow;
         if (view.Exam.ClosesAtUtc is { } closes && now > closes)
             return ExamAttemptResult<StudentExamAttemptStateDto>.Fail(
                 ExamAttemptFailure.Closed,
                 $"The exam closed at {closes:u} (UTC) — the submission window is over.");
 
-        // Collapse duplicate answers for the same question. The payload only
-        // nominates a choice ({questionId, option index}); out-of-range or
-        // null indexes count as unanswered. Nothing here can mark itself
-        // correct — correctness is decided by ComputeCorrectIndex below.
         var provided = (req?.Answers ?? Array.Empty<SubmitExamAnswerDto>())
             .Where(a => a is not null)
             .GroupBy(a => a.QuestionId)
-            .ToDictionary(g => g.Key, g => NormalizeSelection(g.First().SelectedOption));
+            .ToDictionary(g => g.Key, g => g.First());
 
         var score = 0;
         foreach (var question in view.Exam.Questions.OrderBy(q => q.OrderIndex))
         {
-            var selected = provided.TryGetValue(question.Id, out var sel) ? sel : null;
+            var given = provided.TryGetValue(question.Id, out var dto) ? dto : null;
+            if (IsWritten(question.QuestionType))
+            {
+                var text = given?.TextAnswer?.Trim();
+                if (text is { Length: > MaxTextAnswerLength }) text = text[..MaxTextAnswerLength];
+                attempt.Answers.Add(new ExamAnswer
+                {
+                    QuestionId = question.Id,
+                    TextAnswer = string.IsNullOrEmpty(text) ? null : text,
+                    IsCorrect = false,
+                    // A blank written answer needs no grading: it is simply wrong.
+                    GradedAtUtc = string.IsNullOrEmpty(text) ? now : null,
+                });
+                continue;
+            }
+
+            var selected = NormalizeSelection(given?.SelectedOption);
             var correctIndex = ComputeCorrectIndex(question);
             var isCorrect = correctIndex >= 0 && selected is not null && selected.Value == correctIndex;
             if (isCorrect) score++;
@@ -204,9 +198,7 @@ public class ExamAttemptsService : IExamAttemptsService
             BuildState(view, attempt));
     }
 
-    // ------------------------------------------------------------------
     // Student list (own attempts only)
-    // ------------------------------------------------------------------
 
     public async Task<IReadOnlyList<StudentAttemptListRowDto>> ListMyAttemptsAsync(
         int studentUserId, CancellationToken ct)
@@ -221,9 +213,7 @@ public class ExamAttemptsService : IExamAttemptsService
             .ToListAsync(ct);
     }
 
-    // ------------------------------------------------------------------
     // Doctor results (own exams only)
-    // ------------------------------------------------------------------
 
     public async Task<ExamAttemptResult<DoctorExamResultsDto>> GetDoctorResultsAsync(
         int doctorUserId, int examId, CancellationToken ct)
@@ -231,8 +221,6 @@ public class ExamAttemptsService : IExamAttemptsService
         var exam = await _db.Exams.AsNoTracking()
             .Include(e => e.Course)
             .FirstOrDefaultAsync(e => e.Id == examId, ct);
-        // Not owned → identical to missing: a foreign doctor cannot even
-        // confirm the exam exists.
         if (exam is null || exam.DoctorUserId != doctorUserId)
             return ExamAttemptResult<DoctorExamResultsDto>.Fail(ExamAttemptFailure.NotFound);
 
@@ -246,7 +234,8 @@ public class ExamAttemptsService : IExamAttemptsService
                 x.a.StudentUserId, x.u.FullName, (string?)x.u.Email,
                 x.a.StartedAtUtc, x.a.SubmittedAtUtc!.Value,
                 x.a.Score ?? 0, x.a.MaxScore ?? exam.QuestionCount,
-                Percent(x.a.Score ?? 0, x.a.MaxScore ?? exam.QuestionCount)))
+                Percent(x.a.Score ?? 0, x.a.MaxScore ?? exam.QuestionCount),
+                x.a.Answers.Count(an => an.TextAnswer != null && an.GradedAtUtc == null)))
             .ToListAsync(ct);
 
         var eligibleIds = await GetEligibleStudentIdsAsync(exam.CourseId, ct);
@@ -268,13 +257,58 @@ public class ExamAttemptsService : IExamAttemptsService
             eligibleIds.Count, takers, nonTakers));
     }
 
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
+    // Doctor grading of written answers (own exams only)
 
-    /// <summary>Loads the exam with its questions when the student is allowed
-    /// to take it: published, enrolled in the course this semester without a
-    /// grade, and within the same university. Null = not visible (404).</summary>
+    public async Task<ExamAttemptResult<IReadOnlyList<DoctorWrittenAnswerDto>>> ListWrittenAnswersAsync(
+        int doctorUserId, int examId, CancellationToken ct)
+    {
+        if (!await OwnsExamAsync(doctorUserId, examId, ct))
+            return ExamAttemptResult<IReadOnlyList<DoctorWrittenAnswerDto>>.Fail(ExamAttemptFailure.NotFound);
+
+        var rows = await WrittenAnswersQuery(examId, null).ToListAsync(ct);
+        return ExamAttemptResult<IReadOnlyList<DoctorWrittenAnswerDto>>.Good(rows);
+    }
+
+    public async Task<ExamAttemptResult<DoctorWrittenAnswerDto>> GradeWrittenAnswerAsync(
+        int doctorUserId, int examId, int answerId, bool isCorrect, CancellationToken ct)
+    {
+        if (!await OwnsExamAsync(doctorUserId, examId, ct))
+            return ExamAttemptResult<DoctorWrittenAnswerDto>.Fail(ExamAttemptFailure.NotFound);
+
+        var answer = await _db.ExamAnswers
+            .Include(a => a.Attempt).ThenInclude(a => a!.Answers)
+            .Include(a => a.Question)
+            .FirstOrDefaultAsync(a => a.Id == answerId && a.Attempt!.ExamId == examId, ct);
+        if (answer is null || answer.TextAnswer is null || !IsWritten(answer.Question?.QuestionType))
+            return ExamAttemptResult<DoctorWrittenAnswerDto>.Fail(ExamAttemptFailure.NotFound);
+
+        answer.IsCorrect = isCorrect;
+        answer.GradedAtUtc = DateTime.UtcNow;
+        answer.Attempt!.Score = answer.Attempt.Answers.Count(a => a.IsCorrect);
+        await _db.SaveChangesAsync(ct);
+
+        var row = await WrittenAnswersQuery(examId, answerId).FirstAsync(ct);
+        return ExamAttemptResult<DoctorWrittenAnswerDto>.Good(row);
+    }
+
+    private Task<bool> OwnsExamAsync(int doctorUserId, int examId, CancellationToken ct) =>
+        _db.Exams.AsNoTracking().AnyAsync(e => e.Id == examId && e.DoctorUserId == doctorUserId, ct);
+
+    // Filter and sort on entities: EF cannot translate OrderBy/Where on the projected record.
+    private IQueryable<DoctorWrittenAnswerDto> WrittenAnswersQuery(int examId, int? answerId) =>
+        _db.ExamAnswers.AsNoTracking()
+            .Where(a => a.Attempt!.ExamId == examId
+                        && a.Attempt.SubmittedAtUtc != null
+                        && a.TextAnswer != null
+                        && (answerId == null || a.Id == answerId))
+            .OrderBy(a => a.Attempt!.StudentUser!.FullName).ThenBy(a => a.Question!.OrderIndex)
+            .Select(a => new DoctorWrittenAnswerDto(
+                a.Id, a.Attempt!.StudentUserId, a.Attempt.StudentUser!.FullName,
+                a.QuestionId, a.Question!.OrderIndex, a.Question.QuestionType, a.Question.QuestionText,
+                a.Question.CorrectAnswer, a.TextAnswer, a.IsCorrect, a.GradedAtUtc != null));
+
+    // Helpers
+
     private async Task<VisibleExamView?> LoadVisiblePublishedExamAsync(
         int studentUserId, int examId, CancellationToken ct)
     {
@@ -283,8 +317,6 @@ public class ExamAttemptsService : IExamAttemptsService
         if (student is null || student.Role != UserRole.Student)
             return null;
 
-        // Eligible enrollments: current semester. Current grades are in-progress
-        // marks, so a graded current enrollment still gets the quiz.
         var eligibleCourseIds = await _db.Enrollments.AsNoTracking()
             .Where(e => e.UserId == studentUserId
                         && e.Semester == "Current")
@@ -314,8 +346,6 @@ public class ExamAttemptsService : IExamAttemptsService
             && found.CourseUniversityId != student.UniversityId)
             return null;
 
-        // CorrectAnswer/Explanation stay only on the entity we use for
-        // grading; they are never projected into a student DTO.
         var exam = found.Exam;
         exam.Questions = await _db.ExamQuestions.AsNoTracking()
             .Where(q => q.ExamId == exam.Id)
@@ -345,8 +375,6 @@ public class ExamAttemptsService : IExamAttemptsService
                 attempt.SubmittedAtUtc, attempt.Score, attempt.MaxScore);
         }
 
-        // Take-able questions exist ONLY while the attempt is active, and
-        // the shape never carries CorrectAnswer or Explanation.
         IReadOnlyList<AttemptQuestionDto>? takeQuestions = active
             ? exam.Questions
                 .Select(q => new AttemptQuestionDto(
@@ -358,19 +386,19 @@ public class ExamAttemptsService : IExamAttemptsService
         IReadOnlyList<AttemptAnswerReviewDto>? review = null;
         if (submitted && attempt is not null)
         {
-            // Correctness fields stay null unless the doctor opted into
-            // showing the answers after submission (server-checked flag).
             var byQuestion = attempt.Answers.ToDictionary(a => a.QuestionId);
             var reveal = exam.ShowAnswersAfterSubmit;
             review = exam.Questions
                 .Select(q =>
                 {
                     var answer = byQuestion.TryGetValue(q.Id, out var a) ? a : null;
+                    var pending = answer is { TextAnswer: not null, GradedAtUtc: null };
                     return new AttemptAnswerReviewDto(
                         q.Id, q.OrderIndex, q.QuestionText, q.OptionsJson,
                         answer?.SelectedOption,
-                        reveal ? answer?.IsCorrect : null,
-                        reveal ? ComputeCorrectIndex(q) : (int?)null);
+                        reveal && !pending ? answer?.IsCorrect : null,
+                        reveal ? ComputeCorrectIndex(q) : (int?)null,
+                        answer?.TextAnswer, pending);
                 })
                 .ToList();
         }
@@ -383,13 +411,9 @@ public class ExamAttemptsService : IExamAttemptsService
             attemptDto, takeQuestions, review);
     }
 
-    /// <summary>Null/foreign/out-of-range choices are unanswered — the client
-    /// cannot push an option index outside the stored option list.</summary>
     private static int? NormalizeSelection(int? selected) =>
         selected is >= 0 ? selected : null;
 
-    /// <summary>The correct option index, derived SERVER-side by matching the
-    /// stored option text list with the exam's correct answer text.</summary>
     private static int ComputeCorrectIndex(ExamQuestion question)
     {
         if (string.IsNullOrWhiteSpace(question.OptionsJson) ||
@@ -417,8 +441,6 @@ public class ExamAttemptsService : IExamAttemptsService
     private static double? Percent(int score, int maxScore) =>
         maxScore <= 0 ? null : Math.Round(score * 100.0 / maxScore, 1);
 
-    /// <summary>Eligible takers for a course (mirrors ExamAssistantService):
-    /// current semester, no grade yet, student role, same university.</summary>
     private async Task<List<int>> GetEligibleStudentIdsAsync(int courseId, CancellationToken ct)
     {
         var course = await _db.Courses.AsNoTracking()

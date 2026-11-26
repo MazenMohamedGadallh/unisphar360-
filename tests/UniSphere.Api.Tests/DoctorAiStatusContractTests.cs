@@ -5,11 +5,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>Guards the doctor AI status contract: /api/doctor/ai/status must
-/// return Available(boolean), Providers as provider OBJECTS (name/displayName/
-/// model) and Message(string) — the exact shape Pages/DoctorAiAssistant.razor
-/// binds. A provider-objects-into-strings mismatch previously made the page's
-/// status binding throw and flip the "No AI provider" banner on permanently.</summary>
 public class DoctorAiStatusContractTests : IClassFixture<RagApiFactory>
 {
     private readonly RagApiFactory _factory;

@@ -14,7 +14,6 @@ else if (_loading)
 }
 
 @code {
-    /// <summary>Comma-separated roles, e.g. "Doctor,Admin". Empty = any signed-in user.</summary>
     [Parameter] public string Roles { get; set; } = "";
     [Parameter] public RenderFragment? ChildContent { get; set; }
 

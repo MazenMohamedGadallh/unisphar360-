@@ -6,8 +6,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>End-to-end controller/service coverage for the two approved RAG
-/// entry points: the Student AI Assistant and the Doctor Exam Assistant.</summary>
 public class RagIntegrationTests : IClassFixture<RagApiFactory>
 {
     private readonly RagApiFactory _factory;
@@ -139,8 +137,6 @@ public class RagIntegrationTests : IClassFixture<RagApiFactory>
         Assert.Contains(material.Title, _factory.FakeRag.LastRetrieveDocuments[0].Title);
         Assert.Contains("Retrieved test context", _factory.FakeAi.LastUserPrompt);
 
-        // The existing direct-material generation remains a legitimate
-        // fallback; the response must say that RAG was unavailable.
         _factory.FakeRag.ThrowUnavailable = true;
         var fallbackResponse = await doctor.PostAsJsonAsync("/api/doctor/exam-assistant/generate", request);
         Assert.Equal(HttpStatusCode.OK, fallbackResponse.StatusCode);
@@ -163,5 +159,29 @@ public class RagIntegrationTests : IClassFixture<RagApiFactory>
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(0, _factory.FakeRag.RetrieveCalls);
+    }
+
+    [Fact]
+    public async Task Doctor_TranslateQuestions_SendsQuestionsToAi_AndKeepsTypeAndSource()
+    {
+        var question = new GeneratedExamQuestionDto(
+            "Ma huwa al-ta'allum al-muwajjah?", "ShortAnswer", "x", null, "Lecture 1", null);
+
+        var response = await _factory.DoctorClient.PostAsJsonAsync(
+            "/api/doctor/exam-assistant/translate",
+            new TranslateQuestionsRequest(new[] { question }, "en"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var translated = await response.Content.ReadFromJsonAsync<List<GeneratedExamQuestionDto>>();
+        Assert.Single(translated!);
+        Assert.Equal("What is supervised learning?", translated![0].QuestionText);
+        Assert.Equal("ShortAnswer", translated[0].QuestionType);
+        Assert.Equal("Lecture 1", translated[0].SourceMaterial);
+        Assert.Contains(question.QuestionText, _factory.FakeAi.LastUserPrompt);
+
+        var student = await _factory.StudentClient.PostAsJsonAsync(
+            "/api/doctor/exam-assistant/translate",
+            new TranslateQuestionsRequest(new[] { question }, "en"));
+        Assert.Equal(HttpStatusCode.Forbidden, student.StatusCode);
     }
 }

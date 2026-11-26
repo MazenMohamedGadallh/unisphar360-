@@ -21,7 +21,6 @@ public class AcademicController : ControllerBase
         _academic = academic;
     }
 
-    /// <summary>Everything the Academic Advisor screen needs in one call (for the logged-in user).</summary>
     [HttpGet("dashboard")]
     public async Task<ActionResult<AcademicDashboardResponse>> Dashboard()
     {

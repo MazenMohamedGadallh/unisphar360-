@@ -2,7 +2,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>Single source of truth for each role's home route.</summary>
 public static class RoleRoutes
 {
     public static string HomeFor(string? role) => role?.Trim().ToLowerInvariant() switch

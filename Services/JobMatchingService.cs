@@ -5,20 +5,10 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Deterministic job matching + skill-gap analysis. Scores come from a fixed
-/// published weighting (documented below) so every result is reproducible and
-/// explained to the user — no LLM scores, no randomness.
-///
-/// Total = job-skill coverage (40) + title match (20) + industry match (15)
-///         + location match (15) + work-mode match (10).
-/// </summary>
 public class JobMatchingService(AppDbContext db)
 {
     public const int WeightSkills = 40, WeightTitle = 20, WeightIndustry = 15, WeightLocation = 15, WeightWorkMode = 10;
 
-    // Technical categories that get a neutral title score when the graduate
-    // hasn't picked exact target titles.
     private static readonly string[] TechCategories = ["Technical", "Data", "Fintech"];
 
     public sealed record UserSkillSnapshot(IReadOnlyList<string> SkillNames, IReadOnlyList<string> PreferredTitles,
@@ -79,7 +69,6 @@ public class JobMatchingService(AppDbContext db)
                 x.Score, x.Matched, x.Missing, x.Explanation, x.Actions))];
     }
 
-    /// <summary>Deterministic scoring of one job against a user snapshot.</summary>
     internal (int Score, string Explanation, List<string> Matched, List<string> Missing, List<string> Actions) ScoreJob(
         JobListing job, List<string> jobSkills, UserSkillSnapshot user)
     {
@@ -87,7 +76,7 @@ public class JobMatchingService(AppDbContext db)
         var parts = new List<string>();
         var actions = new List<string>();
 
-        // ---- Skills (0..40): coverage of the job's skill list ----
+        // Skills (0..40): coverage of the job's skill list
         var matchedSkills = jobSkills
             .Where(js => user.SkillNames.Any(un => string.Equals(un, js, StringComparison.OrdinalIgnoreCase)))
             .ToList();
@@ -104,7 +93,7 @@ public class JobMatchingService(AppDbContext db)
             }
         }
 
-        // ---- Title (0..20): preferred titles / neutral fallback ----
+        // Title (0..20): preferred titles / neutral fallback
         var titleScore = 0;
         if (user.PreferredTitles.FirstOrDefault(t => job.Title.Contains(t, StringComparison.OrdinalIgnoreCase)) is not null)
         {
@@ -119,7 +108,7 @@ public class JobMatchingService(AppDbContext db)
         }
         total += titleScore;
 
-        // ---- Industry (0..15) ----
+        // Industry (0..15)
         int industryScore = 0;
         var industryPref = user.PreferredIndustries.FirstOrDefault(i => job.Category.Contains(i, StringComparison.OrdinalIgnoreCase)
             || i.Contains(job.Category, StringComparison.OrdinalIgnoreCase));
@@ -128,7 +117,7 @@ public class JobMatchingService(AppDbContext db)
             actions.Add("Widen your preferred industries in the profile to see more matches.");
         total += industryScore;
 
-        // ---- Location (0..15) ----
+        // Location (0..15)
         int locationScore = 0;
         var exactLocation = user.PreferredLocations.FirstOrDefault(l => job.Location.Contains(l, StringComparison.OrdinalIgnoreCase)) is not null
             || job.Location.Contains("remote", StringComparison.OrdinalIgnoreCase) && user.WorkModes.Any(w => w.Equals("remote", StringComparison.OrdinalIgnoreCase));
@@ -139,7 +128,7 @@ public class JobMatchingService(AppDbContext db)
             actions.Add("This posting is outside your preferred locations.");
         total += locationScore;
 
-        // ---- Work mode (0..10) ----
+        // Work mode (0..10)
         int modeScore = 0;
         if (job.Remote && user.WorkModes.Any(w => w.Equals("remote", StringComparison.OrdinalIgnoreCase))) { modeScore = WeightWorkMode; }
         else if (job.Remote && user.WorkModes.Count == 0) modeScore = WeightWorkMode / 2;
@@ -150,7 +139,7 @@ public class JobMatchingService(AppDbContext db)
         return (total, explanation, matchedSkills, jobSkills.Except(matchedSkills).ToList(), actions);
     }
 
-    // ---------------- Skill gap ----------------
+    // Skill gap
 
     public sealed record GapReport(string TargetRole, int CoveragePercent, List<SkillGapItem> Matched, List<SkillGapItem> Missing, List<string> Steps);
 
@@ -188,8 +177,6 @@ public class JobMatchingService(AppDbContext db)
         return new GapReport(role, (int)Math.Round(coverage), matched, missing, [.. steps]);
     }
 
-    /// <summary>Pick a recognized catalog role; fall back to the graduate's
-    /// first preferred title when it maps, else the default role.</summary>
     private static string ResolveRole(string? requested)
     {
         if (!string.IsNullOrWhiteSpace(requested))
@@ -201,7 +188,6 @@ public class JobMatchingService(AppDbContext db)
         return "Software Engineer";
     }
 
-    /// <summary>Role chosen from the graduate's preferred titles (overview page).</summary>
     public async Task<string> GuessTargetRoleAsync(int userId)
     {
         var profile = await db.GraduateProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);

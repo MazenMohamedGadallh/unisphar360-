@@ -7,28 +7,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Data;
 
-/// <summary>
-/// On-demand importer for people CSVs: students-*.csv and doctors-*.csv.
-/// The university comes from the FILE NAME (same slug rule CatalogImporter
-/// uses), never from a CSV cell. People are upserted by Email
-/// (case-insensitive) inside that university. Runs only when --import-people
-/// is passed on the command line (see Program.cs); never at startup.
-///
-/// Safety properties:
-///  - The initial password comes from the user-secret
-///    Import:InitialPassword when set (callers must never log it); when it
-///    is missing or empty, new accounts are bootstrapped with the built-in
-///    DefaultInitialPassword and only the COUNT of such users is reported
-///    — the value and its hashes are never logged anywhere.
-///  - Existing users are never demoted or re-passworded: the update path
-///    touches contact/profile fields only, and an email that exists in a
-///    DIFFERENT university is skipped so uniqueness and isolation hold.
-///  - Passed enrollments carry GradePoints 2.0 / letter "C": the app marks a
-///    course Passed at GradePoints >= 2.0 (UniversityController.CourseStatus,
-///    DoctorController.CourseStudents), so this is the honest pass boundary.
-///  - Instructors never replace an existing assignment for a term.
-///  - dry-run: counts only, not a single SaveChanges is issued.
-/// </summary>
 public static class PeopleImporter
 {
     public const string InstructorTerm = "Fall 2025";
@@ -36,9 +14,6 @@ public static class PeopleImporter
     public const double PassedGradePoints = 2.0;
     private const string CurrentSemester = "Current";
 
-    /// <summary>Bootstrap password given to NEW accounts only when the
-    /// user-secret Import:InitialPassword is not set. The value itself is
-    /// never logged; only the number of users that received it is.</summary>
     public const string DefaultInitialPassword = "Password123!";
 
     private static readonly Regex EmailRegex =
@@ -51,10 +26,6 @@ public static class PeopleImporter
         bool dryRun = false,
         ILogger? logger = null)
     {
-        // Password policy: the user-secret Import:InitialPassword overrides
-        // everything when set. When it is missing/empty, NEW accounts are
-        // bootstrapped with the built-in default; only the count of those
-        // users is reported (the value and its hashes are never logged).
         var useDefaultPassword = string.IsNullOrWhiteSpace(initialPassword);
         var password = useDefaultPassword ? DefaultInitialPassword : initialPassword;
 
@@ -81,14 +52,6 @@ public static class PeopleImporter
             return report;
         }
 
-        // ONE decision map for both run modes: each course's current occupant
-        // is the doctor-module CourseAssignment (primary), or, failing that,
-        // the legacy CourseInstructors row of the run's term. Occupants are
-        // stored by normalized email because dry-run doctors are planned
-        // users without an id; email identity makes dry-run decisions take
-        // exactly the same branch as a real run, so the counters match.
-        // Cross-university rows can never collide: courses are keyed by id
-        // and a run's course dictionary is university-scoped.
         var occupancy = new Dictionary<int, (string Email, string Name)>();
         foreach (var x in db.CourseAssignments.AsNoTracking()
             .Join(db.Users.AsNoTracking(), a => a.DoctorUserId, u => u.Id,
@@ -139,14 +102,8 @@ public static class PeopleImporter
                 .Where(c => c.UniversityId == university.Id)
                 .ToDictionary(c => c.Code, StringComparer.OrdinalIgnoreCase);
 
-            // Pending rows this run added to the context but has not saved yet
-            // (needed so a duplicate code inside one file cannot slip past the
-            // unique indexes and blow up SaveChanges).
             var pendingEnrollments = new HashSet<(User User, Course Course)>();
             var pendingLinks = new HashSet<(User Doctor, Course Course)>();
-            // Emails planned earlier in this run (dry-run users are not saved,
-            // so the DB query cannot see them; the map keeps later rows in the
-            // same file on the update path instead of double-counting).
             var plannedByEmail = new Dictionary<string, User>(StringComparer.Ordinal);
 
             foreach (var (lineNumber, row) in rows)
@@ -154,7 +111,7 @@ public static class PeopleImporter
                 var get = (string key) => (row.TryGetValue(key, out var v) ? v : "").Trim();
                 var email = get("Email").ToLowerInvariant();
 
-                // ---- row validation: one bad row never aborts the run ----
+                // row validation: one bad row never aborts the run
                 var invalidReason = kind == "student"
                     ? ValidateStudentRow(get, email)
                     : ValidateDoctorRow(get, email);
@@ -165,7 +122,7 @@ public static class PeopleImporter
                     continue;
                 }
 
-                // ---- identity upsert by lower(email) inside the university ----
+                // identity upsert by lower(email) inside the university
                 User user;
                 var inDb = db.Users.FirstOrDefault(u => u.Email.ToLower() == email);
                 if (inDb is not null)
@@ -201,7 +158,7 @@ public static class PeopleImporter
                     fileStats.CreatedUsers++;
                 }
 
-                // ---- course links ----
+                // course links
                 var codeLists = kind == "student"
                     ? new[]
                     {
@@ -246,9 +203,7 @@ public static class PeopleImporter
         return report;
     }
 
-    // ------------------------------------------------------------------
     // Building / updating users
-    // ------------------------------------------------------------------
 
     private static string BuildFullName(string first, string middle, string last)
     {
@@ -293,13 +248,6 @@ public static class PeopleImporter
         return user;
     }
 
-    /// <summary>Update path: contact/profile fields only. Names (first,
-    /// middle, last, FullName) are identity data and are NEVER rewritten, so
-    /// an account matched by email keeps the names it was registered with;
-    /// CSV rows with a repeated email that carry different names just touch
-    /// the contact fields. PasswordHash, Role, IsActive, IsDeleted,
-    /// UniversityId and created fields are never touched either, so
-    /// pre-existing accounts stay intact.</summary>
     private static bool ApplyProfileUpdates(User user, string kind, Func<string, string> get)
     {
         var departmentName = get("DepartmentName");
@@ -327,9 +275,6 @@ public static class PeopleImporter
         return changed;
     }
 
-    /// <summary>Exactly what registration gives a new account so dashboards
-    /// are not blank: welcome notification + activity, and a current-semester
-    /// record for students only (register creates it for Student/Graduate).</summary>
     private static void AddWelcomeBundle(AppDbContext db, User user, string kind)
     {
         if (kind == "student")
@@ -345,9 +290,7 @@ public static class PeopleImporter
         value.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(v => v.Length > 0);
 
-    // ------------------------------------------------------------------
     // Links
-    // ------------------------------------------------------------------
 
     private static void UpsertEnrollment(
         AppDbContext db, PeopleImportReport report, PeopleFileStats stats,
@@ -378,15 +321,6 @@ public static class PeopleImporter
         stats.EnrollmentsCreated++;
     }
 
-    /// <summary>Doctor links are created exactly the way the integrated
-    /// doctor module and DbSeeder's dual-write expect: a doctor-module
-    /// CourseAssignment (no term, unique per doctor+course, AssignedByUserId
-    /// = the doctor's own id) plus the legacy per-term CourseInstructors row
-    /// the enrollment endpoints still read. A course held by a different
-    /// doctor (assignment first, then the legacy row of
-    /// <see cref="InstructorTerm"/>) is never replaced — the row is skipped
-    /// and reported. The occupancy map is in-run, so a dry run decides every
-    /// course exactly like a real run and reports identical counts.</summary>
     private static void UpsertInstructorLink(
         AppDbContext db, PeopleImportReport report, PeopleFileStats stats,
         string fileName, int lineNumber, User doctor, Course course,
@@ -405,8 +339,6 @@ public static class PeopleImporter
             return;
         }
 
-        // The same doctor's course once more (this run, or in the database
-        // for a real run): duplicate link.
         if (pending.Contains((doctor, course)) ||
             held.Email == identity ||
             (!dryRun && (db.CourseInstructors.Any(ci =>
@@ -431,8 +363,6 @@ public static class PeopleImporter
                 AssignedAtUtc = DateTime.UtcNow,
                 DisplayTitle = null
             });
-            // Legacy per-term row (what the pre-module endpoints still read);
-            // written together so both views stay in sync, like DbSeeder.
             db.CourseInstructors.Add(new CourseInstructor
             {
                 CourseId = course.Id,
@@ -447,9 +377,7 @@ public static class PeopleImporter
         stats.LinksCreated++;
     }
 
-    // ------------------------------------------------------------------
     // Row validation (returns a reason or null)
-    // ------------------------------------------------------------------
 
     private static string? ValidateStudentRow(Func<string, string> get, string email)
     {
@@ -474,13 +402,6 @@ public static class PeopleImporter
         if (get("CourseCodes").Length == 0) return "empty CourseCodes.";
         return null;
     }
-
-    // ------------------------------------------------------------------
-    // CSV parsing — private copy of CatalogImporter's parser so the catalog
-    // importer file is never touched by this feature. Identical semantics:
-    // UTF-8 with/without BOM, RFC4180 quoted fields with escaped quotes and
-    // commas inside quotes, every row mapped through the header names.
-    // ------------------------------------------------------------------
 
     private static List<(int Line, Dictionary<string, string> Row)> ParsePeopleFile(string path)
     {
@@ -542,8 +463,6 @@ public static class PeopleImporter
     }
 }
 
-/// <summary>Counts from one import run. Reasons carry file + line + why for
-/// every skipped row/link so nothing is silently dropped.</summary>
 public sealed class PeopleImportReport
 {
     public List<PeopleFileStats> Files { get; } = [];

@@ -23,17 +23,14 @@ public class StudyPlannerController : ControllerBase
         _generator = generator;
     }
 
-    /// <summary>Personal weekly plan from grades, class difficulty, credits and attendance.</summary>
     [HttpGet("suggestion")]
     public async Task<StudyPlanSuggestionDto> Suggestion() =>
         await _generator.SuggestAsync(User.GetUserId());
 
-    /// <summary>Saves the suggested sessions into this week's planner.</summary>
     [HttpPost("suggestion/apply")]
     public async Task<IActionResult> ApplySuggestion() =>
         Ok(new { added = await _generator.ApplyAsync(User.GetUserId()) });
 
-    /// <summary>The week's plan. Optional ?weekStart=2026-10-04 (any date inside the wanted week).</summary>
     [HttpGet]
     public async Task<StudyPlannerResponse> Get([FromQuery] DateTime? weekStart = null) =>
         await _academic.GetPlannerAsync(User.GetUserId(), weekStart);
@@ -57,7 +54,6 @@ public class StudyPlannerController : ControllerBase
         return Ok(AcademicService.ToDto(item));
     }
 
-    /// <summary>Tick / untick a study item (the circle in the planner).</summary>
     [HttpPost("{id:int}/toggle")]
     public async Task<ActionResult<StudyDayDto>> Toggle(int id)
     {

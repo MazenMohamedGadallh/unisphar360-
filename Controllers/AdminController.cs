@@ -27,7 +27,6 @@ public class AdminController : ControllerBase
         _roleValidator = roleValidator;
     }
 
-    /// <summary>Administrative analytics: student count, enrollment stats, GPA distribution.</summary>
     [HttpGet("analytics")]
     public async Task<ActionResult<object>> GetAnalytics()
     {
@@ -46,8 +45,6 @@ public class AdminController : ControllerBase
             .Where(r => r.IsCurrent && r.TotalCourses > 0)
             .AverageAsync(r => (double?)r.AttendanceRate) ?? 0;
 
-        // GPA distribution — fetch data and group in-memory (switch expressions
-        // are not translatable to SQL by EF Core)
         var allRecords = await _db.SemesterRecords
             .Where(r => r.IsCurrent && r.TotalCourses > 0)
             .ToListAsync();
@@ -95,7 +92,6 @@ public class AdminController : ControllerBase
         });
     }
 
-    /// <summary>View audit logs with filtering.</summary>
     [HttpGet("audit-logs")]
     public async Task<ActionResult<IReadOnlyList<object>>> GetAuditLogs(
         [FromQuery] int? userId = null,
@@ -117,7 +113,6 @@ public class AdminController : ControllerBase
         return Ok(logs);
     }
 
-    /// <summary>Send a notification to a specific user or broadcast to a role.</summary>
     [HttpPost("notifications")]
     public async Task<IActionResult> SendNotification([FromBody] SendNotificationRequest req)
     {
@@ -161,7 +156,6 @@ public class AdminController : ControllerBase
         return Ok(new { Message = "Notification sent." });
     }
 
-    /// <summary>Create an announcement.</summary>
     [HttpPost("announcements")]
     public async Task<ActionResult<object>> CreateAnnouncement([FromBody] CreateAnnouncementRequest req)
     {
@@ -187,7 +181,6 @@ public class AdminController : ControllerBase
         return Ok(new { announcement.Id, announcement.Title, announcement.Body, announcement.Category, announcement.UniversityId, announcement.CreatedAtUtc });
     }
 
-    /// <summary>Get all announcements (admin). Students use /api/announcements.</summary>
     [HttpGet("announcements")]
     public async Task<ActionResult<IReadOnlyList<object>>> GetAnnouncements()
     {
@@ -199,7 +192,6 @@ public class AdminController : ControllerBase
         return Ok(announcements);
     }
 
-    /// <summary>Get all users (Admin only).</summary>
     [HttpGet("users")]
     public async Task<ActionResult<IReadOnlyList<object>>> GetAllUsers()
     {
@@ -211,7 +203,7 @@ public class AdminController : ControllerBase
         return Ok(users);
     }
 
-    // ---- Admin panel: overview ----
+    // Admin panel: overview
 
     [HttpGet("overview")]
     public async Task<AdminOverviewDto> Overview()
@@ -263,9 +255,8 @@ public class AdminController : ControllerBase
             await _db.Courses.CountAsync());
     }
 
-    // ---- Admin panel: user management ----
+    // Admin panel: user management
 
-    /// <summary>Paged user list with search / type / status filters.</summary>
     [HttpGet("users/search")]
     public async Task<PagedResultDto<AdminUserDto>> SearchUsers(
         [FromQuery] string? search = null,
@@ -311,7 +302,6 @@ public class AdminController : ControllerBase
         return new PagedResultDto<AdminUserDto>(items, total, page, pageSize);
     }
 
-    /// <summary>One user's locked profile fields for the admin edit dialog.</summary>
     [HttpGet("users/{id:int}")]
     public async Task<ActionResult<AdminUserDetailDto>> GetUser(int id)
     {
@@ -320,9 +310,6 @@ public class AdminController : ControllerBase
         return await ToAdminUserDetailDtoAsync(user);
     }
 
-    /// <summary>Admin edit of the locked account fields (first/middle/last
-    /// name, email, phone, address, department, university). Every change is
-    /// audit-logged. Role and password can never be changed here.</summary>
     [HttpPut("users/{id:int}")]
     public async Task<ActionResult<AdminUserDetailDto>> UpdateUser(
         int id,
@@ -418,7 +405,6 @@ public class AdminController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Soft delete: the row stays for history, login is blocked.</summary>
     [HttpDelete("users/{id:int}")]
     public async Task<IActionResult> DeleteUser(int id)
     {
@@ -458,9 +444,8 @@ public class AdminController : ControllerBase
         await _db.SaveChangesAsync();
     }
 
-    // ---- Admin panel: instructor assignments (Part 1) ----
+    // Admin panel: instructor assignments (Part 1)
 
-    /// <summary>All doctor-to-course assignments, optionally filtered.</summary>
     [HttpGet("instructor-assignments")]
     public async Task<IReadOnlyList<InstructorAssignmentDto>> InstructorAssignments(
         [FromQuery] int? universityId = null,
@@ -508,8 +493,6 @@ public class AdminController : ControllerBase
         }).ToList();
     }
 
-    /// <summary>Assign a doctor to a course for a term. Only doctors of the
-    /// course's own university can be assigned.</summary>
     [HttpPost("instructor-assignments")]
     public async Task<ActionResult<InstructorAssignmentDto>> CreateInstructorAssignment(
         [FromBody] CreateInstructorAssignmentRequest req,
@@ -573,7 +556,6 @@ public class AdminController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>Doctors for the assignment dropdown (optionally by university).</summary>
     [HttpGet("doctors")]
     public async Task<IReadOnlyList<AdminDoctorDto>> Doctors([FromQuery] int? universityId = null)
     {
@@ -595,7 +577,6 @@ public class AdminController : ControllerBase
             d.Specialization ?? "", d.IsActive)).ToList();
     }
 
-    /// <summary>Courses for the assignment dropdown (optionally by university).</summary>
     [HttpGet("courses")]
     public async Task<IReadOnlyList<AdminCourseDto>> Courses(
         [FromQuery] int? universityId = null,
@@ -615,7 +596,7 @@ public class AdminController : ControllerBase
             .ToListAsync();
     }
 
-    // ---- Admin panel: risk, departments, audit, health ----
+    // Admin panel: risk, departments, audit, health
 
     [HttpGet("analytics/at-risk-students")]
     public async Task<IReadOnlyList<AtRiskStudentDto>> AtRiskStudents() =>

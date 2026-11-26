@@ -121,20 +121,13 @@ public class AcademicTests : IClassFixture<ApiFactory>
     private record Activity(int Id, string Kind, string Message, DateTime CreatedAtUtc, string TimeAgo);
 }
 
-/// <summary>
-/// End-to-end tests for the Graduation feature: eligibility tracking,
-/// the apply -> withdraw / approve / reject lifecycle, ceremony lookup,
-/// certificates with honors, and the admin review flow.
-/// Uses its own throw-away database (separate fixture) so the mutable
-/// graduation data here never leaks into other test classes.
-/// </summary>
 public class GraduationTests : IClassFixture<ApiFactory>
 {
     private readonly ApiFactory _factory;
 
     public GraduationTests(ApiFactory factory) => _factory = factory;
 
-    // ---- Shared helpers ----
+    // Shared helpers
 
     private static object NewStudentBody(string email) => new
     {
@@ -155,7 +148,6 @@ public class GraduationTests : IClassFixture<ApiFactory>
         graduationYear = (int?)null
     };
 
-    /// <summary>Registers a fresh student and returns (userId, bearer client).</summary>
     private async Task<(int Id, HttpClient Client)> RegisterStudentAsync()
     {
         var email = $"layla-{Guid.NewGuid():N}@example.com";
@@ -166,8 +158,6 @@ public class GraduationTests : IClassFixture<ApiFactory>
         return (body!.User.Id, client);
     }
 
-    /// <summary>Marks the student's current semester record as a finished,
-    /// high-GPA degree so the eligibility audit passes.</summary>
     private async Task MakeEligibleAsync(int userId)
     {
         using var scope = _factory.Services.CreateScope();
@@ -180,7 +170,7 @@ public class GraduationTests : IClassFixture<ApiFactory>
         await db.SaveChangesAsync();
     }
 
-    // ---- Overview ----
+    // Overview
 
     [Fact]
     public async Task Overview_Student_ShowsRealProgressAndBlockingReason()
@@ -223,7 +213,7 @@ public class GraduationTests : IClassFixture<ApiFactory>
         Assert.True(o.Alumni.HasCertificate);
     }
 
-    // ---- Eligibility + apply ----
+    // Eligibility + apply
 
     [Fact]
     public async Task Apply_IneligibleStudent_FailsWithReasons()
@@ -279,9 +269,6 @@ public class GraduationTests : IClassFixture<ApiFactory>
     [Fact]
     public async Task Apply_GraduateOrAdmin_IsForbidden()
     {
-        // A graduate has no active student record to audit; admins / doctors are
-        // not students. Both are rejected at the authorization boundary (403),
-        // never reaching the business rules.
         var graduate = await _factory.GraduateClient.PostAsJsonAsync("/api/graduation/apply",
             new { note = (string?)null, expectedGraduationYear = (int?)null });
         Assert.Equal(HttpStatusCode.Forbidden, graduate.StatusCode);
@@ -291,7 +278,7 @@ public class GraduationTests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.Forbidden, admin.StatusCode);
     }
 
-    // ---- Withdraw + re-apply ----
+    // Withdraw + re-apply
 
     [Fact]
     public async Task Withdraw_ThenReapply_RestartsLifecycle()
@@ -320,7 +307,7 @@ public class GraduationTests : IClassFixture<ApiFactory>
         Assert.Equal("Pending", fresh!.Status);
     }
 
-    // ---- Ceremony ----
+    // Ceremony
 
     [Fact]
     public async Task Ceremony_ReturnsSeededUpcomingEvent()
@@ -334,7 +321,7 @@ public class GraduationTests : IClassFixture<ApiFactory>
         Assert.Contains("Campus", c.Location);
     }
 
-    // ---- Certificate ----
+    // Certificate
 
     [Fact]
     public async Task Certificate_NotYetConferred_IsNotFound()
@@ -359,7 +346,7 @@ public class GraduationTests : IClassFixture<ApiFactory>
         Assert.StartsWith("UNI-GRAD-", c.CertificateId);
     }
 
-    // ---- Admin review flow (approve confers, reject offers a re-apply) ----
+    // Admin review flow (approve confers, reject offers a re-apply)
 
     [Fact]
     public async Task Admin_Approve_ConfersDegreeAndBlocksReReview()
@@ -463,7 +450,7 @@ public class GraduationTests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    // ---- Response shapes ----
+    // Response shapes
     private record AuthBody(string Token, DateTime ExpiresAtUtc, AuthUser User);
     private record AuthUser(int Id, string FullName, string Email, int RoleId, string Role, string Major, string? AvatarUrl);
     private record Overview(string Role, bool IsGraduated, string Degree, string Department,

@@ -8,13 +8,6 @@ using UniSphere.Api.Data;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>
-/// Runs once when the test assembly loads, before any test server is built.
-/// The host machine (or CI) may export personal AI keys; strip them in the
-/// test process only so provider-availability checks (AI status -> 503 paths)
-/// are deterministic and tests never make a real, billed provider call.
-/// Separate dev-server processes on this machine are unaffected.
-/// </summary>
 internal static class TestEnvironmentSetup
 {
     [System.Runtime.CompilerServices.ModuleInitializer]
@@ -30,18 +23,10 @@ internal static class TestEnvironmentSetup
         }
         // Never load the developer's real .env (it holds live API keys).
         Environment.SetEnvironmentVariable("UNISPHERE_SKIP_DOTENV", "1");
-        // Ollama reads as "configured" via its built-in default model. This
-        // machine may run Ollama locally; aim the test process' probe at a
-        // dead port so it reads as down.
         Environment.SetEnvironmentVariable("OLLAMA_BASE_URL", "http://127.0.0.1:1");
     }
 }
 
-/// <summary>
-/// Spins the API up on an in-process test server with its own throw-away SQLite
-/// file, so tests never touch the developer's unisphere-v6.db.
-/// The app seeds demo data on startup, exactly like a real first run.
-/// </summary>
 public class ApiFactory : WebApplicationFactory<UniSphere.Api.Services.TokenService>, IDisposable
 {
     private readonly string _dbPath = Path.Combine(
@@ -64,19 +49,11 @@ public class ApiFactory : WebApplicationFactory<UniSphere.Api.Services.TokenServ
                 ["ConnectionStrings:Default"] = $"Data Source={_dbPath}",
                 ["Research:StoragePath"] = _researchPath,
                 ["Uploads:StoragePath"] = _materialsPath,
-                // AI keys may exist on the dev machine (env vars, user-secrets,
-                // secret.json, or appsettings.Local.json); null them so
-                // provider-availability paths (AI status -> 503) stay
-                // deterministic and never bill.
                 ["OPENAI_API_KEY"] = null,
                 ["ANTHROPIC_API_KEY"] = null,
                 ["GEMINI_API_KEY"] = null,
                 ["OPENROUTER_API_KEY"] = null,
                 ["OLLAMA_MODEL"] = null,
-                // The dev machine's user secrets also carry OLLAMA_BASE_URL
-                // (a live local Ollama) and OPENROUTER_MODEL; pin a dead port
-                // (NOT null — null would fall through to the real default
-                // localhost:11434) so the probe can never reach a real server.
                 ["OLLAMA_BASE_URL"] = "http://127.0.0.1:1",
                 ["OPENROUTER_MODEL"] = null,
                 ["Chat:DefaultProvider"] = null,
@@ -85,9 +62,6 @@ public class ApiFactory : WebApplicationFactory<UniSphere.Api.Services.TokenServ
                 ["Chat:Providers:Gemini:ApiKey"] = null,
                 ["Chat:Providers:Ollama:ApiKey"] = null,
                 ["Chat:Providers:OpenRouter:ApiKey"] = null,
-                // RAG integration is opt-in for tests. The dedicated RAG test
-                // factory enables it with a fake IRagClient; normal tests must
-                // never call the developer's local RAG service.
                 ["RagApi:Enabled"] = "false",
                 ["RagApi:BaseUrl"] = null,
                 ["RagApi:ApiKey"] = null,
@@ -95,7 +69,6 @@ public class ApiFactory : WebApplicationFactory<UniSphere.Api.Services.TokenServ
         });
     }
 
-    /// <summary>Logs in with a demo account and returns the JWT.</summary>
     public async Task<string> LoginAsync(string email, string password)
     {
         var client = CreateClient();

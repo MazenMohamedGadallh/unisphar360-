@@ -5,10 +5,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Aggregates the graduate dashboard (overview), alumni/university services
-/// and notification settings. All numbers are computed from real rows.
-/// </summary>
 public class GraduateCareerService(
     AppDbContext db,
     GraduateProfileService profileService,
@@ -96,7 +92,7 @@ public class GraduateCareerService(
         }
     }
 
-    // ---------------- Alumni / university services ----------------
+    // Alumni / university services
 
     public async Task<GradAlumniDto> GetAlumniAsync(int userId)
     {
@@ -136,7 +132,7 @@ public class GraduateCareerService(
         return "Check your skill gap against your target role, then practice with the AI interview coach before applying.";
     }
 
-    // ---------------- Settings ----------------
+    // Settings
 
     public async Task<GraduateSettings> GetSettingsEntityAsync(int userId)
     {
@@ -180,8 +176,6 @@ public class GraduateCareerService(
             s.ThemePreference, s.AlertKeywords, s.AlertLocations);
     }
 
-    /// <summary>Alert filters are free-form comma lists; store trimmed,
-    /// de-duplicated, capped values so regeneration stays predictable.</summary>
     private static string? TruncateAlertList(string? raw, int max)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;

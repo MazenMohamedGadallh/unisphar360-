@@ -3,7 +3,6 @@ using System.Text.Json;
 
 namespace UniSphere.Api.Middleware;
 
-/// <summary>Global exception handler — returns RFC 7807 JSON for unhandled exceptions.</summary>
 public class ExceptionHandlingMiddleware
 {
     private readonly RequestDelegate _next;

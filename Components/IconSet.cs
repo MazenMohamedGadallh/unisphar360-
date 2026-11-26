@@ -1,10 +1,5 @@
 namespace UniSphere.Api.Components;
 
-/// <summary>
-/// Centralized Lucide-style inline SVG icon registry (stroke=currentColor,
-/// ISC-licensed geometry). Rendered through the Icon.razor component so the
-/// whole app shares one outline style, one sizing rule and one color model.
-/// </summary>
 public static class IconSet
 {
     private static readonly Dictionary<string, string> Icons = new(StringComparer.Ordinal)
@@ -63,7 +58,6 @@ public static class IconSet
         ["users"] = "<path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M22 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/>",
     };
 
-    /// <summary>Renders the full inline SVG for a known icon name.</summary>
     public static string Svg(string name, double size = 18, double strokeWidth = 0)
     {
         var key = Icons.ContainsKey(name ?? "") ? name! : Default;
@@ -73,11 +67,6 @@ public static class IconSet
             $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{Fmt(size)}\" height=\"{Fmt(size)}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{Fmt(strokeWidth)}\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide\" focusable=\"false\">{Icons[key]}</svg>";
     }
 
-    /// <summary>
-    /// Maps icon values that arrive from the API (legacy emoji codepoints,
-    /// module names or already-modern keys) onto a registry key. Unknown
-    /// values fall back to a neutral circle so nothing renders blank.
-    /// </summary>
     public static string ResolveName(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -97,7 +86,7 @@ public static class IconSet
 
     private const string Default = "circle";
 
-    // Legacy emoji → modern key (older cached/persisted payloads).
+    // Legacy emoji -> modern key (older cached/persisted payloads).
     private static readonly (string Sequence, string Key)[] LegacyMap =
     {
         ("\U0001F3EB", "graduation-cap"), ("\U0001F393", "graduation-cap"),

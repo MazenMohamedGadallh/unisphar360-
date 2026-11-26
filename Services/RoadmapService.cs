@@ -5,10 +5,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Career roadmap CRUD + AI-assisted suggestions. Statuses are normalized;
-/// completion is derived, never stored (single source of truth).
-/// </summary>
 public class RoadmapService(AppDbContext db, GraduateAiService ai)
 {
     private static readonly string[] Statuses = ["NotStarted", "InProgress", "Completed"];
@@ -76,8 +72,6 @@ public class RoadmapService(AppDbContext db, GraduateAiService ai)
     public async Task<bool> DeleteAsync(int userId, int id) =>
         await db.RoadmapItems.Where(r => r.UserId == userId && r.Id == id).ExecuteDeleteAsync() > 0;
 
-    /// <summary>AI suggestions (real provider required) — returned as a list;
-    /// applying is an explicit separate action the user takes.</summary>
     public async Task<(IReadOnlyList<RoadmapSuggestionDto> Suggestions, GraduateAiService.AiMeta Meta)> SuggestAsync(
         int userId, CancellationToken ct)
     {
@@ -91,7 +85,6 @@ public class RoadmapService(AppDbContext db, GraduateAiService ai)
         return ([.. data.Items.Select(i => new RoadmapSuggestionDto(i.Title, i.Category, i.Notes, i.Why))], meta);
     }
 
-    /// <summary>Create roadmap rows from suggestion payloads (bulk).</summary>
     public async Task<IReadOnlyList<RoadmapItemDto>> ApplySuggestionsAsync(
         int userId, IReadOnlyList<RoadmapSuggestionDto> picked)
     {

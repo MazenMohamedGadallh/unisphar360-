@@ -118,10 +118,6 @@ else
         StateHasChanged();
         var sessions = await GetJsonAsync<List<GradInterviewSessionModel>>("/api/grad/interview/sessions");
         if (sessions is not null) _sessions = sessions;
-        // List rows never carry question bodies, so NEVER replace the detail
-        // object (_selected) with one — only clear it when the session was
-        // deleted or vanished. Replacing used to null out _selected.Questions
-        // and crash the rendering loop below (NullReferenceException).
         if (_selected is not null && _sessions.All(s => s.Id != _selected.Id))
         {
             _selected = null;

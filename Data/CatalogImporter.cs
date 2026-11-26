@@ -5,13 +5,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Data;
 
-/// <summary>
-/// Imports Data/courses-&lt;university-slug&gt;.csv. The university comes from
-/// the file name, never from a CSV cell or the browser. Records are upserted
-/// by (UniversityId, Code), so running the importer repeatedly is safe.
-/// Prerequisite codes are kept only when they resolve to a course in the
-/// same university.
-/// </summary>
 public static class CatalogImporter
 {
     public static CatalogImportResult ImportAll(
@@ -85,8 +78,6 @@ public static class CatalogImporter
 
             db.SaveChanges();
 
-            // Prerequisites after all codes are in the dictionary. Only a
-            // course from the same university is ever stored.
             var byCode = db.Courses
                 .Where(c => c.UniversityId == university.Id)
                 .ToList()
@@ -144,8 +135,6 @@ public static class CatalogImporter
         return rows;
     }
 
-    /// <summary>Minimal RFC4180 parser: quoted fields, escaped double quotes,
-    /// and commas inside quotes (the Helwan track column uses them).</summary>
     private static List<string> ParseCsvLine(string line)
     {
         var values = new List<string>();
@@ -218,7 +207,7 @@ public static class CatalogImporter
         "MA" => "Mathematics",
         "PH" => "Physics",
         "ST" => "Statistics",
-        var other => other
+        _ => code.Trim()
     };
 }
 

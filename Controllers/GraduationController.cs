@@ -25,8 +25,6 @@ public class GraduationController : ControllerBase
         _reviewValidator = reviewValidator;
     }
 
-    /// <summary>Everything the Graduation screen needs: eligibility, checklist,
-    /// application status, ceremony and (for alumni) the conferral block.</summary>
     [HttpGet("overview")]
     public async Task<ActionResult<GraduationOverviewResponse>> Overview()
     {
@@ -34,9 +32,6 @@ public class GraduationController : ControllerBase
         return overview is null ? NotFound("No account for this user.") : overview;
     }
 
-    /// <summary>Submit a graduation application. Students only; 409 when an
-    /// active application already exists, 422 with the blocking reasons when
-    /// the degree audit fails.</summary>
     [HttpPost("apply")]
     [Authorize(Roles = "Student")]
     public async Task<IActionResult> Apply(GraduationApplyRequest request)
@@ -66,7 +61,6 @@ public class GraduationController : ControllerBase
         };
     }
 
-    /// <summary>The current user's graduation application (404 if never applied).</summary>
     [HttpGet("application")]
     public async Task<ActionResult<GraduationApplicationSummaryDto>> Application()
     {
@@ -77,7 +71,6 @@ public class GraduationController : ControllerBase
         return overview.Application;
     }
 
-    /// <summary>Withdraw a pending / in-review application so a new one can be filed.</summary>
     [HttpPost("application/withdraw")]
     public async Task<IActionResult> Withdraw()
     {
@@ -89,7 +82,6 @@ public class GraduationController : ControllerBase
         };
     }
 
-    /// <summary>The next upcoming graduation ceremony from the events calendar.</summary>
     [HttpGet("ceremony")]
     public async Task<ActionResult<GraduationCeremonyDto>> Ceremony()
     {
@@ -99,8 +91,6 @@ public class GraduationController : ControllerBase
             : ceremony;
     }
 
-    /// <summary>Digital certificate with Latin honors. Requires a conferred
-    /// degree (approved application) or the Graduate role.</summary>
     [HttpGet("certificate")]
     public async Task<ActionResult<GraduationCertificateDto>> Certificate()
     {
@@ -112,7 +102,6 @@ public class GraduationController : ControllerBase
         };
     }
 
-    /// <summary>Paged list of every graduation application (Admin). Filter by status.</summary>
     [HttpGet("applications")]
     [Authorize(Roles = "Admin")]
     public async Task<ActionResult<PagedResultDto<GraduationApplicationAdminDto>>> Applications(
@@ -121,7 +110,6 @@ public class GraduationController : ControllerBase
         [FromQuery] int pageSize = 20)
         => Ok(await _graduation.GetApplicationsAsync(status, page, pageSize));
 
-    /// <summary>Approve (confers the degree) or reject a pending application (Admin).</summary>
     [HttpPost("applications/{applicationId:int}/review")]
     [Authorize(Roles = "Admin")]
     public async Task<ActionResult<GraduationApplicationSummaryDto>> Review(

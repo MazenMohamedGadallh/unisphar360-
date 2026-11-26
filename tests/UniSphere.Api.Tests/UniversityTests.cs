@@ -21,7 +21,7 @@ public class UniversityTests : IClassFixture<ApiFactory>
         Assert.NotNull(me);
         Assert.Equal("El Shorouk Academy", me!.UniversityName);
         Assert.Equal("Computer Engineering", me.Department);
-        Assert.Equal(11, me.CoursesCount);
+        Assert.Equal(34, me.CoursesCount); // 11 seeded + 23 from courses-el-shorouk-academy.csv
         Assert.True(me.MaterialsCount >= 19);
     }
 
@@ -33,7 +33,7 @@ public class UniversityTests : IClassFixture<ApiFactory>
         response.EnsureSuccessStatusCode();
         var courses = await response.Content.ReadFromJsonAsync<List<UniCourse>>();
         Assert.NotNull(courses);
-        Assert.Equal(11, courses!.Count);
+        Assert.Equal(34, courses!.Count);
         Assert.Contains(courses, c => c.Title == "Machine Learning" && c.MaterialsCount >= 3);
         Assert.Contains(courses, c => c.Code == "CS420" && c.Title == "Cloud Computing");
     }
@@ -175,8 +175,6 @@ public class UniversityTests : IClassFixture<ApiFactory>
     private record MaterialPage(List<Material> Items, int Total, int Page, int PageSize);
     private record Material(int Id, string Title, string Type);
 
-    /// <summary>The seeded Helwan demo account was retired; isolation tests
-    /// register an equivalent Helwan student per run instead.</summary>
     private async Task<HttpClient> CreateHelwanStudentClientAsync()
     {
         var anonymous = _factory.CreateClient();

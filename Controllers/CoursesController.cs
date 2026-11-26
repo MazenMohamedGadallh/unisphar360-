@@ -25,8 +25,6 @@ public class CoursesController : ControllerBase
     private static CourseDto ToDto(Course c) =>
         new(c.Id, c.Code, c.Title, c.Description, c.Track, c.Credits);
 
-    /// <summary>Students see the doctor-editable display title when one is
-    /// set; the catalog title stays the fallback. Course codes never change.</summary>
     private async Task<List<CourseDto>> WithDisplayTitlesAsync(
         List<CourseDto> courses, UserRole? role)
     {
@@ -38,7 +36,6 @@ public class CoursesController : ControllerBase
             .ToList();
     }
 
-    /// <summary>List courses visible in the caller's university. Optional ?track=AI filter.</summary>
     [HttpGet]
     public async Task<IReadOnlyList<CourseDto>> GetAll([FromQuery] string? track = null)
     {
@@ -77,7 +74,6 @@ public class CoursesController : ControllerBase
         return result;
     }
 
-    /// <summary>Courses recommended for the logged-in student (own university only).</summary>
     [Authorize(Roles = "Student")]
     [HttpGet("recommended")]
     public async Task<ActionResult<IReadOnlyList<CourseDto>>> Recommended()

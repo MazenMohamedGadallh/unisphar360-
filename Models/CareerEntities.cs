@@ -2,16 +2,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Models;
 
-// ---------------------------------------------------------------------------
-// Graduate career platform — every record is 1:1 or owned by one authenticated
-// account (UserId FK CASCADE), mirroring the ownership model of the other
-// modules. Each application table extends this ownership class so an entire
-// graduate's data is removable in one cascade.
-// ---------------------------------------------------------------------------
-
-/// <summary>Professional profile of one graduate (alumni) account.
-/// Header identity data (name/major/degree/university/graduation year) stays
-/// on User + the graduation application; this table only holds career fields.</summary>
 public class GraduateProfile
 {
     public int Id { get; set; }
@@ -36,14 +26,11 @@ public class GraduateProfile
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>A repeatable profile block (work experience, internship, project,
-/// certification or education) for one graduate profile.</summary>
 public class ProfileEntry
 {
     public int Id { get; set; }
     public int UserId { get; set; }
     public User? User { get; set; }
-    /// <summary>Experience | Project | Certification | Education</summary>
     public string Kind { get; set; } = "Experience";
     public string Title { get; set; } = "";
     public string? Organization { get; set; }
@@ -54,23 +41,18 @@ public class ProfileEntry
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>A stated/professed skill with proficiency. Name normalization
-/// (trim/case) is enforced by the service so dedup stays deterministic.</summary>
 public class GraduateSkill
 {
     public int Id { get; set; }
     public int UserId { get; set; }
     public User? User { get; set; }
     public string Name { get; set; } = "";
-    /// <summary>Beginner | Intermediate | Advanced | Expert (optional claim).</summary>
     public string? Level { get; set; }
-    /// <summary>Where the skill was stated first: Profile, CV or System (profile default).</summary>
     public string Source { get; set; } = "Profile";
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>An uploaded (or manually pasted) CV document owned by one graduate.</summary>
 public class CvDocument
 {
     public int Id { get; set; }
@@ -82,17 +64,13 @@ public class CvDocument
     public long SizeBytes { get; set; }
     public string StoragePath { get; set; } = "";    // server-side path, never exposed
     public string ParseStatus { get; set; } = "Pending"; // Parsed | Failed | Manual | UploadOnly
-    /// <summary>Extracted plain text (truncated to a sane size) for analysis.</summary>
     public string? ExtractedText { get; set; }
-    /// <summary>User-typed text replacing/adding to extraction when parsing failed.</summary>
     public string? ManualText { get; set; }
     public string? ParseError { get; set; }
 
     public DateTime UploadedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>One persisted AI CV analysis for one CV. Structured findings are
-/// stored as JSON strings so SQLite stays strictly typed.</summary>
 public class CvAnalysis
 {
     public int Id { get; set; }
@@ -113,9 +91,6 @@ public class CvAnalysis
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>A normalized external (or demo-seeded) job listing.
-/// Source="Remotive" rows are live external records; Source="Demo" rows are
-/// clearly-labeled seed data for offline development.</summary>
 public class JobListing
 {
     public int Id { get; set; }
@@ -136,7 +111,6 @@ public class JobListing
     public bool IsActive { get; set; } = true;       // delisted/expired flag
 }
 
-/// <summary>A job a graduate bookmarked (Saved) — separate from applications.</summary>
 public class SavedJob
 {
     public int Id { get; set; }
@@ -147,9 +121,6 @@ public class SavedJob
     public DateTime SavedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>Application tracker record for one graduate. Applications added
-/// here are tracked in UniSphere by the graduate; nothing is ever claimed as
-/// submitted to an employer unless an integration performs the submit.</summary>
 public class JobApplication
 {
     public int Id { get; set; }
@@ -168,7 +139,6 @@ public class JobApplication
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>One career-development goal item on the graduate's roadmap.</summary>
 public class RoadmapItem
 {
     public int Id { get; set; }
@@ -185,7 +155,6 @@ public class RoadmapItem
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>Interview practice session for one graduate (one target role/job).</summary>
 public class InterviewSession
 {
     public int Id { get; set; }
@@ -199,7 +168,6 @@ public class InterviewSession
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>An interview question with an optional submitted answer and AI feedback.</summary>
 public class InterviewQuestion
 {
     public int Id { get; set; }
@@ -212,7 +180,6 @@ public class InterviewQuestion
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>Graduate per-account preferences (alerts, visibility, thresholds).</summary>
 public class GraduateSettings
 {
     public int Id { get; set; }
@@ -222,18 +189,11 @@ public class GraduateSettings
     public bool NotifyFollowUps { get; set; } = true;
     public int MatchAlertThresholdPercent { get; set; } = 80;
     public bool ShowGpaOnProfile { get; set; } = false;  // optional, privacy-first
-    /// <summary>UI theme preference persisted per account (light | dark | system);
-    /// localStorage remains the per-browser convenience layer by ThemeService.</summary>
     public string ThemePreference { get; set; } = "system";
-    /// <summary>Job-alert targeting: comma-separated keywords matched against the
-    /// job title/company/description. Null/empty = no keyword filter.</summary>
     public string? AlertKeywords { get; set; }
-    /// <summary>Job-alert targeting: comma-separated locations matched against the
-    /// job location. Null/empty = no location filter.</summary>
     public string? AlertLocations { get; set; }
 }
 
-/// <summary>Single-row state for job catalog sync (throttling last sync).</summary>
 public class JobSyncState
 {
     public int Id { get; set; }                      // always 1

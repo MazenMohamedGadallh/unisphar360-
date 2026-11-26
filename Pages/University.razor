@@ -1,10 +1,4 @@
 @page "/university"
-@*
-[Authorize] removed on purpose (see Dashboard.razor): the server
-challenges every F5 to /login because the browser never sends the
-localStorage JWT as a bearer header. /api stays [Authorize]-guarded
-and MainLayout bounces anonymous users to /login after auth resolves.
-*@
 @using System.Net
 @using Microsoft.JSInterop
 @using UniSphere.Api.Dtos
@@ -284,7 +278,6 @@ else
     }
 }
 
-
 </RoleGate>
 @code {
     private static readonly string[] MaterialTypes =
@@ -366,15 +359,10 @@ else
         "locked" => "locked",
         _ => ""
     };
-    // Deferred first-run guard: prerender / pre-restore passes must not
-    // redirect or 401-logout a signed-in user (see OnAfterRenderAsync).
     private bool _started;
 
     protected override async Task OnInitializedAsync()
     {
-        // F5: auth restores in OnAfterRenderAsync (JS interop). Never
-        // redirect to /login while it is still resolving: GetUserAsync()
-        // is null until the persisted token is read.
         if (!AuthService.IsInitialized)
             await AuthService.RestoreSessionAsync();
         if (!AuthService.IsInitialized)
@@ -406,8 +394,6 @@ else
             Nav.NavigateTo("/login", replace: true);
             return;
         }
-        // Graduates use the university page through the alumni
-        // & career-center view instead of student materials.
         if (user.Role == "Graduate")
         {
             Nav.NavigateTo("/graduate/alumni", replace: true);
@@ -461,8 +447,6 @@ else
     private async Task LoadMaterialsAsync()
     {
         await FetchMaterialsAsync(_page);
-        // A filter change can shrink the list while the user is on a later
-        // page: land on the last valid page instead of an empty one.
         if (_page > TotalPages && _total > 0)
         {
             _page = TotalPages;
@@ -481,8 +465,6 @@ else
         _total = result?.Total ?? 0;
     }
 
-    /// <summary>Shared error surface for both filter changes and page changes
-    /// on the materials list (expiring sessions never truncate the reload).</summary>
     private async Task LoadMaterialsSafeAsync()
     {
         try
@@ -520,8 +502,6 @@ else
 
     private async Task ChangePageAsync(int delta)
     {
-        // The buttons are disabled at the ends; this guard double-checks the
-        // bounds so a stale click can never land outside the pager.
         var next = _page + delta;
         if (next < 1 || next > TotalPages) return;
         _page = next;
@@ -531,9 +511,6 @@ else
     private async Task OpenMaterialAsync(MaterialDto material) =>
         await LoadMaterialDetailAsync(material.Id);
 
-    /// <summary>Opens the detail modal by fetching the full DTO through
-    /// GET /api/university/me/materials/{id}: the server re-checks that the
-    /// material belongs to the caller's university (foreign ids are 404).</summary>
     private async Task LoadMaterialDetailAsync(int id)
     {
         _detailId = id;

@@ -23,8 +23,6 @@ public class AppDbContext : DbContext
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<University> Universities => Set<University>();
     public DbSet<CourseMaterial> CourseMaterials => Set<CourseMaterial>();
-    // Legacy per-term assignments (managed by /api/admin/instructor-assignments
-    // and the people importer) plus the doctor-module assignment table.
     public DbSet<CourseInstructor> CourseInstructors => Set<CourseInstructor>();
     public DbSet<CourseAssignment> CourseAssignments => Set<CourseAssignment>();
     public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
@@ -48,13 +46,9 @@ public class AppDbContext : DbContext
     public DbSet<GraduateSettings> GraduateSettings => Set<GraduateSettings>();
     public DbSet<JobSyncState> JobSyncStates => Set<JobSyncState>();
 
-    // Exam Generator: exams and their questions created by doctors from their
-    // assigned course materials.
     public DbSet<Exam> Exams => Set<Exam>();
     public DbSet<ExamQuestion> ExamQuestions => Set<ExamQuestion>();
 
-    // Published-exam attempts: one attempt per student per exam (unique
-    // index, configured below) plus the server-graded per-question answers.
     public DbSet<ExamAttempt> ExamAttempts => Set<ExamAttempt>();
     public DbSet<ExamAnswer> ExamAnswers => Set<ExamAnswer>();
 
@@ -66,10 +60,6 @@ public class AppDbContext : DbContext
         // User indexes
         modelBuilder.Entity<User>().HasIndex(u => u.Email).IsUnique();
 
-        // One notification preference row per user. The table already uses
-        // UserId as its primary key (see DbSchemaUpgrade); EF needs the key
-        // and cascade relationship configured explicitly because the property
-        // name does not follow the <Entity>Id convention.
         modelBuilder.Entity<UserNotificationSetting>()
             .HasKey(s => s.UserId);
         modelBuilder.Entity<UserNotificationSetting>()
@@ -78,8 +68,6 @@ public class AppDbContext : DbContext
             .HasForeignKey(s => s.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Course catalog is isolated per university and course codes are
-        // unique only inside their own university.
         modelBuilder.Entity<Course>()
             .HasIndex(c => new { c.UniversityId, c.Code })
             .IsUnique();
@@ -129,16 +117,12 @@ public class AppDbContext : DbContext
             .HasIndex(a => a.UniversityId);
         modelBuilder.Entity<Announcement>()
             .HasIndex(a => a.CourseId);
-        // Course-specific announcements (doctor module): deleting the course
-        // removes its announcements, same cascade rule as materials.
         modelBuilder.Entity<Announcement>()
             .HasOne(a => a.Course)
             .WithMany()
             .HasForeignKey(a => a.CourseId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Course instructor assignments: a doctor can be assigned to the
-        // same course only once per term.
         modelBuilder.Entity<CourseInstructor>()
             .HasIndex(ci => new { ci.CourseId, ci.DoctorUserId, ci.Term })
             .IsUnique();
@@ -150,8 +134,6 @@ public class AppDbContext : DbContext
             .HasForeignKey(ci => ci.CourseId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Doctor-module course assignments (no term): a doctor teaches a
-        // course at most once; DisplayTitle is the per-instructor override.
         modelBuilder.Entity<CourseAssignment>()
             .HasIndex(ca => ca.DoctorUserId);
         modelBuilder.Entity<CourseAssignment>()
@@ -179,8 +161,6 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ResearchPaper>()
             .HasIndex(r => r.Title);
 
-        // Doctor research indexes: browse filters by university/year and search
-        // by title; ownership lookups use the doctor id.
         modelBuilder.Entity<DoctorResearch>()
             .HasIndex(r => r.UniversityId);
         modelBuilder.Entity<DoctorResearch>()
@@ -192,8 +172,6 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<DoctorResearch>()
             .HasIndex(r => r.IsPublished);
 
-        // Doctor research relationship: keep the paper when the user row is
-        // removed (Restrict) so publication history is never silently lost.
         modelBuilder.Entity<DoctorResearch>()
             .HasOne(r => r.DoctorUser)
             .WithMany()
@@ -223,7 +201,7 @@ public class AppDbContext : DbContext
             .HasForeignKey(g => g.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // ---- Graduate career platform relationships/indexes ----
+        // Graduate career platform relationships/indexes
         modelBuilder.Entity<GraduateProfile>().HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<GraduateProfile>().HasIndex(p => p.UserId).IsUnique();
 
@@ -292,10 +270,6 @@ public class AppDbContext : DbContext
             .HasForeignKey(m => m.CourseId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Exam attempt persistence: exactly one attempt per student per exam
-        // and the graded per-question answers within it. Cascade rules keep
-        // the exam → attempts → answers chain consistent when an exam or
-        // user row is removed.
         modelBuilder.Entity<ExamAttempt>()
             .HasIndex(a => new { a.ExamId, a.StudentUserId })
             .IsUnique();

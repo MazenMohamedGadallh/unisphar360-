@@ -437,3 +437,7 @@ a.activity-item { color: inherit; text-decoration: none; }
 
 /* NavLink tabs (merged pages) must not look like body links. */
 .admin-tabs a.admin-tab { text-decoration: none; }
+
+.question-mix { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.question-mix label { display: flex; flex-direction: column; gap: 4px; font-size: .9rem; }
+.written-answer { width: 100%; min-height: 110px; resize: vertical; }

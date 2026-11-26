@@ -1,11 +1,5 @@
 @page "/notifications"
 @using System.Net
-@*
-[Authorize] removed on purpose (see Dashboard.razor): the server
-challenges every F5 to /login because the browser never sends the
-localStorage JWT as a bearer header. /api stays [Authorize]-guarded
-and MainLayout bounces anonymous users to /login after auth resolves.
-*@
 @inject HttpClient Http
 @inject NavigationManager Nav
 
@@ -89,8 +83,6 @@ and MainLayout bounces anonymous users to /login after auth resolves.
         }
         catch (Exception ex)
         {
-            // Network/timeout/parse issues must surface as a retryable
-            // message, not an unhandled circuit failure (CircuitNotActive).
             _error = $"Could not load notifications ({(ex.InnerException ?? ex).Message}).";
         }
         StateHasChanged();

@@ -5,11 +5,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>
-/// Regression coverage for the Helwan "My University" visibility issue.
-/// Students see their full own-university catalog; department/year are
-/// optional filters, never an isolation boundary.
-/// </summary>
 public class HelwanUniversityTests : IClassFixture<ApiFactory>
 {
     private readonly ApiFactory _factory;
@@ -20,8 +15,6 @@ public class HelwanUniversityTests : IClassFixture<ApiFactory>
         _factory.AuthedClient(
             await _factory.LoginAsync(await RegisterHelwanStudentAsync(), "Password123!"));
 
-    /// <summary>The seeded Helwan demo account was retired; these tests
-    /// register an equivalent Helwan CS/year-3 student per run instead.</summary>
     private async Task<string> RegisterHelwanStudentAsync()
     {
         var anonymous = _factory.CreateClient();
@@ -73,9 +66,6 @@ public class HelwanUniversityTests : IClassFixture<ApiFactory>
         Assert.Equal(92, courses!.Count);
         Assert.Equal(me.CoursesCount, courses.Count);
 
-        // The fresh student starts with an empty record; enroll in the two
-        // first-year gateway courses so CS 111/112 show as InProgress (the
-        // retired seeded Helwan student used to own those enrollments).
         foreach (var code in new[] { "CS 111", "CS 112" })
         {
             var enroll = await client.PostAsJsonAsync(
@@ -164,7 +154,7 @@ public class HelwanUniversityTests : IClassFixture<ApiFactory>
             await _factory.LoginAsync("mazenmohamed@unisphere.edu", "Password123!"));
         var elShoroukCourses = await elShorouk.GetFromJsonAsync<List<UniversityCourseDto>>("/api/university/me/courses");
         Assert.NotNull(elShoroukCourses);
-        Assert.Equal(11, elShoroukCourses!.Count);
+        Assert.Equal(34, elShoroukCourses!.Count);
         Assert.DoesNotContain(elShoroukCourses, c => helwanIds.Contains(c.Id));
 
         var (cairo, cairoMe) = await CreateCairoStudentAsync();
@@ -222,8 +212,6 @@ public class HelwanUniversityTests : IClassFixture<ApiFactory>
         var auth = await register.Content.ReadFromJsonAsync<AuthResponse>();
         Assert.NotNull(auth);
 
-        // Assign the university through the admin endpoint; the registration
-        // payload deliberately does not supply UniversityId.
         var assign = await _factory.AdminClient.PutAsJsonAsync(
             $"/api/admin/users/{auth!.User.Id}",
             new

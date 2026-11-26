@@ -15,8 +15,6 @@ public class GraduateJobsController(
 {
     private int UserId => User.GetUserId();
 
-    /// <summary>Search the job catalog (demo + synced live rows), paged and filtered.
-    /// Also answers the plain "api/grad/jobs" base route used by the client search page.</summary>
     [HttpGet]
     [HttpGet("search")]
     public async Task<ActionResult<PagedJobsDto>> Search(
@@ -29,7 +27,7 @@ public class GraduateJobsController(
     public async Task<ActionResult<JobListingDto>> Get(int id) =>
         await jobs.GetAsync(UserId, id) is { } job ? job : NotFound(new { error = "Job not found." });
 
-    // ---- Saved jobs ----
+    // Saved jobs
 
     [HttpPost("{id:int}/save")]
     public async Task<IActionResult> Save(int id)
@@ -54,9 +52,8 @@ public class GraduateJobsController(
     public async Task<ActionResult<IReadOnlyList<JobListingDto>>> Saved() =>
         Ok(await jobs.ListSavedAsync(UserId));
 
-    // ---- Live sync (Remotive) ----
+    // Live sync (Remotive)
 
-    /// <summary>Sync the catalog with the live remote-jobs feed (throttled: once per 5 minutes).</summary>
     [HttpGet("sync")]
     public async Task<IActionResult> Sync(CancellationToken ct)
     {
@@ -69,15 +66,13 @@ public class GraduateJobsController(
     public async Task<ActionResult<GradInsightsDto>> Insights() =>
         await jobs.GetInsightsAsync();
 
-    // ---- AI-free matching + skill gap ----
+    // AI-free matching + skill gap
 
-    /// <summary>Deterministic match ranking for the documented scoring formula (no AI used).</summary>
     [HttpGet("matches")]
     public async Task<ActionResult<IReadOnlyList<JobMatchDto>>> Matches(
         [FromQuery] int limit = 10, [FromQuery] int minScore = 20) =>
         Ok(await matching.MatchForUserAsync(UserId, limit, minScore));
 
-    /// <summary>Required-vs-actual skills for a catalog target role (deterministic).</summary>
     [HttpGet("skill-gap")]
     public async Task<ActionResult<SkillGapReportDto>> SkillGap([FromQuery] string? role)
     {

@@ -1,10 +1,5 @@
 namespace UniSphere.Api.Models;
 
-/// <summary>One student's single attempt at a published exam. One row per
-/// (exam, student) pair — enforced by the unique index
-/// IX_ExamAttempts_ExamId_StudentUserId so a second attempt is impossible
-/// at the database level too. Scores are written ONLY by the server when
-/// the attempt is submitted; the client can never supply them.</summary>
 public class ExamAttempt
 {
     public int Id { get; set; }
@@ -21,11 +16,6 @@ public class ExamAttempt
     public bool IsSubmitted => SubmittedAtUtc is not null;
 }
 
-/// <summary>One saved student answer inside an attempt: which option the
-/// student picked (0-based index into the question's OptionsJson; null =
-/// unanswered) and whether the SERVER graded it correct at submit time.
-/// IsCorrect is a persisted record of the grading decision, never a
-/// client-supplied flag.</summary>
 public class ExamAnswer
 {
     public int Id { get; set; }
@@ -35,4 +25,6 @@ public class ExamAnswer
     public ExamQuestion? Question { get; set; }
     public int? SelectedOption { get; set; }
     public bool IsCorrect { get; set; }
+    public string? TextAnswer { get; set; }       // essay / definition answers
+    public DateTime? GradedAtUtc { get; set; }    // set when the doctor grades a written answer
 }

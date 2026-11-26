@@ -11,21 +11,9 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>
-/// Acceptance tests for published-exam attempts: publish (quiz infra) →
-/// student takes → the SERVER grades and persists the attempt (one per
-/// student per exam) and each answer's correctness. Covers: score
-/// persistence, no correct-answer leakage in any student payload (before
-/// submit and after submit without permission), rejection of a second
-/// attempt, open/close window enforcement, doctor results (names, scores,
-/// percentages, non-takers), and authorization (foreign doctor 404 /
-/// foreign student 404 / student on a doctor route 403).
-/// Everything here runs against the factory's throw-away SQLite database —
-/// the developer's unisphere-v6.db is never touched.
-/// </summary>
 public class ExamAttemptTests : IClassFixture<ApiFactory>
 {
-    // ---- one-time seed shared by every test in this class ----
+    // one-time seed shared by every test in this class
     private static readonly SemaphoreSlim SeedLock = new(1, 1);
     private static bool _seeded;
 
@@ -45,7 +33,7 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
 
     public ExamAttemptTests(ApiFactory factory) => _factory = factory;
 
-    // ---------- seed (same eligibility shape as QuizPublishTests) ----------
+    // seed (same eligibility shape as QuizPublishTests)
 
     private async Task SeedAsync()
     {
@@ -136,7 +124,7 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
             PasswordHash = PasswordService.Hash(role == UserRole.Doctor ? "Doctor123!" : "Student123!"),
         };
 
-    // ---------- clients ----------
+    // clients
 
     private async Task<HttpClient> DoctorAsync()
     {
@@ -158,7 +146,7 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
         return _factory.AuthedClient(await _factory.LoginAsync(email, "Student123!"));
     }
 
-    // ---------- publish helper (quiz infra; 3 MCQs, correct = "Option B") ----------
+    // publish helper (quiz infra; 3 MCQs, correct = "Option B")
 
     private const string ExplanationSecret = "EXPLANATIONSECRET";
 
@@ -214,7 +202,7 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
         return (state.Attempt!.AttemptId, state.TakeQuestions!.Select(q => q.QuestionId).ToList(), state);
     }
 
-    // ---------- 1-3: publish → take → server grading persists ----------
+    // 1-3: publish -> take -> server grading persists
 
     [Fact]
     public async Task Publish_Then_Take_Then_Submit_Stores_Score_And_Answers()
@@ -226,14 +214,14 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
         var student = await StudentAsync(_enrolled1Email);
         var (_, questionIds, state) = await StartExamAsync(student, examId);
 
-        // Take payload: options only — no correct-answer info leaks.
+        // Take payload: options only - no correct-answer info leaks.
         var takeRaw = await student.GetStringAsync($"/api/student/exams/{examId}/attempt");
         Assert.DoesNotContain(ExplanationSecret, takeRaw);
         Assert.DoesNotContain("correctanswer", takeRaw, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("iscorrect", takeRaw, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("correctoption", takeRaw, StringComparison.OrdinalIgnoreCase);
 
-        // q1=correct, q2=wrong, q3 unanswered → 1/3, graded server-side.
+        // q1=correct, q2=wrong, q3 unanswered -> 1/3, graded server-side.
         var answer = new SubmitExamAttemptRequest(Choices(
             (questionIds[0], 1),
             (questionIds[1], 0)));
@@ -319,7 +307,7 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
         Assert.DoesNotContain(own, r => r.ExamId == examId);
     }
 
-    // ---------- 4: show-answers permission gates the review ----------
+    // 4: show-answers permission gates the review
 
     [Fact]
     public async Task ShowAnswersAfterSubmit_Reveals_Correctness_Only_When_Allowed()
@@ -339,8 +327,6 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
         var plainRaw = JsonSerializer.Serialize(plain);
         Assert.DoesNotContain(ExplanationSecret, plainRaw);
 
-        // Second exam: doctor allows showing answers after submit (the flag
-        // travels through the real publish request → exam column).
         var revealId = await PublishAsync(doctor, UniqueTitle("Reveal"), showAnswers: true);
         var s2 = await StudentAsync(_enrolled2Email);
         var (_, q2, _) = await StartExamAsync(s2, revealId);
@@ -355,7 +341,7 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
         Assert.DoesNotContain(ExplanationSecret, JsonSerializer.Serialize(reveal));
     }
 
-    // ---------- 5: second attempt rejected ----------
+    // 5: second attempt rejected
 
     [Fact]
     public async Task Second_Attempt_Is_Rejected_With_409()
@@ -370,18 +356,18 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
         (await student.PostAsJsonAsync($"/api/student/exams/{examId}/submit", submit))
             .EnsureSuccessStatusCode();
 
-        // Restarting after submission → 409 (unique one-attempt-per-student).
+        // Restarting after submission -> 409 (unique one-attempt-per-student).
         var secondStart = await student.PostAsync($"/api/student/exams/{examId}/start", null);
         Assert.Equal(HttpStatusCode.Conflict, secondStart.StatusCode);
         var conflictBody = await secondStart.Content.ReadAsStringAsync();
         Assert.Contains("already submitted", conflictBody, StringComparison.OrdinalIgnoreCase);
 
-        // Re-submitting the same attempt → 409 too.
+        // Re-submitting the same attempt -> 409 too.
         var secondSubmit = await student.PostAsJsonAsync($"/api/student/exams/{examId}/submit", submit);
         Assert.Equal(HttpStatusCode.Conflict, secondSubmit.StatusCode);
     }
 
-    // ---------- 6: exam window enforcement ----------
+    // 6: exam window enforcement
 
     [Fact]
     public async Task Exam_Window_Is_Enforced_Server_Side()
@@ -404,13 +390,11 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
 
         var student = await StudentAsync(_enrolled1Email);
 
-        // Not open yet → 409.
+        // Not open yet -> 409.
         var early = await student.PostAsync($"/api/student/exams/{examId}/start", null);
         Assert.Equal(HttpStatusCode.Conflict, early.StatusCode);
         Assert.Contains("not open yet", await early.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
 
-        // Open the window server-side (test clock), then start works and the
-        // attempt row exists with StartedAtUtc.
         ShiftWindow(examId, opensAt: DateTime.UtcNow.AddMinutes(-5));
         var (_, questionIds, state) = await StartExamAsync(student, examId);
         Assert.True(state.Attempt!.StartedAtUtc <= DateTime.UtcNow.ToUniversalTime());
@@ -440,7 +424,7 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
         Assert.Equal("Published", state.Status);
         Assert.NotNull(state.OpensAtUtc);
         Assert.NotNull(state.ClosesAtUtc);
-        // Duration was not set → absent, not fabricated.
+        // Duration was not set -> absent, not fabricated.
         Assert.Null(state.DurationMinutes);
         Assert.False(state.ShowAnswersAfterSubmit);
         // No attempt rows exist yet for anyone.
@@ -449,7 +433,7 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
         Assert.Null(state.Review);
     }
 
-    // ---------- 7: doctor results ----------
+    // 7: doctor results
 
     [Fact]
     public async Task Doctor_Results_List_Takers_With_Names_Scores_And_NonTakers()
@@ -535,7 +519,7 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
             (await (await DoctorAsync()).GetAsync($"/api/doctor/exam-assistant/exams/{examId}/results")).StatusCode);
     }
 
-    // ---------- 8: other students cannot see or take the exam ----------
+    // 8: other students cannot see or take the exam
 
     [Fact]
     public async Task Foreign_Students_Get_404_On_Attempt_Endpoints()
@@ -584,7 +568,7 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
         Assert.False(await db.ExamAttempts.AnyAsync(a => a.ExamId == examId));
     }
 
-    // ---------- helper: move the exam window in the test database ----------
+    // helper: move the exam window in the test database
 
     private void ShiftWindow(int examId, DateTime? opensAt = null, DateTime? closesAt = null)
     {
@@ -594,5 +578,72 @@ public class ExamAttemptTests : IClassFixture<ApiFactory>
         if (opensAt is not null) exam.OpensAtUtc = opensAt;
         if (closesAt is not null) exam.ClosesAtUtc = closesAt;
         db.SaveChanges();
+    }
+
+    // written answers: student writes, doctor grades, score follows
+
+    [Fact]
+    public async Task Written_Answer_Waits_For_Doctor_Grade_Then_Counts()
+    {
+        await SeedAsync();
+        var examId = await PublishAsync(await DoctorAsync(), UniqueTitle("Written"), showAnswers: true);
+
+        // Turn the last question into an essay question.
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var last = await db.ExamQuestions.Where(q => q.ExamId == examId)
+                .OrderByDescending(q => q.OrderIndex).FirstAsync();
+            last.QuestionType = "Essay";
+            last.OptionsJson = null;
+            last.CorrectAnswer = "Model answer";
+            await db.SaveChangesAsync();
+        }
+
+        var student = await StudentAsync(_enrolled2Email);
+        var (_, questionIds, _) = await StartExamAsync(student, examId);
+        var submit = new SubmitExamAttemptRequest(new List<SubmitExamAnswerDto>
+        {
+            new(questionIds[0], 1),
+            new(questionIds[1], 0),
+            new(questionIds[2], null, "  My written essay answer  "),
+        });
+        var resp = await student.PostAsJsonAsync($"/api/student/exams/{examId}/submit", submit);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var state = (await resp.Content.ReadFromJsonAsync<StudentExamAttemptStateDto>())!;
+        Assert.Equal(1, state.Attempt!.Score);
+        var essayReview = state.Review!.Single(r => r.QuestionId == questionIds[2]);
+        Assert.True(essayReview.PendingGrading);
+        Assert.Null(essayReview.IsCorrect);
+        Assert.Equal("My written essay answer", essayReview.TextAnswer);
+
+        var doctor = await DoctorAsync();
+        var results = await doctor.GetFromJsonAsync<DoctorExamResultsDto>(
+            $"/api/doctor/exam-assistant/exams/{examId}/results");
+        Assert.Equal(1, results!.Takers.Single().PendingGrading);
+
+        var written = await doctor.GetFromJsonAsync<List<DoctorWrittenAnswerDto>>(
+            $"/api/doctor/exam-assistant/exams/{examId}/written-answers");
+        var row = Assert.Single(written!);
+        Assert.False(row.Graded);
+        Assert.Equal("Model answer", row.ModelAnswer);
+
+        // Another doctor can neither see nor grade it.
+        var other = await OtherDoctorAsync();
+        var foreign = await other.PostAsJsonAsync(
+            $"/api/doctor/exam-assistant/exams/{examId}/written-answers/{row.AnswerId}/grade",
+            new GradeWrittenAnswerRequest(true));
+        Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
+
+        var grade = await doctor.PostAsJsonAsync(
+            $"/api/doctor/exam-assistant/exams/{examId}/written-answers/{row.AnswerId}/grade",
+            new GradeWrittenAnswerRequest(true));
+        Assert.Equal(HttpStatusCode.OK, grade.StatusCode);
+
+        var after = await student.GetFromJsonAsync<StudentExamAttemptStateDto>($"/api/student/exams/{examId}/attempt");
+        Assert.Equal(2, after!.Attempt!.Score);
+        var graded = after.Review!.Single(r => r.QuestionId == questionIds[2]);
+        Assert.False(graded.PendingGrading);
+        Assert.True(graded.IsCorrect);
     }
 }

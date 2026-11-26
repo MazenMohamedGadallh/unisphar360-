@@ -3,26 +3,17 @@ using Microsoft.AspNetCore.Http;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>A user-facing validation failure while storing a course-material file.</summary>
 public sealed class MaterialFileException : Exception
 {
     public MaterialFileException(string message) : base(message) { }
 }
 
-/// <summary>Metadata for one successfully stored course-material attachment.</summary>
 public sealed record StoredMaterialFile(
     string StoredFileName,
     string OriginalFileName,
     long SizeBytes,
     string ContentType);
 
-/// <summary>
-/// Stores doctor course-material attachments outside wwwroot, under
-/// App_Data/materials by default. Files are renamed to a random GUID plus the
-/// validated extension; only that bare name is stored in the database. The
-/// declared client MIME type is ignored in favour of an extension allow-list
-/// and real byte-signature checks (PDF, OOXML ZIP and legacy OLE).
-/// </summary>
 public sealed class CourseMaterialFileStorage
 {
     public const int DefaultMaxFileSizeMb = 20;
@@ -72,9 +63,6 @@ public sealed class CourseMaterialFileStorage
 
     public int MaxFileSizeMb => (int)(MaxFileBytes / (1024L * 1024L));
 
-    /// <summary>Saves and validates one attachment, returning its generated
-    /// stored name and display metadata. Invalid content is deleted before the
-    /// exception leaves this method.</summary>
     public async Task<StoredMaterialFile> SaveAsync(
         IFormFile file, CancellationToken cancellationToken = default)
     {
@@ -123,12 +111,9 @@ public sealed class CourseMaterialFileStorage
         }
     }
 
-    /// <summary>Resolves a stored bare GUID+extension name to an absolute path
-    /// inside the material folder; path traversal and unknown extensions fail.</summary>
     public string? ResolvePath(string? storedFileName) =>
         StoredFileStorage.ResolvePath(_root, storedFileName, AllowedExtensions);
 
-    /// <summary>Best-effort delete; a missing or unreadable file never fails the API call.</summary>
     public void Delete(string? storedFileName)
     {
         var path = ResolvePath(storedFileName);

@@ -4,10 +4,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>Unit coverage for the tolerant LLM-JSON extractor used by the
-/// exam and quiz parsers: clean, fenced, reasoning-wrapped, prose-wrapped,
-/// bracket-laden-string, and truncated-output shapes must all resolve;
-/// genuine garbage must keep failing.</summary>
 public class AiJsonExtractorTests
 {
     private static JsonDocument Doc(string json) => JsonDocument.Parse(json);
@@ -65,8 +61,6 @@ public class AiJsonExtractorTests
     [Fact]
     public void BracketInsideStringLiteral_DoesNotBreakExtraction()
     {
-        // The old parser sliced from the FIRST '[' — which sat inside a string
-        // value — and produced invalid JSON. The balanced scan must not.
         var ok = AiJsonExtractor.TryExtract(
             "{\"questions\":[{\"questionText\":\"Pick A] now\",\"optionsJson\":[\"A]\",\"B[\"]}]}",
             out var el);

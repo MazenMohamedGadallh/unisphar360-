@@ -10,17 +10,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>
-/// Phase 2 research hub.
-///
-/// My Research routes are Doctor-only and owner-scoped: foreign paper ids are
-/// 404 (indistinguishable from missing ids). Browse is deliberately
-/// cross-university (the one exception to university isolation) and exposes
-/// published papers to Doctors and Admins only, with just the author's name,
-/// university and department - never email, phone or any other private data.
-/// PDFs live outside wwwroot and are streamed by this authenticated controller;
-/// the database stores only a generated file name.
-/// </summary>
 [ApiController]
 [Route("api/doctor/research")]
 public class DoctorResearchController : ControllerBase
@@ -76,7 +65,7 @@ public class DoctorResearchController : ControllerBase
             Status = StatusCodes.Status400BadRequest
         });
 
-    // ---- My Research (Doctor only, owner-scoped) ----
+    // My Research (Doctor only, owner-scoped)
 
     [HttpGet]
     [Authorize(Roles = "Doctor")]
@@ -139,10 +128,6 @@ public class DoctorResearchController : ControllerBase
         var now = DateTime.UtcNow;
         var paper = new DoctorResearch
         {
-            // Ownership and university always come from the authenticated
-            // account, never from the form. The university id is part of the
-            // module's model (non-null); when a research doctor has no
-            // university assigned yet, 0 means "none" (never matches a filter).
             DoctorUserId = me.Id,
             UniversityId = me.UniversityId ?? 0,
             Title = req.Title.Trim(),
@@ -257,7 +242,7 @@ public class DoctorResearchController : ControllerBase
         return NoContent();
     }
 
-    // ---- Browse (cross-university; published papers only) ----
+    // Browse (cross-university; published papers only)
 
     [HttpGet("browse")]
     [Authorize(Roles = "Doctor,Admin")]
@@ -272,8 +257,6 @@ public class DoctorResearchController : ControllerBase
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 50);
 
-        // Deliberately not scoped by IUniversityScope: Browse shows published
-        // work from every university. Deleted authors are hidden.
         var query =
             from r in _db.DoctorResearches.AsNoTracking()
             join u in _db.Users.AsNoTracking() on r.DoctorUserId equals u.Id
@@ -396,9 +379,6 @@ public class DoctorResearchController : ControllerBase
             paper.CreatedAtUtc, paper.UpdatedAtUtc);
     }
 
-    /// <summary>Authenticated PDF download. Published papers are available to
-    /// any Doctor/Admin; drafts only to their owner. The response never
-    /// includes the physical storage path.</summary>
     [HttpGet("{id:int}/pdf")]
     [Authorize(Roles = "Doctor,Admin")]
     public async Task<IActionResult> DownloadPdf(int id)

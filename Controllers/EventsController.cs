@@ -22,7 +22,6 @@ public class EventsController : ControllerBase
         _scope = scope;
     }
 
-    /// <summary>List events visible to the caller's university. Use ?upcoming=true to hide past events.</summary>
     [HttpGet]
     public async Task<IReadOnlyList<EventDto>> GetAll([FromQuery] bool upcoming = false)
     {

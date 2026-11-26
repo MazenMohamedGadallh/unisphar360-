@@ -8,12 +8,6 @@ using UniSphere.Api.Models;
 
 namespace UniSphere.Api.Services;
 
-/// <summary>
-/// Job catalog: DB search, saved jobs and live sync from the Remotive public
-/// GraphQL-less JSON endpoint (no API key required). Demo-labeled rows
-/// (Source="Demo") guarantee offline exploration; remote rows are labeled
-/// Source="Remotive" and always link to the original posting.
-/// </summary>
 public class JobCatalogService(AppDbContext db, IHttpClientFactory httpFactory, ILogger<JobCatalogService> logger)
 {
     public const int ThrottleMinutes = 5;
@@ -102,7 +96,7 @@ public class JobCatalogService(AppDbContext db, IHttpClientFactory httpFactory, 
         return [.. saved.Where(s => s.JobListing is not null).Select(s => MapJob(s.JobListing!, true, appliedSet.Contains(s.JobListingId)))];
     }
 
-    // ---------------- Live sync (Remotive) ----------------
+    // Live sync (Remotive)
 
     public sealed record SyncResult(int Imported, bool Throttled, string? Error, DateTime? LastSyncUtc);
 
@@ -200,7 +194,7 @@ public class JobCatalogService(AppDbContext db, IHttpClientFactory httpFactory, 
         return state;
     }
 
-    // ---------------- Insights ----------------
+    // Insights
 
     public async Task<GradInsightsDto> GetInsightsAsync()
     {
@@ -235,7 +229,7 @@ public class JobCatalogService(AppDbContext db, IHttpClientFactory httpFactory, 
             [.. jobs.Take(12).Select(j => j.Title).Distinct()]);
     }
 
-    // ---------------- mapping ----------------
+    // mapping
 
     internal static JobListingDto MapJob(JobListing j, bool isSaved, bool isApplied, bool snippet = true) => new(
         j.Id, j.Source, j.Title, j.CompanyName, j.Location, j.Remote, j.JobType, j.Category, j.Salary,

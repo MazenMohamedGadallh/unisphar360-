@@ -24,8 +24,6 @@ public class GraduateApplicationsController(
     public async Task<ActionResult<ApplicationSummaryDto>> Summary() =>
         await applications.GetSummaryAsync(UserId);
 
-    /// <summary>Record an application the graduate actually submitted
-    /// (optionally linked to a catalog listing). No employer submission is implied.</summary>
     [HttpPost]
     public async Task<IActionResult> Create(ApplicationCreateRequest request)
     {

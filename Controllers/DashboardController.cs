@@ -5,8 +5,6 @@ using UniSphere.Api.Services;
 
 namespace UniSphere.Api.Controllers;
 
-/// <summary>Everything the student Home dashboard needs, split per card.
-/// All endpoints use the user id from the JWT claims, never from the client.</summary>
 [Authorize(Roles = "Student")]
 [ApiController]
 [Route("api/dashboard")]
@@ -22,17 +20,14 @@ public class DashboardController : ControllerBase
         return summary is null ? NotFound() : summary;
     }
 
-    /// <summary>Grade table. Optional ?semester=Current (default).</summary>
     [HttpGet("performance")]
     public async Task<IReadOnlyList<DashboardPerformanceRowDto>> Performance([FromQuery] string? semester = "current") =>
         await _academic.GetDashboardPerformanceAsync(User.GetUserId(), semester);
 
-    /// <summary>7 days (Sunday..Saturday). Optional ?weekStart=yyyy-MM-dd (any date inside the wanted week).</summary>
     [HttpGet("study-plan")]
     public async Task<DashboardStudyPlanDto> StudyPlan([FromQuery] DateTime? weekStart = null) =>
         await _academic.GetDashboardStudyPlanAsync(User.GetUserId(), weekStart);
 
-    /// <summary>Tick / untick one study-plan item.</summary>
     [HttpPatch("study-plan/{id:int}/toggle")]
     public async Task<ActionResult<DashboardStudyDayDto>> Toggle(int id)
     {

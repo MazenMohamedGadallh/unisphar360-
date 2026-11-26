@@ -5,9 +5,6 @@ using Xunit;
 
 namespace UniSphere.Api.Tests;
 
-/// <summary>Validates the exact request the Exam Assistant UI posts,
-/// including the doctor's normal selection (10 questions, mixed, English)
-/// and every invalid-input variant the UI must never silently accept.</summary>
 public class ExamAssistantGenerationRequestValidatorTests
 {
     private readonly ExamAssistantGenerationRequestValidator _validator = new();
