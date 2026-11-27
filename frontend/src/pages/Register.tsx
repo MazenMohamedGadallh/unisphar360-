@@ -6,7 +6,7 @@ import { Alert } from "../components/ui";
 import { LoginCampusScene } from "./LoginCampusScene";
 import "./register.css";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5080";
+import { API_BASE_URL } from "../lib/api";
 const TOKEN_KEY = "unisphere.auth.token";
 
 const Roles = ["Student", "Doctor", "Graduate"];
@@ -387,6 +387,15 @@ export function Register() {
       {/* Brand panel (desktop only; the mobile header sits in the form panel). */}
       <aside className="register-brand" aria-hidden="true">
         <LoginCampusScene />
+        <img
+          src="/src/assets/images/university_campus_hero_1795788262420.jpg"
+          alt=""
+          referrerPolicy="no-referrer"
+          className="register-brand-photo"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
+        />
         <div className="register-brand-scrim" />
         <div className="register-brand-dots" />
         <div className="register-brand-inner">

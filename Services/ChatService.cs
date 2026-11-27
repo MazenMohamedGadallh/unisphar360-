@@ -264,15 +264,17 @@ public class ChatService
     {
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
 
+        // Strictness follows what the user picked, even if we have to fall back to an LLM to write the answer.
+        var wantsRag = string.Equals(providerName, "rag", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(providerName, "rag-local", StringComparison.OrdinalIgnoreCase);
         var useRag = user?.Role is UserRole.Student or UserRole.Doctor or UserRole.Graduate
-            && string.Equals(providerName, "rag", StringComparison.OrdinalIgnoreCase)
+            && wantsRag
             && _ragOptions.Enabled
             && _ragProvider.IsConfigured;
 
         IChatProvider provider;
         string model;
         var degradedFromRag = false;
-        var wantsRag = string.Equals(providerName, "rag", StringComparison.OrdinalIgnoreCase);
         if (useRag && await _ragProvider.IsAvailableAsync(ct))
         {
             provider = _ragProvider;
@@ -387,7 +389,9 @@ public class ChatService
         {
             Provider = provider.Name,
             Model = model,
-            SystemPrompt = HybridGroundingPolicy.Apply(systemPrompt, context),
+            SystemPrompt = wantsRag
+                ? HybridGroundingPolicy.ApplyStrict(systemPrompt, context)
+                : HybridGroundingPolicy.Apply(systemPrompt, context),
             Messages = history.Select(m => new ChatTurn { Role = m.Role, Content = m.Content }).ToList(),
             MaxTokens = _options.MaxTokens,
             RagDocuments = ragDocuments

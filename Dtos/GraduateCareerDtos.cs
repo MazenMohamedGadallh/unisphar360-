@@ -98,8 +98,14 @@ public record RoadmapProgressDto(int Total, int NotStarted, int InProgress, int 
 
 public record RoadmapSuggestionDto(string Title, string Category, string? Notes, string? Why);
 
+public record RubricItemDto(string Criterion, int Score);
+
+public record InterviewFeedbackDetails(
+    IReadOnlyList<string> Strengths, IReadOnlyList<string> Improvements, IReadOnlyList<RubricItemDto> Rubric);
+
 public record InterviewQuestionDto(
-    int Id, string QuestionText, string? AnswerText, string? Feedback, int? FeedbackScore);
+    int Id, string QuestionText, string? AnswerText, string? Feedback, int? FeedbackScore,
+    IReadOnlyList<string> Strengths, IReadOnlyList<string> Improvements, IReadOnlyList<RubricItemDto> Rubric);
 
 public record InterviewSessionDto(
     int Id, string TargetRole, int? JobListingId, string QuestionSource,

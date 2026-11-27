@@ -88,7 +88,9 @@
 .dash-stat {
     padding: 16px 20px;
     border-radius: var(--radius-card);
-    background: var(--color-card);
+    background: color-mix(in srgb, var(--color-card) 88%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--color-border);
     border-top: 3px solid var(--stat-accent, var(--color-primary));
     box-shadow: var(--shadow-card);
