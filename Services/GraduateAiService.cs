@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using UniSphere.Api.Data;
+using UniSphere.Api.Dtos;
 
 namespace UniSphere.Api.Services;
 
@@ -241,7 +242,8 @@ public class GraduateAiService(
 
     // Interview answer feedback
 
-    public sealed record FeedbackData(string Feedback, int Score);
+    public sealed record FeedbackData(
+        string Feedback, int Score, string[] Strengths, string[] Improvements, RubricItemDto[] Rubric);
 
     public async Task<(FeedbackData Value, AiMeta Meta)> FeedbackAnswerAsync(
         int userId, string targetRole, string question, string answer, CancellationToken ct)
@@ -253,23 +255,46 @@ public class GraduateAiService(
             Interview question: {question}
             Candidate answer: {answer}
 
-            Return JSON: { "feedback": "2-4 sentences: what was strong, what to improve, concrete example to use", "score": 0-10 }
+            Return JSON: {
+              "feedback": "2-4 sentences: overall coaching with a concrete example to use",
+              "score": 0-10,
+              "strengths": ["short point", "..."],
+              "improvements": ["short point", "..."],
+              "rubric": [ { "criterion": "Relevance", "score": 0-10 }, { "criterion": "Depth", "score": 0-10 },
+                          { "criterion": "Structure", "score": 0-10 }, { "criterion": "Communication", "score": 0-10 } ]
+            }
             """.Replace("{role}", targetRole)
                .Replace("{question}", question)
                .Replace("{answer}", answer.Length > 4000 ? answer[..4000] : answer);
 
         user += await ContextBlockAsync(userId, targetRole, ct, 2000);
-        return await GenerateJsonAsync<FeedbackData>(system, user, 1024, ParseFeedback, ct);
+        return await GenerateJsonAsync<FeedbackData>(system, user, 2048, ParseFeedback, ct);
     }
 
-    private static FeedbackData ParseFeedback(JsonElement root)
+    public static FeedbackData ParseFeedback(JsonElement root)
     {
         var feedback = root.TryGetProperty("feedback", out var f) && f.ValueKind == JsonValueKind.String ? f.GetString() ?? "" : "";
         var score = root.TryGetProperty("score", out var s) && s.ValueKind == JsonValueKind.Number && s.TryGetInt32(out var i) ? Math.Clamp(i, 0, 10) : 5;
         if (feedback.Length == 0)
             throw new ChatProviderException("The AI returned empty feedback.");
-        return new FeedbackData(feedback, score);
+        var rubric = root.TryGetProperty("rubric", out var r) && r.ValueKind == JsonValueKind.Array
+            ? r.EnumerateArray()
+                .Where(x => x.ValueKind == JsonValueKind.Object
+                    && x.TryGetProperty("criterion", out var c) && c.ValueKind == JsonValueKind.String
+                    && x.TryGetProperty("score", out var n) && n.ValueKind == JsonValueKind.Number && n.TryGetInt32(out _))
+                .Select(x => new RubricItemDto(
+                    x.GetProperty("criterion").GetString()!, Math.Clamp(x.GetProperty("score").GetInt32(), 0, 10)))
+                .Take(6)
+                .ToArray()
+            : [];
+        return new FeedbackData(feedback, score, Strings(root, "strengths"), Strings(root, "improvements"), rubric);
     }
+
+    private static string[] Strings(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var a) && a.ValueKind == JsonValueKind.Array
+            ? [.. a.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => (x.GetString() ?? "").Trim()).Where(s => s.Length > 0).Take(6)]
+            : [];
 
     // Roadmap suggestions
 

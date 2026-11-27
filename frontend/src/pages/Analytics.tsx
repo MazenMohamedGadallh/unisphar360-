@@ -249,7 +249,7 @@ export function Analytics() {
             <div className="dash-stat attendance">
               <span className="dash-stat-icon"><UiIcon name="shield-check" /></span>
               <span className="dash-stat-label">Confidence</span>
-              <span className="dash-stat-value">{(analysis.confidence * 100).toFixed(0)}%</span>
+              <span className="dash-stat-value">{analysis.confidence.toFixed(0)}%</span>
             </div>
           </div>
 

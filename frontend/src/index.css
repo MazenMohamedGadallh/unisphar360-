@@ -1,1 +1,431 @@
-@import "./app.generated.css";
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  --breakpoint-lg: 992px;
+  --breakpoint-xl: 1200px;
+
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Royal University Purple & Alabaster Theme (Light Mode) */
+  --color-primary: #6d28d9;
+  --color-primary-hover: #5b21b6;
+  --color-primary-light: #ede9fe;
+
+  --color-accent: #8b5cf6;
+  --color-accent-light: #f3e8ff;
+
+  --color-secondary: #7e22ce;
+  --color-secondary-light: #f5effd;
+
+  --color-success: #0f766e;
+  --color-success-light: #e2f5f2;
+
+  --color-warning: #b45309;
+  --color-warning-light: #fef3dc;
+
+  --color-danger: #dc2626;
+  --color-danger-hover: #b91c1c;
+  --color-danger-light: #feecec;
+
+  --color-bg: #f4f1fa;
+  --color-surface: #faf8ff;
+  --color-card: #ffffff;
+  --color-border: #dfd6f5;
+
+  --color-text: #1e1438;
+  --color-text-secondary: #4c3f6e;
+  --color-text-muted: #6e6291;
+
+  --shadow-card: 0 4px 16px rgb(88 28 135 / 0.07);
+  --shadow-card-lg: 0 16px 36px rgb(88 28 135 / 0.14);
+
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --radius-pill: 9999px;
+
+  --width-sidebar: 264px;
+  --height-topbar: 64px;
+
+  --animate-search-spin: search-spin 0.7s linear infinite;
+
+  @keyframes search-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+
+/* Deep Royal Plum-Violet University Dark Mode */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-primary: #a78bfa;
+  --color-primary-hover: #c4b5fd;
+  --color-primary-light: #281c4d;
+
+  --color-accent: #c084fc;
+  --color-accent-light: #2f1b4e;
+
+  --color-secondary: #b794f4;
+  --color-secondary-light: #241944;
+
+  --color-success: #34d399;
+  --color-success-light: #0f2c27;
+
+  --color-warning: #fbbf24;
+  --color-warning-light: #352711;
+
+  --color-danger: #f87171;
+  --color-danger-hover: #fca5a5;
+  --color-danger-light: #361722;
+
+  --color-bg: #110c21;
+  --color-surface: #17112b;
+  --color-card: #1f1738;
+  --color-border: #36285e;
+
+  --color-text: #f5f3ff;
+  --color-text-secondary: #cfc5ea;
+  --color-text-muted: #9688bd;
+
+  --shadow-card: 0 6px 20px rgb(9 5 24 / 0.48);
+  --shadow-card-lg: 0 20px 44px rgb(9 5 24 / 0.68);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    color-scheme: light;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    background: var(--color-bg);
+    color: var(--color-text);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::placeholder {
+    color: var(--color-text-muted);
+    opacity: 1;
+  }
+
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 6px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-muted);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .ui-icon {
+    width: 1em;
+    height: 1em;
+    display: inline-block;
+    flex-shrink: 0;
+    vertical-align: -0.14em;
+    overflow: visible;
+    color: currentColor;
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .tabular-nums,
+  .dash-num {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ==================== Royal Purple University Architectural Background ==================== */
+
+.live-workspace-bg {
+  background: linear-gradient(145deg, #f5f2fc 0%, #ede7fa 52%, #f6f2fb 100%);
+}
+
+[data-theme="dark"] .live-workspace-bg {
+  background: linear-gradient(145deg, #100b1f 0%, #17102e 54%, #1d1438 100%);
+}
+
+.live-workspace-photo {
+  opacity: 0.13;
+  filter: saturate(0.75) hue-rotate(-8deg) contrast(1.02) blur(0.6px);
+  animation: campus-breathe 32s ease-in-out infinite;
+}
+
+[data-theme="dark"] .live-workspace-photo {
+  opacity: 0.13;
+  filter: saturate(0.8) brightness(0.55) contrast(1.08) blur(0.8px);
+}
+
+.live-workspace-veil {
+  background: radial-gradient(
+    ellipse at 50% 35%,
+    rgba(245, 242, 252, 0.72) 0%,
+    rgba(237, 231, 250, 0.44) 60%,
+    rgba(229, 220, 248, 0.58) 100%
+  );
+}
+
+[data-theme="dark"] .live-workspace-veil {
+  background: radial-gradient(
+    ellipse at 50% 35%,
+    rgba(17, 12, 33, 0.76) 0%,
+    rgba(22, 15, 44, 0.54) 62%,
+    rgba(14, 9, 28, 0.74) 100%
+  );
+}
+
+.live-campus-photo {
+  animation: campus-breathe 28s ease-in-out infinite;
+  will-change: transform;
+}
+
+.live-workspace-orb-a {
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.14) 0%, rgba(124, 58, 237, 0) 70%);
+}
+
+.live-workspace-orb-b {
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.12) 0%, rgba(168, 85, 247, 0) 70%);
+}
+
+[data-theme="dark"] .live-workspace-orb-a {
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.22) 0%, rgba(109, 40, 217, 0) 70%);
+}
+
+[data-theme="dark"] .live-workspace-orb-b {
+  background: radial-gradient(circle, rgba(192, 132, 252, 0.16) 0%, rgba(147, 51, 234, 0) 70%);
+}
+
+.live-academic-svg {
+  color: #6d28d9;
+}
+
+[data-theme="dark"] .live-academic-svg {
+  color: #c4b5fd;
+}
+
+.live-orb-1 {
+  animation: lavender-orb-1 24s ease-in-out infinite;
+  will-change: transform;
+}
+
+.live-orb-2 {
+  animation: lavender-orb-2 28s ease-in-out infinite;
+  will-change: transform;
+}
+
+.live-drift-slow {
+  animation: academic-drift-a 24s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes campus-breathe {
+  0%, 100% {
+    transform: scale(1.01) translate3d(0, 0, 0);
+  }
+  50% {
+    transform: scale(1.06) translate3d(-1%, -0.6%, 0);
+  }
+}
+
+@keyframes lavender-orb-1 {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(48px, 28px, 0) scale(1.08);
+  }
+  66% {
+    transform: translate3d(-24px, 42px, 0) scale(0.95);
+  }
+}
+
+@keyframes lavender-orb-2 {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(-52px, -34px, 0) scale(1.09);
+  }
+  66% {
+    transform: translate3d(-18px, 36px, 0) scale(0.94);
+  }
+}
+
+@keyframes lavender-orb-3 {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(44px, -38px, 0) scale(1.1);
+  }
+}
+
+@keyframes academic-drift-a {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -14px, 0);
+  }
+}
+
+@keyframes academic-drift-b {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(12px, 12px, 0);
+  }
+}
+
+@keyframes mote-rise {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 26px, 0) scale(0.7);
+  }
+  20% {
+    opacity: 0.55;
+  }
+  70% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(14px, -110px, 0) scale(1.1);
+  }
+}
+
+/* Shimmer & Micro-Interaction Keyframes (compositor-friendly) */
+@keyframes chat-typing {
+  0%, 60%, 100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes float-gentle {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes portal-zoom-out {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes portal-flash-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes shimmer-slide {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer-surface {
+  background: linear-gradient(
+    90deg,
+    var(--color-border) 0%,
+    var(--color-primary-light) 50%,
+    var(--color-border) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-slide 1.5s ease-in-out infinite;
+}
+
+.card-lift {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.card-lift:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+}
+
+/* Royal University Purple primary CTA with strict WCAG white text contrast */
+.btn-luminous {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 58%, #9333ea 100%);
+  color: #ffffff;
+  border: 0;
+  box-shadow: 0 8px 22px rgb(109 40 217 / 0.30);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease, filter 0.18s ease;
+}
+
+.btn-luminous:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgb(109 40 217 / 0.42);
+  filter: brightness(1.07);
+}
+
+.btn-luminous:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-luminous:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
