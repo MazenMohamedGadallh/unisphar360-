@@ -208,7 +208,20 @@ def _write(system: str, prompt: str) -> tuple[Optional[str], str, str]:
     return answer, "ollama", os.getenv("OLLAMA_MODEL", "qwen3:1.7b")
 
 
+def _strict(req: QueryRequest) -> bool:
+    # Marker set by HybridGroundingPolicy.StrictInstructions (the RAG chat); other callers stay open.
+    return "STRICT GROUNDING RULES" in (req.system_prompt or "")
+
+
+def _apology(question: str) -> str:
+    if re.search(r"[؀-ۿ]", question):
+        return "عذرًا، هذه المعلومة غير متوفرة في موادك أو في قاعدة بيانات UniSphere."
+    return "Sorry, this information is not available in your UniSphere materials or database."
+
+
 def _system(req: QueryRequest) -> str:
+    if _strict(req):
+        return req.system_prompt
     return (req.system_prompt or "You are a university teaching assistant.") + \
         " Use the provided document excerpts first when relevant and cite the excerpt title. If they do not cover the" \
         " question, do NOT refuse: answer helpfully from general knowledge and say briefly that it came from general" \
@@ -281,11 +294,17 @@ def query(req: QueryRequest) -> Dict[str, Any]:
         answer, provider, model = _write(system, f"Document excerpts: (none matched)\n\nQuestion: {req.question}")
         if answer:
             return {"answer": answer, "sources": [], "grounded": False, "provider": provider, "model": model}
-        return {"answer": "I could not find this in your documents, and no language model is available for a general answer right now.",
+        return {"answer": _apology(req.question) if _strict(req) else
+                "I could not find this in your documents, and no language model is available for a general answer right now.",
                 "sources": [], "grounded": False, "provider": "bm25", "model": "none"}
     answer, provider, model = _write(system, f"Document excerpts:\n{to_context(best)}\n\nQuestion: {req.question}")
     if answer:
         return {"answer": answer, "sources": sources, "grounded": True, "provider": provider, "model": model}
+    if _strict(req):  # no writer: never pass off passages that share no words with the question
+        best = [c for c in best if c["score"] > 0]
+        if not best:
+            return {"answer": _apology(req.question), "sources": [], "grounded": False, "provider": "bm25", "model": "none"}
+        sources = to_sources(best)
     extract = "\n\n".join(f"From \"{c['title']}\": {c['text']}" for c in best[:3])
     return {"answer": "Here are the most relevant passages from your documents:\n\n" + extract,
             "sources": sources, "grounded": True, "provider": "extractive", "model": "bm25"}

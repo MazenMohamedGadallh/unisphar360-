@@ -1,13 +1,22 @@
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import fs from 'node:fs'
+import path from 'node:path'
 import { defineConfig } from 'vite'
 
-// https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
-  // Pin the dev server to port 5173: CORS in Program.cs and
-  // frontend/.env (VITE_API_BASE_URL) both assume this exact port.
-  server: {
-    port: 5173,
-    strictPort: true,
-  },
+  plugins: [
+    react(),
+    tailwindcss(),
+    // Pages reference images as "/src/assets/..." URLs, so the build must ship that folder.
+    {
+      name: 'copy-unbundled-src-assets',
+      apply: 'build',
+      closeBundle() {
+        fs.cpSync(path.resolve('src/assets'), path.resolve('dist/src/assets'), { recursive: true })
+      },
+    },
+  ],
+  // Pinned: CORS in Program.cs allows this exact origin.
+  server: { port: 5173, strictPort: true },
 })

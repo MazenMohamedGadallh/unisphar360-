@@ -253,6 +253,8 @@ public static class DbSchemaPatcher
                 "ALTER TABLE CourseMaterials ADD COLUMN DeadlineUtc TEXT NULL");
             EnsureTableColumn(cmd, "CvAnalyses", "ReportJson",
                 "ALTER TABLE CvAnalyses ADD COLUMN ReportJson TEXT NOT NULL DEFAULT '{}'");
+            EnsureTableColumn(cmd, "InterviewQuestions", "FeedbackDetailsJson",
+                "ALTER TABLE InterviewQuestions ADD COLUMN FeedbackDetailsJson TEXT NULL");
 
             cmd.CommandText = """
                 CREATE TABLE IF NOT EXISTS CourseAssignments (

@@ -177,6 +177,7 @@ public class InterviewQuestion
     public string? AnswerText { get; set; }
     public string? Feedback { get; set; }
     public int? FeedbackScore { get; set; }          // 0-10 estimate of the answer
+    public string? FeedbackDetailsJson { get; set; }  // strengths, improvements, rubric
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 

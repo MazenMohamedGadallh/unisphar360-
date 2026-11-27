@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <section className={`rounded-card border border-border bg-card shadow-card ${className}`}>
+    <section className={`rounded-card border border-border/90 bg-card/88 shadow-card backdrop-blur-md ${className}`}>
       {children}
     </section>
   );
@@ -63,6 +63,7 @@ const BUTTON_SIZES = {
 export function Button({
   variant = "primary",
   size = "md",
+  type = "button",
   to,
   onClick,
   disabled,
@@ -71,6 +72,7 @@ export function Button({
 }: {
   variant?: ButtonVariant;
   size?: keyof typeof BUTTON_SIZES;
+  type?: "button" | "submit" | "reset";
   /** When set, renders a react-router Link styled as a button. */
   to?: string;
   onClick?: () => void;
@@ -87,7 +89,7 @@ export function Button({
     );
   }
   return (
-    <button type="button" className={classes} onClick={onClick} disabled={disabled} title={title}>
+    <button type={type} className={classes} onClick={onClick} disabled={disabled} title={title}>
       {children}
     </button>
   );
@@ -118,18 +120,21 @@ export function Alert({ kind = "error", children }: { kind?: AlertKind; children
 /* ---------- Status badge ---------- */
 
 export function StatusBadge({ status }: { status: string }) {
-  // Same slug rule as the Razor page: "Needs Attention" -> "needs-attention".
-  const slug = status.toLowerCase().replace(" ", "-");
+  const slug = status.toLowerCase().replace(/\s+/g, "-");
   const tone =
-    {
-      excellent: "bg-success-light text-success",
-      passed: "bg-success-light text-success",
-      good: "bg-secondary-light text-secondary",
-      available: "bg-secondary-light text-secondary",
-      "in-progress": "bg-warning-light text-warning",
-      "needs-attention": "bg-danger-light text-danger",
-      locked: "bg-danger-light text-danger",
-    }[slug] ?? "border border-border bg-bg text-text-secondary";
+    slug.includes("to-grade") || slug.includes("pending")
+      ? "bg-warning-light text-warning"
+      : (
+          {
+            excellent: "bg-success-light text-success",
+            passed: "bg-success-light text-success",
+            good: "bg-secondary-light text-secondary",
+            available: "bg-secondary-light text-secondary",
+            "in-progress": "bg-warning-light text-warning",
+            "needs-attention": "bg-danger-light text-danger",
+            locked: "bg-danger-light text-danger",
+          }[slug] ?? "border border-border bg-bg text-text-secondary"
+        );
   return (
     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${tone}`}>
       {status}
