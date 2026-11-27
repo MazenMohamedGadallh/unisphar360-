@@ -127,12 +127,18 @@ public class InterviewService(AppDbContext db, GraduateAiService ai)
             ?? throw new KeyNotFoundException("Interview question not found.");
 
         question.AnswerText = answer.Trim();
+        // A new answer invalidates the grade of the previous one, even if the provider fails below.
+        question.Feedback = null;
+        question.FeedbackScore = null;
+        question.FeedbackDetailsJson = null;
         try
         {
             var (feedback, meta) = await ai.FeedbackAnswerAsync(
                 userId, session.TargetRole, question.QuestionText, answer, ct);
             question.Feedback = feedback.Feedback;
             question.FeedbackScore = feedback.Score;
+            question.FeedbackDetailsJson = JsonSerializer.Serialize(
+                new InterviewFeedbackDetails(feedback.Strengths, feedback.Improvements, feedback.Rubric));
         }
         catch (ChatProviderException)
         {
@@ -161,6 +167,13 @@ public class InterviewService(AppDbContext db, GraduateAiService ai)
         return trimmed.Length > 80 ? trimmed[..80] : trimmed;
     }
 
-    internal static InterviewQuestionDto MapQuestion(InterviewQuestion q) =>
-        new(q.Id, q.QuestionText, q.AnswerText, q.Feedback, q.FeedbackScore);
+    public static InterviewQuestionDto MapQuestion(InterviewQuestion q)
+    {
+        // Answers graded before this column existed have no details.
+        var details = q.FeedbackDetailsJson is null
+            ? null
+            : JsonSerializer.Deserialize<InterviewFeedbackDetails>(q.FeedbackDetailsJson);
+        return new(q.Id, q.QuestionText, q.AnswerText, q.Feedback, q.FeedbackScore,
+            details?.Strengths ?? [], details?.Improvements ?? [], details?.Rubric ?? []);
+    }
 }
