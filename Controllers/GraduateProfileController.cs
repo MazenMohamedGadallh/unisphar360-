@@ -39,6 +39,24 @@ public class GraduateProfileController(
     public async Task<ActionResult<ProfileCompletionDto>> Completion() =>
         await profiles.GetCompletionAsync(UserId);
 
+    // Career calibration onboarding
+
+    [HttpGet("/api/graduate/profile/onboarding")]
+    public async Task<ActionResult<OnboardingStatusDto>> Onboarding() => await profiles.GetOnboardingAsync(UserId);
+
+    [HttpPost("/api/graduate/profile/onboarding")]
+    public async Task<IActionResult> CompleteOnboarding(OnboardingRequest request)
+    {
+        try
+        {
+            return Ok(await profiles.CompleteOnboardingAsync(UserId, request));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     // Skills
 
     [HttpPost("skills")]
@@ -129,7 +147,8 @@ public class GraduateProfileController(
 
         try
         {
-            var (data, providerName, model) = await cvEngine.AnalyzeAsync(text, request?.TargetRole, HttpContext.RequestAborted);
+            var (data, providerName, model) = await cvEngine.AnalyzeAsync(
+                text, request?.TargetRole, HttpContext.RequestAborted, request?.JobDescription);
 
             var analysis = new CvAnalysis
             {
@@ -155,12 +174,21 @@ public class GraduateProfileController(
                 [.. data.Rewrites.Select(r => new KeywordRewrite(r.Original, r.Rewritten, r.Why ?? ""))],
                 data.Keywords, providerName, model, analysis.CreatedAtUtc,
                 data.TechnicalSkills, data.SoftSkills, data.Sections, data.ParsingRisks,
-                data.IsDeterministicFallback));
+                data.IsDeterministicFallback, data.AiScore, data.ScoreBreakdown, data.JobFit));
         }
         catch (ChatProviderException ex)
         {
             return Problem(title: "AI provider required", detail: ex.Message, statusCode: 503);
         }
+    }
+
+    [HttpGet("cv-history")]
+    public async Task<IActionResult> CvHistory()
+    {
+        var rows = await db.CvAnalyses.AsNoTracking().Include(a => a.CvDocument)
+            .Where(a => a.CvDocument!.UserId == UserId)
+            .OrderByDescending(a => a.CreatedAtUtc).Take(30).ToListAsync();
+        return Ok(rows.Select(a => new { fileName = a.CvDocument!.FileName, analysis = MapAnalysis(a) }));
     }
 
     [HttpGet("cv/{id:int}/analyses")]
@@ -189,7 +217,7 @@ public class GraduateProfileController(
             [.. JsonSerializer.Deserialize<List<KeywordRewrite>>(a.RewritesJson, JsonOpts) ?? []],
             DeserializeList(a.KeywordsJson), a.ProviderName, a.Model, a.CreatedAtUtc,
             report?.TechnicalSkills, report?.SoftSkills, report?.Sections, report?.ParsingRisks,
-            report?.IsDeterministicFallback ?? false);
+            report?.IsDeterministicFallback ?? false, report?.AiScore, report?.ScoreBreakdown, report?.JobFit);
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };

@@ -16,13 +16,15 @@ public record GraduateProfileDto(
     string WorkModes, string EmploymentType, string ExperienceLevel, string? Languages, string? CareerGoal,
     int CompletionPercent, IReadOnlyList<string> MissingFields,
     IReadOnlyList<GraduateSkillDto> Skills,
-    IReadOnlyList<ProfileEntryDto> Entries);
+    IReadOnlyList<ProfileEntryDto> Entries,
+    string? TargetRole = null, string? PrimaryStruggle = null, string? PreferredWorkMode = null,
+    string? PreferredCity = null, bool HasCompletedOnboarding = false, string? CareerChallenges = null);
 
 public record GraduateProfileUpdateRequest(
     string? Headline, string? CareerSummary,
     string? LinkedInUrl, string? GitHubUrl, string? PortfolioUrl,
     string? PreferredJobTitles, string? PreferredIndustries, string? PreferredLocations,
-    string? WorkModes, string? EmploymentType, string? ExperienceLevel, string? Languages, string? CareerGoal);
+    string? WorkModes, string? EmploymentType, string? ExperienceLevel, string? Languages, string? CareerGoal, string? CareerChallenges = null);
 
 public record ProfileCompletionDto(int Percent, IReadOnlyList<string> MissingFields, IReadOnlyList<string> NextActions);
 
@@ -37,11 +39,13 @@ public record CvAnalysisDto(
     IReadOnlyList<string> Keywords, string ProviderName, string Model, DateTime CreatedAtUtc,
     IReadOnlyList<string>? TechnicalSkills = null, IReadOnlyList<string>? SoftSkills = null,
     IReadOnlyList<string>? Sections = null, IReadOnlyList<string>? ParsingRisks = null,
-    bool IsDeterministicFallback = false);
+    bool IsDeterministicFallback = false, int? AiScore = null,
+    IReadOnlyList<UniSphere.Api.Services.CvScoreItem>? ScoreBreakdown = null,
+    UniSphere.Api.Services.CvJobFit? JobFit = null);
 
 public record KeywordRewrite(string Original, string Rewritten, string Why);
 
-public record CvAnalyzeRequest(string? TargetRole);
+public record CvAnalyzeRequest(string? TargetRole, string? JobDescription = null);
 
 public record JobListingDto(
     int Id, string Source, string Title, string CompanyName, string Location, bool Remote,
@@ -70,20 +74,25 @@ public record CvParseResponse(string ParseStatus, string? ParseError, int TextCh
 
 public record ApplicationDto(
     int Id, int? JobListingId, string CompanyName, string JobTitle, string? SourceUrl,
-    string Status, string? Notes, DateTime? FollowUpDate, DateTime AppliedAtUtc, DateTime UpdatedAtUtc);
+    string Status, string? Notes, DateTime? FollowUpDate, DateTime AppliedAtUtc, DateTime UpdatedAtUtc,
+    DateTime? InterviewAtUtc = null);
 
 public record ApplicationCreateRequest(
     int? JobListingId, string? CompanyName, string? JobTitle, string? SourceUrl,
-    string? Status, string? Notes, DateTime? FollowUpDate, DateTime? AppliedAtUtc);
+    string? Status, string? Notes, DateTime? FollowUpDate, DateTime? AppliedAtUtc, DateTime? InterviewAtUtc = null);
 
 public record ApplicationUpdateRequest(
-    string? Status, string? Notes, DateTime? FollowUpDate);
+    string? Status, string? Notes, DateTime? FollowUpDate, DateTime? InterviewAtUtc = null);
 
 public record ApplicationSummaryDto(
     int Total, IReadOnlyList<StatusCount> ByStatus, int UpcomingFollowUps,
     int Interviews);
 
 public record StatusCount(string Status, int Count);
+
+public record ApplicationAnalyticsDto(
+    int Total, int ReachedInterview, int? InterviewRatePercent, IReadOnlyList<StatusCount> ByStatus,
+    IReadOnlyList<NameCount> TopRoles, IReadOnlyList<NameCount> UnevidencedSkills, IReadOnlyList<string> Insights);
 
 public record RoadmapItemDto(int Id, string Title, string? Category, string Status,
     string? Notes, DateTime? TargetDate, int SortOrder, string Origin, DateTime? CompletedAtUtc);
@@ -101,18 +110,22 @@ public record RoadmapSuggestionDto(string Title, string Category, string? Notes,
 public record RubricItemDto(string Criterion, int Score);
 
 public record InterviewFeedbackDetails(
-    IReadOnlyList<string> Strengths, IReadOnlyList<string> Improvements, IReadOnlyList<RubricItemDto> Rubric);
+    IReadOnlyList<string> Strengths, IReadOnlyList<string> Improvements, IReadOnlyList<RubricItemDto> Rubric,
+    string? StrongerAnswer = null);
 
 public record InterviewQuestionDto(
     int Id, string QuestionText, string? AnswerText, string? Feedback, int? FeedbackScore,
-    IReadOnlyList<string> Strengths, IReadOnlyList<string> Improvements, IReadOnlyList<RubricItemDto> Rubric);
+    IReadOnlyList<string> Strengths, IReadOnlyList<string> Improvements, IReadOnlyList<RubricItemDto> Rubric,
+    string? StrongerAnswer = null);
 
 public record InterviewSessionDto(
     int Id, string TargetRole, int? JobListingId, string QuestionSource,
     string? ProviderName, string? Model, DateTime CreatedAtUtc,
-    int AnsweredCount, int TotalCount, IReadOnlyList<InterviewQuestionDto>? Questions = null);
+    int AnsweredCount, int TotalCount, IReadOnlyList<InterviewQuestionDto>? Questions = null,
+    string InterviewType = "Technical", string Difficulty = "Medium");
 
-public record InterviewSessionCreateRequest(string? TargetRole, int? JobListingId, bool? UseAi);
+public record InterviewSessionCreateRequest(
+    string? TargetRole, int? JobListingId, bool? UseAi, string? InterviewType = null, string? Difficulty = null);
 
 public record InterviewAnswerRequest(string AnswerText);
 
@@ -125,7 +138,8 @@ public record GraduateOverviewDto(
     int UpcomingFollowUpsCount, int RoadmapProgressPercent,
     IReadOnlyList<SkillGapItem> TopSkillGaps, IReadOnlyList<string> NextActions,
     IReadOnlyList<GradEventDto> UpcomingEvents, IReadOnlyList<GradActivityDto> RecentActivity,
-    int UnreadNotifications, int PreviousAnalysisCount);
+    int UnreadNotifications, int PreviousAnalysisCount,
+    bool HasCompletedOnboarding = false, int JobReadinessPercent = 0, int Xp = 0);
 
 public record GradEventDto(int Id, string Title, string Location, DateTime StartsAtUtc, string? Description);
 
@@ -151,3 +165,55 @@ public record GradSettingsDto(
     string ThemePreference = "system",
     string? AlertKeywords = null,
     string? AlertLocations = null);
+
+public record OnboardingRequest(
+    string TargetRole, string ExperienceLevel, string PrimaryStruggle, string PreferredWorkMode, string? PreferredCity);
+
+public record OnboardingStatusDto(
+    bool HasCompletedOnboarding, string? TargetRole, string? ExperienceLevel, string? PrimaryStruggle,
+    string? PreferredWorkMode, string? PreferredCity,
+    IReadOnlyList<string> Roles, IReadOnlyList<string> ExperienceLevels,
+    IReadOnlyList<string> Struggles, IReadOnlyList<string> WorkModes);
+
+public record QuestLevelDto(int Level, string Title, string Topic, string Status);
+
+public record QuestDto(
+    string TargetRole, int Xp, int QuizAttempts, int ReadinessPercent, int PassScore,
+    IReadOnlyList<QuestLevelDto> Levels);
+
+public record QuizQuestionDto(string Question, IReadOnlyList<string> Options);
+
+public record QuizDto(int Level, IReadOnlyList<QuizQuestionDto> Questions);
+
+public record QuizSubmitRequest(IReadOnlyList<int>? Answers);
+
+public record QuizReviewDto(bool Correct, int CorrectIndex, string Explanation);
+
+public record QuizResultDto(
+    bool Passed, int Score, int Total, int XpAwarded, int ReadinessPercent, IReadOnlyList<QuizReviewDto> Review);
+
+public record PrepItemDto(string Concept, string Detail, bool Reviewed = false);
+
+public record LevelPrepDto(int Level, IReadOnlyList<PrepItemDto> Items);
+
+public record PrepReviewedRequest(bool Reviewed);
+
+public record RecoveryDrillRequest(int SessionId);
+
+public record RecoveryDrillDto(string DrillId, string Dimension, IReadOnlyList<string> Questions, int BonusXp);
+
+public record DrillAnswerRequest(string DrillId, int Index, string AnswerText);
+
+public record DrillAnswerDto(
+    string Feedback, int Score, IReadOnlyList<string> Improvements, int Answered, bool Completed, int XpAwarded,
+    double Baseline, double DrillAverage, bool Improved);
+
+public record BulletImprovementDto(string Keyword, string? Original, string Improved);
+
+public record JobPrepDto(
+    IReadOnlyList<string> MissingKeywords, IReadOnlyList<BulletImprovementDto> BulletImprovements,
+    InterviewSessionDto Interview);
+
+public record OutreachRequest(string? Tone);
+
+public record OutreachDto(string Tone, string CoverLetter, string Pitch);

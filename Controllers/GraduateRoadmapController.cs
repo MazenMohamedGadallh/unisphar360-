@@ -19,6 +19,70 @@ public class GraduateRoadmapController(
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<RoadmapItemDto>>> List() => Ok(await roadmap.ListAsync(UserId));
 
+    // Career Quest
+
+    [HttpGet("/api/graduate/quest")]
+    public async Task<ActionResult<QuestDto>> Quest() => await roadmap.GetQuestAsync(UserId);
+
+    [HttpPost("/api/graduate/quest/levels/{level:int}/prep")]
+    public async Task<IActionResult> Prep(int level, CancellationToken ct)
+    {
+        try
+        {
+            return Ok(await roadmap.GetPrepAsync(UserId, level, ct));
+        }
+        catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
+        catch (ChatProviderException ex)
+        {
+            return Problem(title: "AI provider required", detail: ex.Message, statusCode: 503);
+        }
+    }
+
+    [HttpPut("/api/graduate/quest/levels/{level:int}/prep/{index:int}")]
+    public async Task<IActionResult> Reviewed(int level, int index, PrepReviewedRequest request)
+    {
+        try
+        {
+            return Ok(await roadmap.SetReviewedAsync(UserId, level, index, request.Reviewed));
+        }
+        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+    }
+
+    [HttpPost("/api/graduate/quest/levels/{level:int}/skip")]
+    public async Task<IActionResult> Skip(int level)
+    {
+        try
+        {
+            return Ok(await roadmap.SkipLevelAsync(UserId, level));
+        }
+        catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
+    }
+
+    [HttpPost("/api/graduate/quest/levels/{level:int}/quiz")]
+    public async Task<IActionResult> StartQuiz(int level, CancellationToken ct)
+    {
+        try
+        {
+            return Ok(await roadmap.StartQuizAsync(UserId, level, ct));
+        }
+        catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
+        catch (ChatProviderException ex)
+        {
+            return Problem(title: "AI provider required", detail: ex.Message, statusCode: 503);
+        }
+    }
+
+    [HttpPost("/api/graduate/quest/levels/{level:int}/submit")]
+    public async Task<IActionResult> SubmitQuiz(int level, QuizSubmitRequest request)
+    {
+        try
+        {
+            return Ok(await roadmap.SubmitQuizAsync(UserId, level, request.Answers ?? []));
+        }
+        catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
+        catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     [HttpGet("progress")]
     public async Task<ActionResult<RoadmapProgressDto>> Progress() => await roadmap.GetProgressAsync(UserId);
 

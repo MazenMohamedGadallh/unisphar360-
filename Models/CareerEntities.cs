@@ -22,6 +22,15 @@ public class GraduateProfile
     public string? Languages { get; set; }            // "English (Fluent), Arabic (Native)"
     public string? CareerGoal { get; set; }
 
+    // Career calibration onboarding (ExperienceLevel above is part of it too).
+    public string? TargetRole { get; set; }
+    public string? PrimaryStruggle { get; set; }      // CareerCatalog.Struggles
+    public string? PreferredWorkMode { get; set; }    // Remote | Hybrid | Onsite
+    public string? PreferredCity { get; set; }
+    public bool HasCompletedOnboarding { get; set; }
+    public string? CareerChallenges { get; set; }
+    public string? CareerDnaJson { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
@@ -135,6 +144,7 @@ public class JobApplication
     public string Status { get; set; } = "Applied";  // Applied | Interview | Offer | Rejected | Withdrawn
     public string? Notes { get; set; }
     public DateTime? FollowUpDate { get; set; }
+    public DateTime? InterviewAtUtc { get; set; }
     public DateTime AppliedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
@@ -163,6 +173,8 @@ public class InterviewSession
     public string TargetRole { get; set; } = "";
     public int? JobListingId { get; set; }
     public string QuestionSource { get; set; } = "Curated"; // Curated | Ai
+    public string InterviewType { get; set; } = "Technical";   // HR | Technical | Behavioral
+    public string Difficulty { get; set; } = "Medium";         // Easy | Medium | Hard
     public string? ProviderName { get; set; }
     public string? Model { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
@@ -179,6 +191,22 @@ public class InterviewQuestion
     public int? FeedbackScore { get; set; }          // 0-10 estimate of the answer
     public string? FeedbackDetailsJson { get; set; }  // strengths, improvements, rubric
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public class GraduateQuestProgress
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    public int UnlockedLevel { get; set; } = 1;       // level count + 1 once every level is passed
+    public int Xp { get; set; }
+    public int QuizAttempts { get; set; }
+    public int ReadinessPercent { get; set; }
+    public string? PendingQuizJson { get; set; }      // answer key stays server-side
+    public string? PendingDrillJson { get; set; }
+    public string? SkippedLevelsCsv { get; set; }     // unlocked past, but not passed
+    public string? PrepJson { get; set; }             // cached level prep guides and reviewed marks
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
 public class GraduateSettings
@@ -203,4 +231,58 @@ public class JobSyncState
     public string? LastStatus { get; set; }          // OK | Failed
     public string? LastMessage { get; set; }
     public int LastImportedCount { get; set; }
+}
+
+public class PortfolioProject
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    public string Title { get; set; } = "";
+    public string Description { get; set; } = "";
+    public string? Problem { get; set; }
+    public string? Technologies { get; set; }   // CSV
+    public string? Role { get; set; }
+    public string? Outcomes { get; set; }
+    public string? Skills { get; set; }         // CSV
+    public string? GitHubUrl { get; set; }
+    public string? DemoUrl { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public class SkillChallengeAttempt
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    public string Skill { get; set; } = "";
+    public string Difficulty { get; set; } = "Medium";
+    public string ChallengeJson { get; set; } = "{}";   // includes the answer key; never sent as is
+    public string? SubmissionJson { get; set; }
+    public int? Score { get; set; }                     // 0-100
+    public bool Passed { get; set; }
+    public string? Feedback { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? SubmittedAtUtc { get; set; }
+}
+
+public class XpTransaction
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    public string Key { get; set; } = "";       // mission id; unique per user so it is paid once
+    public int Amount { get; set; }
+    public string Reason { get; set; } = "";
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public class CareerReport
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    public string ReportJson { get; set; } = "{}";
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

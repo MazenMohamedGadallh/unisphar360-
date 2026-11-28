@@ -44,7 +44,12 @@ public class AppDbContext : DbContext
     public DbSet<InterviewSession> InterviewSessions => Set<InterviewSession>();
     public DbSet<InterviewQuestion> InterviewQuestions => Set<InterviewQuestion>();
     public DbSet<GraduateSettings> GraduateSettings => Set<GraduateSettings>();
+    public DbSet<GraduateQuestProgress> GraduateQuestProgress => Set<GraduateQuestProgress>();
     public DbSet<JobSyncState> JobSyncStates => Set<JobSyncState>();
+    public DbSet<PortfolioProject> PortfolioProjects => Set<PortfolioProject>();
+    public DbSet<SkillChallengeAttempt> SkillChallengeAttempts => Set<SkillChallengeAttempt>();
+    public DbSet<XpTransaction> XpTransactions => Set<XpTransaction>();
+    public DbSet<CareerReport> CareerReports => Set<CareerReport>();
 
     public DbSet<Exam> Exams => Set<Exam>();
     public DbSet<ExamQuestion> ExamQuestions => Set<ExamQuestion>();
@@ -202,6 +207,14 @@ public class AppDbContext : DbContext
             .OnDelete(DeleteBehavior.Cascade);
 
         // Graduate career platform relationships/indexes
+        modelBuilder.Entity<PortfolioProject>().HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PortfolioProject>().HasIndex(x => x.UserId);
+        modelBuilder.Entity<SkillChallengeAttempt>().HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<SkillChallengeAttempt>().HasIndex(x => x.UserId);
+        modelBuilder.Entity<XpTransaction>().HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<XpTransaction>().HasIndex(x => new { x.UserId, x.Key }).IsUnique();
+        modelBuilder.Entity<CareerReport>().HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<CareerReport>().HasIndex(x => x.UserId);
         modelBuilder.Entity<GraduateProfile>().HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<GraduateProfile>().HasIndex(p => p.UserId).IsUnique();
 
@@ -234,6 +247,8 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<InterviewQuestion>().HasOne(q => q.Session).WithMany().HasForeignKey(q => q.SessionId).OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<GraduateSettings>().HasIndex(g => g.UserId).IsUnique();
+        modelBuilder.Entity<GraduateQuestProgress>().HasIndex(g => g.UserId).IsUnique();
+        modelBuilder.Entity<GraduateQuestProgress>().HasOne(g => g.User).WithMany().HasForeignKey(g => g.UserId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<GraduateSettings>().HasOne(g => g.User).WithMany().HasForeignKey(g => g.UserId).OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<CvDocument>().HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);

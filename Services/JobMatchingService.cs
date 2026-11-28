@@ -27,7 +27,15 @@ public class JobMatchingService(AppDbContext db)
             .SelectMany(t => CareerCatalog.DetectSkills(t))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-        var names = skills.Select(s => s.Name).Union(cvSkills, StringComparer.OrdinalIgnoreCase).ToList();
+        var projects = await db.PortfolioProjects.AsNoTracking().Where(p => p.UserId == userId)
+            .Select(p => new { p.Technologies, p.Skills }).ToListAsync();
+        var proven = await db.SkillChallengeAttempts.AsNoTracking().Where(a => a.UserId == userId && a.Passed)
+            .Select(a => a.Skill).ToListAsync();
+
+        var names = skills.Select(s => s.Name)
+            .Union(cvSkills, StringComparer.OrdinalIgnoreCase)
+            .Union(projects.SelectMany(p => CareerCatalog.DetectSkills($"{p.Technologies}, {p.Skills}")), StringComparer.OrdinalIgnoreCase)
+            .Union(proven, StringComparer.OrdinalIgnoreCase).ToList();
 
         var profile = await db.GraduateProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);
 
@@ -47,7 +55,7 @@ public class JobMatchingService(AppDbContext db)
     public async Task<IReadOnlyList<JobMatchDto>> MatchForUserAsync(int userId, int limit, int minScore)
     {
         var snapshot = await BuildSnapshotAsync(userId);
-        var jobs = await db.JobListings.AsNoTracking().Where(j => j.IsActive).ToListAsync();
+        var jobs = await (await JobCatalogService.CurrentListingsAsync(db)).ToListAsync();
         var savedIds = (await db.SavedJobs.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.JobListingId).ToListAsync()).ToHashSet();
         var appliedIds = (await db.JobApplications.AsNoTracking().Where(a => a.UserId == userId && a.JobListingId != null).Select(a => a.JobListingId!).ToListAsync()).ToHashSet();
 
@@ -80,11 +88,12 @@ public class JobMatchingService(AppDbContext db)
         var matchedSkills = jobSkills
             .Where(js => user.SkillNames.Any(un => string.Equals(un, js, StringComparison.OrdinalIgnoreCase)))
             .ToList();
-        var skillRatio = jobSkills.Count == 0 ? 0 : (double)matchedSkills.Count / jobSkills.Count;
+        // Postings listing fewer than three skills carry too little information to earn the full weight.
+        var skillRatio = jobSkills.Count == 0 ? 0 : (double)matchedSkills.Count / Math.Max(3, jobSkills.Count);
         var skillScore = (int)Math.Round(WeightSkills * skillRatio);
         total += skillScore;
         parts.Add($"skills covered {matchedSkills.Count}/{jobSkills.Count}");
-        if (skillRatio < 1)
+        if (matchedSkills.Count < jobSkills.Count)
         {
             var missing = jobSkills.Except(matchedSkills).ToList();
             if (missing.Count > 0)
@@ -188,10 +197,17 @@ public class JobMatchingService(AppDbContext db)
         return "Software Engineer";
     }
 
+    /// <summary>The graduate's own wording of their goal, used to ground AI prompts.</summary>
+    public async Task<string> TargetRoleAsync(int userId)
+    {
+        var profile = await db.GraduateProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);
+        return profile?.TargetRole ?? SplitCsv(profile?.PreferredJobTitles).FirstOrDefault() ?? "Software Engineer";
+    }
+
     public async Task<string> GuessTargetRoleAsync(int userId)
     {
         var profile = await db.GraduateProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);
-        var first = SplitCsv(profile?.PreferredJobTitles).FirstOrDefault();
+        var first = profile?.TargetRole ?? SplitCsv(profile?.PreferredJobTitles).FirstOrDefault();
         if (first is not null)
         {
             var match = CareerCatalog.RoleSkills.Keys.FirstOrDefault(k => first.Contains(k, StringComparison.OrdinalIgnoreCase) || k.Contains(first, StringComparison.OrdinalIgnoreCase));

@@ -29,7 +29,16 @@ public class GraduateProfileService(AppDbContext db)
         {
             profile = new GraduateProfile { UserId = userId, CreatedAtUtc = DateTime.UtcNow, UpdatedAtUtc = DateTime.UtcNow };
             db.GraduateProfiles.Add(profile);
-            await db.SaveChangesAsync();
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // A parallel request from the same page load created it first.
+                db.Entry(profile).State = EntityState.Detached;
+                profile = await db.GraduateProfiles.FirstAsync(p => p.UserId == userId);
+            }
         }
         return profile;
     }
@@ -57,10 +66,67 @@ public class GraduateProfileService(AppDbContext db)
         if (req.ExperienceLevel is not null) profile.ExperienceLevel = req.ExperienceLevel;
         if (req.Languages is not null) profile.Languages = nullIfEmpty(req.Languages);
         if (req.CareerGoal is not null) profile.CareerGoal = nullIfEmpty(req.CareerGoal);
+        if (req.CareerChallenges is not null)
+            profile.CareerChallenges = nullIfEmpty(req.CareerChallenges) is { } c ? c[..Math.Min(c.Length, 1500)] : null;
         profile.UpdatedAtUtc = DateTime.UtcNow;
 
         await db.SaveChangesAsync();
         return await BuildDtoAsync(profile);
+    }
+
+    // Career calibration onboarding
+
+    public async Task<OnboardingStatusDto> GetOnboardingAsync(int userId)
+    {
+        var p = await GetOrCreateProfileEntityAsync(userId);
+        return new OnboardingStatusDto(
+            p.HasCompletedOnboarding, p.TargetRole, p.ExperienceLevel, p.PrimaryStruggle,
+            p.PreferredWorkMode, p.PreferredCity,
+            [.. CareerCatalog.RoleSkills.Keys], CareerCatalog.ExperienceLevels,
+            CareerCatalog.Struggles, CareerCatalog.CalibrationWorkModes);
+    }
+
+    /// <summary>Saves the answers and mirrors them into the preference fields job matching already reads.</summary>
+    public async Task<OnboardingStatusDto> CompleteOnboardingAsync(int userId, OnboardingRequest req)
+    {
+        static string Pick(string[] allowed, string? value, string field) =>
+            allowed.FirstOrDefault(a => a.Equals(value?.Trim(), StringComparison.OrdinalIgnoreCase))
+            ?? throw new ArgumentException($"{field} must be one of: {string.Join(", ", allowed)}.");
+
+        var role = req.TargetRole?.Trim() ?? "";
+        var city = nullIfEmpty(req.PreferredCity);
+        if (role.Length is 0 or > 80 || role.Contains(','))
+            throw new ArgumentException("Target role is required (one role, max 80 characters).");
+        if (city is not null && (city.Length > 60 || city.Contains(',')))
+            throw new ArgumentException("Preferred city must be a single city name (max 60 characters).");
+
+        var level = Pick(CareerCatalog.ExperienceLevels, req.ExperienceLevel, "Experience level");
+        var struggle = Pick(CareerCatalog.Struggles, req.PrimaryStruggle, "Primary struggle");
+        var mode = Pick(CareerCatalog.CalibrationWorkModes, req.PreferredWorkMode, "Work mode");
+
+        var p = await GetOrCreateProfileEntityAsync(userId);
+        // The newest answer goes first; hand-entered preferences are kept (a replaced answer is not).
+        p.PreferredJobTitles = Prepend(p.PreferredJobTitles, role, p.TargetRole);
+        if (city is not null) p.PreferredLocations = Prepend(p.PreferredLocations, city, p.PreferredCity);
+        p.WorkModes = mode;
+        p.TargetRole = role;
+        p.ExperienceLevel = level;
+        p.PrimaryStruggle = struggle;
+        p.PreferredWorkMode = mode;
+        p.PreferredCity = city;
+        p.HasCompletedOnboarding = true;
+        p.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return await GetOnboardingAsync(userId);
+    }
+
+    private static string Prepend(string? csv, string value, string? replaced)
+    {
+        var rest = (csv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !x.Equals(value, StringComparison.OrdinalIgnoreCase)
+                        && !x.Equals(replaced, StringComparison.OrdinalIgnoreCase));
+        var joined = string.Join(", ", rest.Prepend(value));
+        return joined.Length <= 300 ? joined : joined[..300];
     }
 
     // Skills
@@ -205,7 +271,9 @@ public class GraduateProfileService(AppDbContext db)
             profile.Languages, profile.CareerGoal,
             completion.Percent, completion.MissingFields,
             [.. skills.Select(s => new GraduateSkillDto(s.Id, s.Name, s.Level, s.Source))],
-            [.. entries.Select(ToDto)]);
+            [.. entries.Select(ToDto)],
+            profile.TargetRole, profile.PrimaryStruggle, profile.PreferredWorkMode,
+            profile.PreferredCity, profile.HasCompletedOnboarding, profile.CareerChallenges);
     }
 
     internal static ProfileEntryDto ToDto(ProfileEntry e) =>

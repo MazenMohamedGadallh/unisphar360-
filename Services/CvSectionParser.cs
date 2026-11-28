@@ -52,8 +52,11 @@ public static class CvSectionParser
         Add("Contact", hasContact); Add("Summary", hasSummary); Add("Education", hasEducation);
         Add("Experience", hasExperience); Add("Projects", hasProjects); Add("Certifications", hasCertifications);
 
-        var technical = TechnicalTokens.Where(t => lower.Contains(t.ToLowerInvariant())).Distinct().ToArray();
-        var soft = SoftTokens.Where(t => lower.Contains(t)).Distinct().ToArray();
+        // Whole tokens only: "Java" must not match "JavaScript", nor "Git" match "digital".
+        bool Mentions(string token) => Regex.IsMatch(lower,
+            $@"(?<![a-z0-9]){Regex.Escape(token.ToLowerInvariant())}(?![a-z0-9#+])");
+        var technical = TechnicalTokens.Where(Mentions).Distinct().ToArray();
+        var soft = SoftTokens.Where(Mentions).Distinct().ToArray();
 
         var risks = new List<string>();
         if (!hasContact) risks.Add("Contact details could not be detected.");

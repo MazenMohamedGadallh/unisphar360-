@@ -11,6 +11,8 @@ namespace UniSphere.Api.Controllers;
 [Route("api/grad/applications")]
 public class GraduateApplicationsController(
     JobApplicationService applications,
+    JobMatchingService matching,
+    UniSphere.Api.Data.AppDbContext db,
     IValidator<ApplicationCreateRequest> createValidator,
     IValidator<ApplicationUpdateRequest> updateValidator) : ControllerBase
 {
@@ -24,6 +26,13 @@ public class GraduateApplicationsController(
     public async Task<ActionResult<ApplicationSummaryDto>> Summary() =>
         await applications.GetSummaryAsync(UserId);
 
+    [HttpGet("analytics")]
+    public async Task<ActionResult<ApplicationAnalyticsDto>> Analytics()
+    {
+        var snapshot = await matching.BuildSnapshotAsync(UserId);
+        return await applications.GetAnalyticsAsync(UserId, [.. snapshot.SkillNames]);
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create(ApplicationCreateRequest request)
     {
@@ -35,6 +44,7 @@ public class GraduateApplicationsController(
             return Ok(app);
         }
         catch (KeyNotFoundException) { return NotFound(new { error = "The linked job listing does not exist." }); }
+        catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
         catch (MissingFieldException ex)
         {
             return BadRequest(new { error = $"Field '{ex.Message}' is required." });

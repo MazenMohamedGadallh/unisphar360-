@@ -5,6 +5,14 @@ namespace UniSphere.Api.Services;
 public sealed class CvAnalysisEngine(GraduateAiService ai)
 {
     public async Task<(CvAnalysisEvidence Result, string ProviderName, string Model)> AnalyzeAsync(
+        string cvText, string? targetRole, CancellationToken ct, string? jobDescription = null)
+    {
+        var (result, provider, model) = await AnalyzeCoreAsync(cvText, targetRole, ct);
+        var breakdown = Breakdown(CvSectionParser.Parse(cvText));
+        return (result with { ScoreBreakdown = breakdown, JobFit = Fit(cvText, jobDescription) }, provider, model);
+    }
+
+    private async Task<(CvAnalysisEvidence Result, string ProviderName, string Model)> AnalyzeCoreAsync(
         string cvText, string? targetRole, CancellationToken ct)
     {
         var evidence = CvSectionParser.Parse(cvText);
@@ -33,7 +41,7 @@ public sealed class CvAnalysisEngine(GraduateAiService ai)
                 evidence.Risks,
                 meta.ProviderName,
                 meta.Model,
-                false), meta.ProviderName, meta.Model);
+                false) { AiScore = aiData.ScorePercent }, meta.ProviderName, meta.Model);
         }
         catch (ChatProviderException)
         {
@@ -63,18 +71,36 @@ public sealed class CvAnalysisEngine(GraduateAiService ai)
         return Math.Clamp((aiScore + deterministic) / 2, 0, 100);
     }
 
-    private static int CalculateDeterministicScore(CvParseEvidence evidence)
+    private static int CalculateDeterministicScore(CvParseEvidence evidence) =>
+        Math.Clamp(Breakdown(evidence).Sum(c => c.Points), 0, 100);
+
+    /// <summary>The rules half of the score, one line per criterion so the graduate can see why.</summary>
+    public static CvScoreItem[] Breakdown(CvParseEvidence e)
     {
-        var score = 20;
-        if (evidence.HasContact) score += 10;
-        if (evidence.HasSummary) score += 10;
-        if (evidence.HasEducation) score += 15;
-        if (evidence.HasExperience) score += 20;
-        if (evidence.HasProjects) score += 10;
-        if (evidence.HasCertifications) score += 5;
-        score += Math.Min(10, evidence.TechnicalSkills.Count);
-        if (evidence.SoftSkills.Count > 0) score += 5;
-        return Math.Clamp(score, 0, 100);
+        static CvScoreItem Section(string name, bool found, int max) =>
+            new(name, found ? max : 0, max, found ? "Detected in the CV." : "Not detected in the extracted text.");
+        var skills = Math.Min(10, e.TechnicalSkills.Count);
+        return
+        [
+            new("Readable text", 20, 20, $"{e.EvidenceLength} characters were extracted."),
+            Section("Contact details", e.HasContact, 10),
+            Section("Professional summary", e.HasSummary, 10),
+            Section("Education", e.HasEducation, 15),
+            Section("Experience", e.HasExperience, 20),
+            Section("Projects", e.HasProjects, 10),
+            Section("Certifications", e.HasCertifications, 5),
+            new("Technical skills", skills, 10, $"{e.TechnicalSkills.Count} recognised technical skill(s), one point each up to 10."),
+            new("Soft skills", e.SoftSkills.Count > 0 ? 5 : 0, 5, $"{e.SoftSkills.Count} recognised soft skill(s).")
+        ];
+    }
+
+    /// <summary>Job-specific fit, kept apart from the general score. "Not evidenced" is not "does not have".</summary>
+    public static CvJobFit? Fit(string cvText, string? jobDescription)
+    {
+        var required = CareerCatalog.DetectSkills(jobDescription);
+        if (required.Count == 0) return null;
+        var found = required.Where(s => CareerCatalog.MatchesSkill(s, cvText)).ToArray();
+        return new CvJobFit((int)Math.Round(found.Length * 100.0 / required.Count), found, [.. required.Except(found)]);
     }
 
     private static (string Assessment, string[] Weaknesses, string[] Suggestions) DeterministicReport(CvParseEvidence evidence)
@@ -122,4 +148,13 @@ public sealed record CvAnalysisEvidence(
     IReadOnlyList<string> ParsingRisks,
     string ProviderName,
     string Model,
-    bool IsDeterministicFallback);
+    bool IsDeterministicFallback)
+{
+    public int? AiScore { get; init; }
+    public IReadOnlyList<CvScoreItem>? ScoreBreakdown { get; init; }
+    public CvJobFit? JobFit { get; init; }
+}
+
+public sealed record CvScoreItem(string Criterion, int Points, int Max, string Reason);
+
+public sealed record CvJobFit(int FitPercent, IReadOnlyList<string> Evidenced, IReadOnlyList<string> NotEvidenced);

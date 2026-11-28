@@ -16,6 +16,35 @@ public class GraduateInterviewController(
 {
     private int UserId => User.GetUserId();
 
+    // Recovery drill
+
+    [HttpPost("/api/graduate/interview/recovery-drill")]
+    public Task<IActionResult> StartDrill(RecoveryDrillRequest request, CancellationToken ct) =>
+        DrillAsync(() => interviews.StartDrillAsync(UserId, request.SessionId, ct));
+
+    [HttpPost("/api/graduate/interview/recovery-drill/answer")]
+    public async Task<IActionResult> AnswerDrill(DrillAnswerRequest request, CancellationToken ct)
+    {
+        var length = request.AnswerText?.Trim().Length ?? 0;
+        if (length is < 10 or > 10000)
+            return BadRequest(new { error = "Write an answer between 10 and 10000 characters." });
+        return await DrillAsync(() => interviews.AnswerDrillAsync(UserId, request, ct));
+    }
+
+    private async Task<IActionResult> DrillAsync<T>(Func<Task<T>> action)
+    {
+        try
+        {
+            return Ok(await action());
+        }
+        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
+        catch (ChatProviderException ex)
+        {
+            return Problem(title: "AI provider required", detail: ex.Message, statusCode: 503);
+        }
+    }
+
     [HttpPost("sessions")]
     public async Task<IActionResult> CreateSession(InterviewSessionCreateRequest request)
     {

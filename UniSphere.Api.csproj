@@ -12,6 +12,7 @@
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="11.12.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.8.1" />
   </ItemGroup>
@@ -36,18 +37,10 @@
     the published SHA256). Without the exe this target only prints a skip
     notice - the build still succeeds using the committed app.generated.css.
   -->
-  <Target Name="TailwindBuild" BeforeTargets="Build"
-          Inputs="wwwroot/css/app.css;**/*.razor;Components/**/*.cs"
-          Outputs="wwwroot/css/app.generated.css">
-    <Message Condition="!Exists('$(MSBuildProjectDirectory)\tools\tailwind\tailwindcss.exe')"
-             Importance="high"
-             Text="UniSphere: tools\tailwind\tailwindcss.exe NOT FOUND - skipping Tailwind generation. Using the committed wwwroot/css/app.generated.css. To regenerate styles, download the CLI per README/THIRD-PARTY-NOTICES and place it at tools\tailwind\tailwindcss.exe." />
-    <Exec Condition="Exists('$(MSBuildProjectDirectory)\tools\tailwind\tailwindcss.exe') And '$(Configuration)' != 'Release'"
-          WorkingDirectory="$(MSBuildProjectDirectory)"
-          Command="tools\tailwind\tailwindcss.exe -i wwwroot/css/app.css -o wwwroot/css/app.generated.css" />
-    <Exec Condition="Exists('$(MSBuildProjectDirectory)\tools\tailwind\tailwindcss.exe') And '$(Configuration)' == 'Release'"
-          WorkingDirectory="$(MSBuildProjectDirectory)"
-          Command="tools\tailwind\tailwindcss.exe -i wwwroot/css/app.css -o wwwroot/css/app.generated.css --minify" />
+  <Target Name="TailwindBuild" BeforeTargets="Build" Inputs="wwwroot/css/app.css;**/*.razor;Components/**/*.cs" Outputs="wwwroot/css/app.generated.css">
+    <Message Condition="!Exists('$(MSBuildProjectDirectory)\tools\tailwind\tailwindcss.exe')" Importance="high" Text="UniSphere: tools\tailwind\tailwindcss.exe NOT FOUND - skipping Tailwind generation. Using the committed wwwroot/css/app.generated.css. To regenerate styles, download the CLI per README/THIRD-PARTY-NOTICES and place it at tools\tailwind\tailwindcss.exe." />
+    <Exec Condition="Exists('$(MSBuildProjectDirectory)\tools\tailwind\tailwindcss.exe') And '$(Configuration)' != 'Release'" WorkingDirectory="$(MSBuildProjectDirectory)" Command="tools\tailwind\tailwindcss.exe -i wwwroot/css/app.css -o wwwroot/css/app.generated.css" />
+    <Exec Condition="Exists('$(MSBuildProjectDirectory)\tools\tailwind\tailwindcss.exe') And '$(Configuration)' == 'Release'" WorkingDirectory="$(MSBuildProjectDirectory)" Command="tools\tailwind\tailwindcss.exe -i wwwroot/css/app.css -o wwwroot/css/app.generated.css --minify" />
   </Target>
 
 </Project>

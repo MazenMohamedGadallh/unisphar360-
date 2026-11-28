@@ -3,9 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { Alert, Button, Card, CardHeader, EmptyState, ErrorState, LoadingBlock } from "../components/ui";
 import { API_BASE_URL, authHeaders, clearToken, errorMessage } from "../lib/api";
 import { UiIcon } from "../UiIcon";
+import { RecoveryDrill } from "../components/RecoveryDrill";
 import "./dashboard.css";
 
-type Category = "Technical" | "Behavioral" | "System Design";
+type Category = "Technical" | "HR" | "Behavioral" | "System Design";
 type Difficulty = "Junior" | "Mid-Level" | "Senior";
 
 /* Mirrors InterviewQuestionDto / InterviewSessionDto. Scores are 0-10. */
@@ -18,6 +19,7 @@ interface Question {
   strengths: string[];
   improvements: string[];
   rubric: { criterion: string; score: number }[];
+  strongerAnswer?: string | null;
 }
 
 interface Session {
@@ -29,7 +31,24 @@ interface Session {
   questions: Question[];
 }
 
-type Attempt = Question & { feedbackScore: number; roleTitle: string; source: string; createdAtUtc: string };
+type Attempt = Question & {
+  feedbackScore: number;
+  roleTitle: string;
+  source: string;
+  createdAtUtc: string;
+  sessionId: number;
+  weakest: string | null;
+};
+
+/** Lowest average rubric criterion across the session; ties go alphabetically, as on the server. */
+function weakestDimension(questions: Question[]): string | null {
+  const scores = new Map<string, number[]>();
+  for (const r of questions.flatMap((q) => q.rubric)) scores.set(r.criterion, [...(scores.get(r.criterion) ?? []), r.score]);
+  const average = (list: number[]) => list.reduce((a, b) => a + b, 0) / list.length;
+  return (
+    [...scores].sort(([a, x], [b, y]) => average(x) - average(y) || (a < b ? -1 : 1))[0]?.[0] ?? null
+  );
+}
 
 const toAttempt = (session: Session, q: Question): Attempt => ({
   ...q,
@@ -37,6 +56,8 @@ const toAttempt = (session: Session, q: Question): Attempt => ({
   roleTitle: session.targetRole,
   source: session.questionSource === "Ai" ? "AI-Generated" : "Curated Bank",
   createdAtUtc: session.createdAtUtc,
+  sessionId: session.id,
+  weakest: weakestDimension(session.questions),
 });
 
 // Web Speech API: not in TypeScript's DOM lib, and only some browsers ship it.
@@ -90,9 +111,18 @@ export function GraduateInterview() {
       }
       if (!listRes.ok) throw new Error();
       if (profileRes.ok) {
-        const profile = (await profileRes.json()) as { preferredJobTitles?: string | null };
-        const title = profile.preferredJobTitles?.split(",")[0]?.trim();
+        // Career calibration answers set the starting defaults.
+        const profile = (await profileRes.json()) as {
+          preferredJobTitles?: string | null;
+          targetRole?: string | null;
+          experienceLevel?: string | null;
+          primaryStruggle?: string | null;
+        };
+        const title = profile.targetRole ?? profile.preferredJobTitles?.split(",")[0]?.trim();
         if (title) setRoleTitle(title);
+        if (profile.experienceLevel === "Mid") setDifficulty("Mid-Level");
+        if (profile.experienceLevel === "Senior") setDifficulty("Senior");
+        if (profile.primaryStruggle === "System Design") setCategory("System Design");
       }
       // The list omits questions, so fetch the recent answered sessions for their feedback.
       const answered = ((await listRes.json()) as Session[]).filter((s) => s.answeredCount > 0).slice(0, 10);
@@ -134,7 +164,12 @@ export function GraduateInterview() {
       const res = await fetch(`${API_BASE_URL}/api/grad/interview/sessions`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ targetRole: targetRole.slice(0, 80), useAi: questionSource === "ai" }),
+        body: JSON.stringify({
+          targetRole: targetRole.slice(0, 80),
+          useAi: questionSource === "ai",
+          interviewType: category === "System Design" ? "Technical" : category,
+          difficulty: difficulty === "Junior" ? "Easy" : difficulty === "Mid-Level" ? "Medium" : "Hard",
+        }),
       });
       if (!res.ok) {
         setToast({ text: await errorMessage(res, "Could not start an interview session."), isError: true });
@@ -195,8 +230,9 @@ export function GraduateInterview() {
         return;
       }
       const graded = (await res.json()) as Question;
-      setSession({ ...session, questions: session.questions.map((q) => (q.id === graded.id ? graded : q)) });
-      const attempt = toAttempt(session, graded);
+      const updated = { ...session, questions: session.questions.map((q) => (q.id === graded.id ? graded : q)) };
+      setSession(updated);
+      const attempt = toAttempt(updated, graded);
       setLatestResult(attempt);
       setHistory((prev) => [attempt, ...prev.filter((h) => h.id !== attempt.id)]);
       setToast({ text: `Answer evaluated — Score: ${attempt.feedbackScore}/10.`, isError: false });
@@ -305,10 +341,10 @@ export function GraduateInterview() {
                     <select
                       value={category}
                       onChange={(e) => setCategory(e.target.value as Category)}
-                      disabled={questionSource === "curated"}
                       className="w-full rounded-control border border-border bg-bg px-3 py-2 text-sm text-text outline-none focus:border-primary"
                     >
                       <option value="Technical">Technical</option>
+                      <option value="HR">HR</option>
                       <option value="System Design">System Design</option>
                       <option value="Behavioral">Behavioral (STAR)</option>
                     </select>
@@ -420,6 +456,14 @@ export function GraduateInterview() {
                       </div>
                     )}
 
+                    {latestResult.weakest && (
+                      <RecoveryDrill
+                        key={latestResult.sessionId}
+                        sessionId={latestResult.sessionId}
+                        weakest={latestResult.weakest}
+                      />
+                    )}
+
                     <div>
                       <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-success">
                         Strengths
@@ -441,11 +485,25 @@ export function GraduateInterview() {
                         ))}
                       </ul>
                     </div>
+
+                    {latestResult.strongerAnswer && (
+                      <div>
+                        <div className="mb-1.5 text-xs font-semibold text-primary">A stronger answer could be</div>
+                        <p className="m-0 whitespace-pre-wrap text-xs text-text-secondary">{latestResult.strongerAnswer}</p>
+                      </div>
+                    )}
+                    <p className="m-0 text-xs text-text-muted">AI feedback is an estimate, not an employer decision or a certified assessment.</p>
                   </div>
                 )}
               </div>
             </Card>
           </div>
+
+          {weakestDimension(history) && history.length >= 3 && (
+            <Alert kind="info">
+              Across {history.length} graded answers your weakest area is {weakestDimension(history)}. Practise it with a recovery drill, then check your Career Journey.
+            </Alert>
+          )}
 
           {/* Questions of the running session */}
           {session && (

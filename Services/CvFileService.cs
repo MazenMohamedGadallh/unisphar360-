@@ -119,6 +119,14 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
     public async Task<CvDocument?> GetAsync(int userId, int cvId) =>
         await db.CvDocuments.FirstOrDefaultAsync(c => c.UserId == userId && c.Id == cvId);
 
+    /// <summary>Text of the newest uploaded CV, or null when there is none or it cannot be read.</summary>
+    public async Task<string?> GetLatestTextAsync(int userId)
+    {
+        var doc = await db.CvDocuments.Where(c => c.UserId == userId)
+            .OrderByDescending(c => c.UploadedAtUtc).FirstOrDefaultAsync();
+        return doc is null ? null : await GetEffectiveTextAsync(doc);
+    }
+
     public async Task<CvDocumentDto> SaveManualTextAsync(int userId, int cvId, string text)
     {
         var doc = await db.CvDocuments.FirstOrDefaultAsync(c => c.UserId == userId && c.Id == cvId)
@@ -185,7 +193,7 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
             {
                 ".txt" => File.ReadAllText(path, Encoding.UTF8),
                 ".docx" => ExtractDocx(path),
-                ".pdf" => ExtractPdf(path),
+                ".pdf" => ExtractPdfText(path),
                 _ => throw new NotSupportedException(ext)
             };
             text = CleanText(text ?? "");
@@ -202,7 +210,7 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
 
     private const int MinUsefulChars = 80;
 
-    internal static string ExtractDocx(string path)
+    public static string ExtractDocx(string path)
     {
         using var zip = ZipFile.OpenRead(path);
         var entry = zip.GetEntry("word/document.xml")
@@ -211,13 +219,31 @@ public class CvFileService(AppDbContext db, IWebHostEnvironment env, ILogger<CvF
         var xml = reader.ReadToEnd();
 
         var sb = new StringBuilder();
-        foreach (Match m in Regex.Matches(xml, @"<w:t[^>]*>(.*?)</w:t>", RegexOptions.Singleline))
+        // Paragraph and line-break ends become newlines, otherwise section headings cannot be found.
+        // Runs inside a paragraph are joined as is: Word splits single words across runs.
+        foreach (Match m in Regex.Matches(xml, @"<w:t(?:\s[^>]*)?>(.*?)</w:t>|</w:p>|<w:br\s*/>|<w:tab\s*/>", RegexOptions.Singleline))
         {
-            var decoded = System.Net.WebUtility.HtmlDecode(m.Groups[1].Value);
-            sb.Append(decoded);
-            sb.Append(' ');
+            if (m.Groups[1].Success) sb.Append(System.Net.WebUtility.HtmlDecode(m.Groups[1].Value));
+            else sb.Append(m.Value.StartsWith("<w:tab") ? ' ' : '\n');
         }
         return sb.ToString();
+    }
+
+    /// <summary>PdfPig reads embedded/CID fonts; the hand-rolled reader remains for files it rejects.</summary>
+    private string ExtractPdfText(string path)
+    {
+        try
+        {
+            using var pdf = UglyToad.PdfPig.PdfDocument.Open(path);
+            var text = string.Join("\n", pdf.GetPages()
+                .Select(p => UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor.ContentOrderTextExtractor.GetText(p)));
+            if (text.Trim().Length >= MinUsefulChars) return text;
+        }
+        catch (Exception ex)
+        {
+            logger.LogInformation("PdfPig could not read the PDF: {Reason}", ex.Message);
+        }
+        return ExtractPdf(path);
     }
 
     public static string ExtractPdf(string path)

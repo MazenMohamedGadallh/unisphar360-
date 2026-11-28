@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Alert, Button, Card, CardHeader, EmptyState, ErrorState, LoadingBlock } from "../components/ui";
 import { clearToken } from "../lib/api";
 import { gradFetch } from "../lib/grad";
 import { UiIcon } from "../UiIcon";
+import { CareerQuest } from "../components/CareerQuest";
 import "./dashboard.css";
 
 interface GraduateProfile {
@@ -44,26 +45,17 @@ interface SkillGapAnalysis {
   skillsToLearnNext: Array<{ skill: string; jobsRequiring: string; priority: string }>;
 }
 
-const DEFAULT_ROLES = [
-  "Full-Stack / Backend Software Engineer",
-  "Backend Software Engineer",
-  "Frontend / React Engineer",
-  "AI / ML Engineer",
-  "Cloud & DevOps Engineer",
-  "Data Engineer",
-];
-
 export function GraduateRoadmap() {
   const navigate = useNavigate();
-  const routeLoc = useLocation();
-  const [activeTab, setActiveTab] = useState<"skill-gap" | "roadmap">(
-    routeLoc.pathname.includes("skill-gap") ? "skill-gap" : "skill-gap",
+  const [activeTab, setActiveTab] = useState<"quest" | "skill-gap" | "roadmap">(
+    window.location.pathname.includes("skill-gap") ? "skill-gap" : "quest",
   );
 
   const [profile, setProfile] = useState<GraduateProfile | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [analysis, setAnalysis] = useState<SkillGapAnalysis | null>(null);
-  const [selectedRole, setSelectedRole] = useState(DEFAULT_ROLES[0]);
+  const [selectedRole, setSelectedRole] = useState("");
+  const [roles, setRoles] = useState<string[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -77,7 +69,7 @@ export function GraduateRoadmap() {
   const [generatingAi, setGeneratingAi] = useState(false);
 
   useEffect(() => {
-    document.title = "Skills & Roadmap — UniSphere 360+";
+    document.title = "Quizzes and Plan - UniSphere 360+";
   }, []);
 
   const runSkillGapAnalyze = useCallback(async (roleOverride?: string, silent = false) => {
@@ -112,7 +104,7 @@ export function GraduateRoadmap() {
     const view: GraduateProfile = {
       headline: server.headline ?? "",
       summary: server.careerSummary ?? "",
-      targetRole: server.preferredJobTitles?.split(",")[0]?.trim() ?? "",
+      targetRole: server.targetRole ?? server.preferredJobTitles?.split(",")[0]?.trim() ?? "",
       location: server.preferredLocations ?? "",
       linkedinUrl: server.linkedInUrl ?? "",
       githubUrl: server.gitHubUrl ?? "",
@@ -130,8 +122,15 @@ export function GraduateRoadmap() {
     setLoading(true);
     setError(null);
     try {
-      const [view] = await Promise.all([fetchSkills(), fetchMilestones()]);
-      const role = view.targetRole || DEFAULT_ROLES[0];
+      const [view, calibration] = await Promise.all([
+        fetchSkills(),
+        gradFetch<{ roles: string[]; targetRole: string | null }>("graduate/profile/onboarding"),
+        fetchMilestones(),
+      ]);
+      setRoles(calibration.roles);
+      // Only catalog roles can be benchmarked; anything else lets the server pick its default.
+      const wanted = calibration.targetRole ?? view.targetRole;
+      const role = calibration.roles.includes(wanted) ? wanted : "";
       setSelectedRole(role);
       await runSkillGapAnalyze(role, true);
     } catch (e) {
@@ -253,13 +252,13 @@ export function GraduateRoadmap() {
 
   const completedCount = milestones.filter((m) => m.completed).length;
   const progressPct = milestones.length ? Math.round((completedCount / milestones.length) * 100) : 0;
-  const roleOptions = Array.from(new Set([...DEFAULT_ROLES, selectedRole]));
+  const roleOptions = Array.from(new Set([...roles, selectedRole].filter(Boolean)));
 
   return (
     <div className="dashboard">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="m-0 text-2xl font-semibold text-text">Skills &amp; Roadmap</h1>
+          <h1 className="m-0 text-2xl font-semibold text-text">Quizzes and Plan</h1>
           <p className="mt-1 text-sm text-text-secondary">
             Benchmark your skills against target roles, see exact coverage %, and track your interactive learning roadmap.
           </p>
@@ -309,11 +308,20 @@ export function GraduateRoadmap() {
             </div>
           </div>
 
-          {/* 2 Tabs: Skill gap | Roadmap */}
-          <div className="mb-5 inline-flex rounded-control border border-border bg-card p-1">
+          {/* Tabs: Career Quest | Skill gap | Roadmap */}
+          <div className="mb-5 inline-flex flex-wrap rounded-control border border-border bg-card p-1">
             <button
               type="button"
-              onClick={() => setActiveTab("skill-gap")}
+              onClick={() => setActiveTab("quest")}
+              className={`cursor-pointer rounded-md border-0 px-4 py-1.5 text-xs font-semibold transition ${
+                activeTab === "quest" ? "bg-primary text-white" : "bg-transparent text-text-secondary hover:text-text"
+              }`}
+            >
+              Career Quest
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/graduate/skill-gap")}
               className={`cursor-pointer rounded-md border-0 px-4 py-1.5 text-xs font-semibold transition ${
                 activeTab === "skill-gap"
                   ? "bg-primary text-white"
@@ -335,7 +343,9 @@ export function GraduateRoadmap() {
             </button>
           </div>
 
-          {activeTab === "skill-gap" ? (
+          {activeTab === "quest" ? (
+            <CareerQuest />
+          ) : activeTab === "skill-gap" ? (
             <div className="flex flex-col gap-6">
               {/* Target Role Selector + Analyze Button */}
               <Card className="p-5">

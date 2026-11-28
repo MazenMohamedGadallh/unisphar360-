@@ -12,13 +12,20 @@ public class JobCatalogService(AppDbContext db, IHttpClientFactory httpFactory, 
 {
     public const int ThrottleMinutes = 5;
 
+    /// <summary>Seeded sample listings are only a placeholder until the live feed has delivered real ones.</summary>
+    public static async Task<IQueryable<JobListing>> CurrentListingsAsync(AppDbContext db)
+    {
+        var active = db.JobListings.AsNoTracking().Where(j => j.IsActive);
+        return await active.AnyAsync(j => j.Source != "Demo") ? active.Where(j => j.Source != "Demo") : active;
+    }
+
     public async Task<PagedJobsDto> SearchAsync(int userId, int page, int pageSize,
         string? search, string? location, string? industry, string? remote, string? sort)
     {
         page = Math.Clamp(page, 1, 200);
         pageSize = Math.Clamp(pageSize, 1, 50);
 
-        var q = db.JobListings.AsNoTracking().Where(j => j.IsActive);
+        var q = await CurrentListingsAsync(db);
 
         if (!string.IsNullOrWhiteSpace(search))
         {

@@ -512,9 +512,11 @@ export function Chat() {
           <div className="flex items-center gap-3">
             <BrandLogo size={34} />
             <div>
-              <h1 className="m-0 text-base font-bold text-text">UniSphere AI Assistant</h1>
+              <h1 className="m-0 text-base font-bold text-text">{user?.role === "Graduate" ? "AI Career Coach" : "UniSphere AI Assistant"}</h1>
               <p className="m-0 text-xs text-text-secondary">
-                {provider === "rag" || provider === "rag-local"
+                {user?.role === "Graduate"
+                  ? "Uses your profile, CV and progress. Keyword search over your own documents."
+                  : provider === "rag" || provider === "rag-local"
                   ? "Strict BM25 Course RAG + Live UniSphere Context"
                   : "Hybrid University Context + General AI Knowledge"}
               </p>

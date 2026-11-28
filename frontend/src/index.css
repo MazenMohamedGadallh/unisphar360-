@@ -95,6 +95,13 @@
   --shadow-card-lg: 0 20px 44px rgb(9 5 24 / 0.68);
 }
 
+@media print {
+  aside,
+  header.sticky {
+    display: none !important;
+  }
+}
+
 @layer base {
   * {
     box-sizing: border-box;
