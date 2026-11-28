@@ -4,6 +4,7 @@ import { Alert, Button, Card, CardHeader, EmptyState, ErrorState, LoadingBlock, 
 import { clearToken } from "../lib/api";
 import { gradFetch } from "../lib/grad";
 import { UiIcon } from "../UiIcon";
+import { OutreachModal, PrepareJobDrawer } from "../components/JobAi";
 import "./dashboard.css";
 
 interface JobMatch {
@@ -17,6 +18,8 @@ interface JobMatch {
   description: string;
   postedAtUtc: string;
   sourceUrl?: string;
+  isSample?: boolean;
+  source?: string;
   matchedSkills: string[];
   missingSkills: string[];
   matchPercent: number;
@@ -50,6 +53,8 @@ export function GraduateJobs() {
 
   const [page, setPage] = useState(1);
   const [openedJob, setOpenedJob] = useState<JobMatch | null>(null);
+  const [preparing, setPreparing] = useState<JobMatch | null>(null);
+  const [drafting, setDrafting] = useState<JobMatch | null>(null);
 
   useEffect(() => {
     document.title = "Jobs — UniSphere 360+";
@@ -68,6 +73,8 @@ export function GraduateJobs() {
       id: j.id,
       title: j.title,
       company: j.companyName,
+      isSample: j.source === "Demo",
+      source: j.source,
       location: j.location,
       workMode: j.remote ? "Remote" : "On-site",
       salaryRange: j.salary || "Salary not listed",
@@ -517,11 +524,23 @@ export function GraduateJobs() {
                               )}
                             </div>
                             <div className="mt-1 text-xs text-text-secondary">
+                              {job.isSample && <span className="mr-1 rounded-md bg-warning-light px-1.5 py-0.5 font-semibold text-warning">Sample listing, not a real vacancy</span>}
+                              {!job.isSample && job.source && <span className="mr-1">via {job.source}.</span>}
                               <strong className="text-text">{job.company}</strong> · {job.location} ({job.workMode}) ·{" "}
                               <span className="dash-num font-medium text-text">{job.salaryRange}</span>
                             </div>
                           </div>
                           <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="secondary" to={`/graduate/skill-gap?jobId=${job.id}`}>
+                              Check my evidence
+                            </Button>
+                            <Button size="sm" onClick={() => setPreparing(job)}>
+                              <UiIcon name="sparkles" />
+                              Prepare for this job
+                            </Button>
+                            <Button size="sm" variant="secondary" onClick={() => setDrafting(job)}>
+                              Draft Pitch / Cover Letter
+                            </Button>
                             <Button
                               size="sm"
                               variant="secondary"
@@ -598,6 +617,9 @@ export function GraduateJobs() {
           )}
         </>
       )}
+
+      {preparing && <PrepareJobDrawer job={preparing} onClose={() => setPreparing(null)} />}
+      {drafting && <OutreachModal job={drafting} onClose={() => setDrafting(null)} />}
 
       {/* Job Details Modal ("Open") */}
       {openedJob && (

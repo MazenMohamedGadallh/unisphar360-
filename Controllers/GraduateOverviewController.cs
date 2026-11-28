@@ -8,6 +8,7 @@ namespace UniSphere.Api.Controllers;
 [ApiController]
 [Authorize(Roles = "Graduate")]
 [Route("api/grad/overview")]
+[Route("api/graduate/overview")]
 public class GraduateOverviewController(GraduateCareerService career, GraduateNotificationService notifications) : ControllerBase
 {
     private int UserId => User.GetUserId();

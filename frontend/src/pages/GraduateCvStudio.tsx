@@ -5,6 +5,7 @@ import { UserAvatar } from "../components/UserAvatar";
 import { clearToken, notifyUserUpdated, type AuthUser } from "../lib/api";
 import { gradFetch, loadGradCareer } from "../lib/grad";
 import { UiIcon } from "../UiIcon";
+import { CareerCalibration } from "../components/CareerCalibration";
 import "./dashboard.css";
 
 interface GraduateProfile {
@@ -357,6 +358,7 @@ export function GraduateCvStudio() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <CareerCalibration onSaved={() => void load()} />
           <Button size="sm" variant="secondary" to="/graduate/jobs">
             <UiIcon name="briefcase" />
             See Matched Jobs

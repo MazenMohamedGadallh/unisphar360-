@@ -6,7 +6,7 @@ public static class CareerCatalog
 {
     public static readonly Dictionary<string, string> SkillRegexes = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["C#"] = @"\bc#|csharp|\bnet\b|\.net\b",
+        ["C#"] = @"\bc#|csharp|\.net\b",
         ["ASP.NET"] = @"asp\.?net",
         ["Java"] = @"\bjava\b(?!script)",
         ["Spring Boot"] = @"spring\s?boot",
@@ -49,6 +49,25 @@ public static class CareerCatalog
         ["Power BI / Tableau"] = @"power\s?bi|tableau",
         ["Excel"] = @"\bexcel\b",
     };
+
+    public static readonly string[] Struggles = ["CV / ATS", "Technical Interviews", "Problem Solving", "System Design", "Missing Skills"];
+    public static readonly string[] ExperienceLevels = ["Entry-level", "Mid", "Senior"];
+    public static readonly string[] CalibrationWorkModes = ["Remote", "Hybrid", "Onsite"];
+
+    /// <summary>Career Quest curriculum for a role: level titles and what each quiz covers.</summary>
+    public static (string Title, string Topic)[] QuestLevels(string role)
+    {
+        var core = RoleSkills.TryGetValue(role, out var skills) ? string.Join(", ", skills.Take(3)) : $"the core tools of a {role}";
+        return
+        [
+            ("Git & Clean Code", "version control workflows, code review and readable, maintainable code"),
+            ("Core Stack", $"{core} as used by a {role}"),
+            ("Databases & Data", "data modelling, queries, indexing and data integrity"),
+            ("APIs & Architecture", "API design, system architecture, scalability and trade-offs"),
+            ("Testing & DevOps", "automated testing, CI/CD, deployment and debugging in production"),
+            ("Mock Interview Readiness", "mixed technical and behavioral (STAR) interview scenarios")
+        ];
+    }
 
     public static readonly Dictionary<string, string[]> RoleSkills = new(StringComparer.OrdinalIgnoreCase)
     {

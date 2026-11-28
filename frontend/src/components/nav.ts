@@ -8,18 +8,25 @@ export interface NavItem {
   label: string;
   icon: string;
   end?: boolean;
+  /** Sidebar section heading, shown above the first item that carries it. */
+  group?: string;
 }
 
 const GRADUATE_NAV: NavItem[] = [
-  { to: "/graduate", label: "Career Overview", icon: "house", end: true },
-  { to: "/graduate/cv", label: "CV & Resume Studio", icon: "file-text" },
-  { to: "/graduate/jobs", label: "Jobs", icon: "briefcase" },
-  { to: "/graduate/roadmap", label: "Skills & Roadmap", icon: "map" },
-  { to: "/graduate/applications", label: "My Applications", icon: "clipboard-check" },
-  { to: "/graduate/interview", label: "AI Interview Coach", icon: "mic" },
+  { to: "/graduate", label: "Dashboard", icon: "house", end: true, group: "Overview" },
+  { to: "/graduate/profile", label: "Career Profile", icon: "user-round" },
+  { to: "/graduate/journey", label: "Career Journey", icon: "map" },
+  { to: "/graduate/reports", label: "Career Reports", icon: "chart-no-axes-combined" },
+  { to: "/graduate/cv", label: "CV Analysis", icon: "file-text", group: "Career development" },
+  { to: "/graduate/skill-gap", label: "Skill Gap Analysis", icon: "target" },
+  { to: "/graduate/skill-lab", label: "Skill Proof Lab", icon: "award" },
+  { to: "/graduate/portfolio", label: "Portfolio Builder", icon: "book-open" },
+  { to: "/graduate/assistant", label: "AI Career Coach", icon: "sparkles", group: "AI tools" },
+  { to: "/graduate/interview", label: "Mock Interview", icon: "mic" },
+  { to: "/graduate/jobs", label: "Job Opportunities", icon: "briefcase", group: "Opportunities" },
+  { to: "/graduate/applications", label: "Applications", icon: "clipboard-check" },
   { to: "/graduate/alumni", label: "Campus", icon: "landmark" },
   { to: "/research-hub", label: "Research Hub", icon: "microscope" },
-  { to: "/graduate/assistant", label: "AI Assistant", icon: "sparkles" },
 ];
 
 const DOCTOR_NAV: NavItem[] = [

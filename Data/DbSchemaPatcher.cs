@@ -224,6 +224,74 @@ public static class DbSchemaPatcher
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_GraduateSettings_UserId ON GraduateSettings(UserId);
 
+                CREATE TABLE IF NOT EXISTS GraduateQuestProgress (
+                    Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    UserId INTEGER NOT NULL,
+                    UnlockedLevel INTEGER NOT NULL DEFAULT 1,
+                    Xp INTEGER NOT NULL DEFAULT 0,
+                    QuizAttempts INTEGER NOT NULL DEFAULT 0,
+                    ReadinessPercent INTEGER NOT NULL DEFAULT 0,
+                    PendingQuizJson TEXT,
+                    PendingDrillJson TEXT,
+                    UpdatedAtUtc TEXT NOT NULL,
+                    CONSTRAINT FK_GraduateQuestProgress_Users_UserId FOREIGN KEY (UserId) REFERENCES Users (Id) ON DELETE CASCADE
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_GraduateQuestProgress_UserId ON GraduateQuestProgress(UserId);
+
+                CREATE TABLE IF NOT EXISTS PortfolioProjects (
+                    Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    UserId INTEGER NOT NULL,
+                    Title TEXT NOT NULL,
+                    Description TEXT NOT NULL,
+                    Problem TEXT,
+                    Technologies TEXT,
+                    Role TEXT,
+                    Outcomes TEXT,
+                    Skills TEXT,
+                    GitHubUrl TEXT,
+                    DemoUrl TEXT,
+                    CreatedAtUtc TEXT NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL,
+                    CONSTRAINT FK_PortfolioProjects_Users_UserId FOREIGN KEY (UserId) REFERENCES Users (Id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS IX_PortfolioProjects_UserId ON PortfolioProjects(UserId);
+
+                CREATE TABLE IF NOT EXISTS SkillChallengeAttempts (
+                    Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    UserId INTEGER NOT NULL,
+                    Skill TEXT NOT NULL,
+                    Difficulty TEXT NOT NULL,
+                    ChallengeJson TEXT NOT NULL,
+                    SubmissionJson TEXT,
+                    Score INTEGER,
+                    Passed INTEGER NOT NULL DEFAULT 0,
+                    Feedback TEXT,
+                    CreatedAtUtc TEXT NOT NULL,
+                    SubmittedAtUtc TEXT,
+                    CONSTRAINT FK_SkillChallengeAttempts_Users_UserId FOREIGN KEY (UserId) REFERENCES Users (Id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS IX_SkillChallengeAttempts_UserId ON SkillChallengeAttempts(UserId);
+
+                CREATE TABLE IF NOT EXISTS XpTransactions (
+                    Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    UserId INTEGER NOT NULL,
+                    "Key" TEXT NOT NULL,
+                    Amount INTEGER NOT NULL,
+                    Reason TEXT NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL,
+                    CONSTRAINT FK_XpTransactions_Users_UserId FOREIGN KEY (UserId) REFERENCES Users (Id) ON DELETE CASCADE
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_XpTransactions_UserId_Key ON XpTransactions(UserId, "Key");
+
+                CREATE TABLE IF NOT EXISTS CareerReports (
+                    Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    UserId INTEGER NOT NULL,
+                    ReportJson TEXT NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL,
+                    CONSTRAINT FK_CareerReports_Users_UserId FOREIGN KEY (UserId) REFERENCES Users (Id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS IX_CareerReports_UserId ON CareerReports(UserId);
+
                 CREATE TABLE IF NOT EXISTS JobSyncStates (
                     Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
                     Source TEXT NOT NULL DEFAULT 'Remotive',
@@ -255,6 +323,26 @@ public static class DbSchemaPatcher
                 "ALTER TABLE CvAnalyses ADD COLUMN ReportJson TEXT NOT NULL DEFAULT '{}'");
             EnsureTableColumn(cmd, "InterviewQuestions", "FeedbackDetailsJson",
                 "ALTER TABLE InterviewQuestions ADD COLUMN FeedbackDetailsJson TEXT NULL");
+
+            foreach (var column in new[] { "TargetRole", "PrimaryStruggle", "PreferredWorkMode", "PreferredCity" })
+                EnsureTableColumn(cmd, "GraduateProfiles", column,
+                    $"ALTER TABLE GraduateProfiles ADD COLUMN {column} TEXT NULL");
+            EnsureTableColumn(cmd, "GraduateProfiles", "HasCompletedOnboarding",
+                "ALTER TABLE GraduateProfiles ADD COLUMN HasCompletedOnboarding INTEGER NOT NULL DEFAULT 0");
+
+            foreach (var column in new[] { "SkippedLevelsCsv", "PrepJson" })
+                EnsureTableColumn(cmd, "GraduateQuestProgress", column,
+                    $"ALTER TABLE GraduateQuestProgress ADD COLUMN {column} TEXT NULL");
+
+            foreach (var (table, column, definition) in new[]
+            {
+                ("GraduateProfiles", "CareerChallenges", "TEXT NULL"),
+                ("GraduateProfiles", "CareerDnaJson", "TEXT NULL"),
+                ("InterviewSessions", "InterviewType", "TEXT NOT NULL DEFAULT 'Technical'"),
+                ("InterviewSessions", "Difficulty", "TEXT NOT NULL DEFAULT 'Medium'"),
+                ("JobApplications", "InterviewAtUtc", "TEXT NULL")
+            })
+                EnsureTableColumn(cmd, table, column, $"ALTER TABLE {table} ADD COLUMN {column} {definition}");
 
             cmd.CommandText = """
                 CREATE TABLE IF NOT EXISTS CourseAssignments (
@@ -334,7 +422,14 @@ public static class DbSchemaPatcher
         if (!exists)
         {
             cmd.CommandText = alterSql;
-            cmd.ExecuteNonQuery();
+            try
+            {
+                cmd.ExecuteNonQuery();
+            }
+            catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.Message.Contains("duplicate column name"))
+            {
+                // Another instance added it between the probe and the ALTER.
+            }
         }
     }
 }

@@ -4,9 +4,11 @@ import { Alert, Button, Card, CardHeader, ConfirmDialog, EmptyState, ErrorState,
 import { clearToken } from "../lib/api";
 import { gradFetch } from "../lib/grad";
 import { UiIcon } from "../UiIcon";
+import { OutreachModal, type JobRef } from "../components/JobAi";
+import { ApplicationInsights } from "../components/ApplicationInsights";
 import "./dashboard.css";
 
-type AppStatus = "Applied" | "Interview" | "Offer" | "Rejected" | "Withdrawn";
+type AppStatus = "Applied" | "Under Review" | "Interview" | "Assessment" | "Offer" | "Rejected" | "Withdrawn";
 
 /* GET /api/grad/applications */
 interface ApplicationItem {
@@ -16,13 +18,14 @@ interface ApplicationItem {
   companyName: string;
   sourceUrl: string | null;
   followUpDate: string | null;
+  interviewAtUtc: string | null;
   status: AppStatus;
   notes: string | null;
   appliedAtUtc: string;
   updatedAtUtc: string;
 }
 
-const STAGES: AppStatus[] = ["Applied", "Interview", "Offer", "Rejected", "Withdrawn"];
+const STAGES: AppStatus[] = ["Applied", "Under Review", "Interview", "Assessment", "Offer", "Rejected", "Withdrawn"];
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" });
 
@@ -45,6 +48,7 @@ export function GraduateApplications() {
   const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
   const [followUpDrafts, setFollowUpDrafts] = useState<Record<number, string>>({});
   const [pendingDelete, setPendingDelete] = useState<ApplicationItem | null>(null);
+  const [drafting, setDrafting] = useState<JobRef | null>(null);
 
   // "Add an application" custom form
   const [company, setCompany] = useState("");
@@ -235,6 +239,8 @@ export function GraduateApplications() {
             </div>
           </div>
 
+          <ApplicationInsights version={apps.map((a) => `${a.id}:${a.status}:${a.interviewAtUtc}`).join()} />
+
           {/* Add an application Form */}
           <Card className="mb-6">
             <CardHeader title="Add an application" />
@@ -393,6 +399,18 @@ export function GraduateApplications() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
+                          {/* Drafts need a job description, so only rows linked to a listing offer them. */}
+                          {item.jobListingId !== null && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() =>
+                                setDrafting({ id: item.jobListingId!, title: item.jobTitle, company: item.companyName })
+                              }
+                            >
+                              Draft Pitch / Cover Letter
+                            </Button>
+                          )}
                           <select
                             aria-label={`Status for ${item.jobTitle}`}
                             disabled={busyId === item.id}
@@ -430,11 +448,27 @@ export function GraduateApplications() {
                             className="rounded-control border border-border bg-bg px-2.5 py-1 text-xs text-text outline-none focus:border-primary"
                           />
                         </label>
+                        <label className="flex items-center gap-1.5 text-xs text-text-secondary">
+                          <span>Interview:</span>
+                          <input
+                            type="date"
+                            value={item.interviewAtUtc?.slice(0, 10) ?? ""}
+                            disabled={busyId === item.id}
+                            onChange={(e) => {
+                              const interviewAtUtc = e.target.value;
+                              if (!interviewAtUtc) return;
+                              void gradFetch(`grad/applications/${item.id}`, { method: "PUT", body: JSON.stringify({ interviewAtUtc }) })
+                                .then(() => setApps((prev) => prev.map((a) => (a.id === item.id ? { ...a, interviewAtUtc } : a))))
+                                .catch(() => setToast({ text: "Could not save the interview date.", isError: true }));
+                            }}
+                            className="rounded-control border border-border bg-bg px-2.5 py-1 text-xs text-text outline-none focus:border-primary"
+                          />
+                        </label>
                         <input
                           type="text"
                           value={noteDrafts[item.id] ?? ""}
                           onChange={(e) => setNoteDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                          placeholder="Add interview dates, recruiter contact, or prep notes…"
+                          placeholder="Recruiter contact, feedback received, prep notes…"
                           className="min-w-[200px] flex-1 rounded-control border border-border bg-bg px-3 py-1.5 text-xs text-text outline-none focus:border-primary"
                         />
                         <Button
@@ -454,6 +488,8 @@ export function GraduateApplications() {
           </Card>
         </>
       )}
+
+      {drafting && <OutreachModal job={drafting} onClose={() => setDrafting(null)} />}
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}

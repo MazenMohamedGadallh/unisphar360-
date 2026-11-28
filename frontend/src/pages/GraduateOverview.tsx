@@ -4,6 +4,7 @@ import { Button, Card, CardHeader, EmptyState, ErrorState, LoadingBlock, StatusB
 import { clearToken } from "../lib/api";
 import { gradFetch, loadGradCareer } from "../lib/grad";
 import { UiIcon } from "../UiIcon";
+import { CareerCalibration } from "../components/CareerCalibration";
 import "./dashboard.css";
 
 interface GraduateProfile {
@@ -24,6 +25,8 @@ interface OverviewKpis {
   activeApplicationsCount: number;
   followUpsDueCount: number;
   roadmapProgressPercent: number;
+  jobReadinessPercent: number;
+  xp: number;
 }
 
 interface NextActionItem {
@@ -124,6 +127,8 @@ export function GraduateOverview() {
           activeApplicationsCount: overview.applicationsInProgress,
           followUpsDueCount: overview.upcomingFollowUpsCount,
           roadmapProgressPercent: overview.roadmapProgressPercent,
+          jobReadinessPercent: overview.jobReadinessPercent,
+          xp: overview.xp,
         },
         nextActions: overview.nextActions.map((title: string) => ({
           id: title,
@@ -145,7 +150,7 @@ export function GraduateOverview() {
         navigate("/login?expired=1");
         return;
       }
-      setError("Could not load Career Overview.");
+      setError(`Could not load Career Overview. ${(e as Error).message}`);
     } finally {
       setLoading(false);
     }
@@ -166,7 +171,14 @@ export function GraduateOverview() {
               : "Live graduate career command center — profile completion, job matches, follow-ups, and next actions."}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {data && (
+            <Button size="sm" variant="ghost" to="/graduate/roadmap" title="Open your Career Quest">
+              <UiIcon name="award" />
+              Job Readiness {data.kpis.jobReadinessPercent}% · {data.kpis.xp} XP
+            </Button>
+          )}
+          <CareerCalibration autoOpen onSaved={() => void load()} />
           <Button size="sm" variant="secondary" onClick={() => void load()}>
             <UiIcon name="refresh-cw" />
             Refresh

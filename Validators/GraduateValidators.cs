@@ -56,7 +56,7 @@ public class ProfileEntryCreateRequestValidator : AbstractValidator<ProfileEntry
 
 public class ApplicationCreateRequestValidator : AbstractValidator<ApplicationCreateRequest>
 {
-    private static readonly string[] Statuses = ["Applied", "Interview", "Offer", "Rejected", "Withdrawn"];
+    private static readonly string[] Statuses = UniSphere.Api.Services.JobApplicationService.Statuses;
 
     public ApplicationCreateRequestValidator()
     {
@@ -66,7 +66,7 @@ public class ApplicationCreateRequestValidator : AbstractValidator<ApplicationCr
             .When(x => x.JobListingId is null);
         RuleFor(x => x.Status)
             .Must(s => string.IsNullOrWhiteSpace(s) || Statuses.Contains(s.Trim(), StringComparer.OrdinalIgnoreCase))
-            .WithMessage("Status must be one of: Applied, Interview, Offer, Rejected, Withdrawn.");
+            .WithMessage("Status must be one of: Applied, Under Review, Interview, Assessment, Offer, Rejected, Withdrawn.");
         RuleFor(x => x.SourceUrl).Must(GraduateProfileUpdateRequestValidator.BeUrl)
             .WithMessage("Source URL must start with http(s)://")
             .When(x => !string.IsNullOrWhiteSpace(x.SourceUrl));
@@ -76,13 +76,13 @@ public class ApplicationCreateRequestValidator : AbstractValidator<ApplicationCr
 
 public class ApplicationUpdateRequestValidator : AbstractValidator<ApplicationUpdateRequest>
 {
-    private static readonly string[] Statuses = ["Applied", "Interview", "Offer", "Rejected", "Withdrawn"];
+    private static readonly string[] Statuses = UniSphere.Api.Services.JobApplicationService.Statuses;
 
     public ApplicationUpdateRequestValidator()
     {
         RuleFor(x => x.Status)
             .Must(s => string.IsNullOrWhiteSpace(s) || Statuses.Contains(s.Trim(), StringComparer.OrdinalIgnoreCase))
-            .WithMessage("Status must be one of: Applied, Interview, Offer, Rejected, Withdrawn.")
+            .WithMessage("Status must be one of: Applied, Under Review, Interview, Assessment, Offer, Rejected, Withdrawn.")
             .When(x => x.Status is not null);
         RuleFor(x => x.Notes).MaximumLength(2000).When(x => x.Notes is not null);
     }

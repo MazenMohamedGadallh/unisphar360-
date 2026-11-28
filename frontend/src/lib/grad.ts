@@ -16,6 +16,8 @@ export interface GradProfile {
   experienceLevel: string;
   languages: string | null;
   careerGoal: string | null;
+  targetRole: string | null;
+  primaryStruggle: string | null;
   completionPercent: number;
   skills: { id: number; name: string }[];
 }
@@ -59,3 +61,5 @@ export async function loadGradCareer() {
   const analyses = cv ? await gradFetch<CvAnalysis[]>(`grad/profile/cv/${cv.id}/analyses`) : [];
   return { profile, cv, analysis: analyses[0] ?? null };
 }
+
+export const onboardingSkippedKey = (userId: number) => `unisphere.onboarding.skipped.${userId}`;

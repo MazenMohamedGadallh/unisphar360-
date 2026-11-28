@@ -8,7 +8,8 @@ namespace UniSphere.Api.Services;
 public class GraduateCareerService(
     AppDbContext db,
     GraduateProfileService profileService,
-    JobMatchingService matcher)
+    JobMatchingService matcher,
+    RoadmapService quest)
 {
     private static readonly string[] CareerEventKeywords = ["career", "job", "hiring", "recruit", "resume", "cv", "internship", "employer", "company", "workshop", "fair", "interview", "alumni"];
 
@@ -59,6 +60,9 @@ public class GraduateCareerService(
         var unread = await db.Notifications.AsNoTracking()
             .Where(n => n.UserId == userId && !n.IsRead).CountAsync();
 
+        var questState = await quest.GetQuestAsync(userId);
+        var onboarded = await db.GraduateProfiles.AnyAsync(p => p.UserId == userId && p.HasCompletedOnboarding);
+
         return new GraduateOverviewDto(
             user.FirstName, user.FullName,
             completion.Percent, completion.MissingFields,
@@ -71,7 +75,8 @@ public class GraduateCareerService(
             NextActions(completion.MissingFields, latestCv, lastAnalysis, upcomingFollowUps, topGaps),
             [.. events.Take(4).Select(e => new GradEventDto(e.Id, e.Title, e.Location, e.StartsAtUtc, e.Description))],
             [.. activity.Select(a => new GradActivityDto(a.Id, a.Kind, a.Message, a.CreatedAtUtc))],
-            unread, analysisCount
+            unread, analysisCount,
+            onboarded, questState.ReadinessPercent, questState.Xp
         );
 
         static List<string> NextActions(IReadOnlyList<string> missing, CvDocument? cv, CvAnalysis? analysis,

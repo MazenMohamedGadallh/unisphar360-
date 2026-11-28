@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { UiIcon } from "../UiIcon";
 import { BrandLogo } from "./BrandLogo";
@@ -214,8 +214,9 @@ export function AppLayout() {
             {user?.role ? `${user.role} Workspace` : "Workspace"}
           </div>
           {navItems.map((item) => (
+            <Fragment key={item.to}>
+            {item.group && <div className="px-3 pt-3 pb-1 text-xs font-semibold text-text-muted">{item.group}</div>}
             <NavLink
-              key={item.to}
               to={item.to}
               end={item.end}
               className={navLinkClass}
@@ -226,6 +227,7 @@ export function AppLayout() {
               </span>
               <span className="truncate whitespace-nowrap">{item.label}</span>
             </NavLink>
+            </Fragment>
           ))}
 
           {/* Collapsible QUICK LINKS Section */}

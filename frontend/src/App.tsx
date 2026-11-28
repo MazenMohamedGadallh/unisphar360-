@@ -11,8 +11,15 @@ import { ExamResults } from "./pages/ExamResults";
 import { ExamAssistant } from "./pages/ExamAssistant";
 import { DoctorWorkspace } from "./pages/DoctorWorkspace";
 import { DoctorResearch } from "./pages/DoctorResearch";
-import { GraduateOverview } from "./pages/GraduateOverview";
-import { GraduateCvStudio } from "./pages/GraduateCvStudio";
+import { GraduateDashboard } from "./pages/GraduateDashboard";
+import { GraduateOnboarding } from "./pages/GraduateOnboarding";
+import { GraduateCareerProfile } from "./pages/GraduateCareerProfile";
+import { GraduateCvAnalysis } from "./pages/GraduateCvAnalysis";
+import { GraduateJourney } from "./pages/GraduateJourney";
+import { GraduateSkillGap } from "./pages/GraduateSkillGap";
+import { GraduateSkillLab } from "./pages/GraduateSkillLab";
+import { GraduatePortfolio } from "./pages/GraduatePortfolio";
+import { GraduateReports } from "./pages/GraduateReports";
 import { GraduateJobs } from "./pages/GraduateJobs";
 import { GraduateRoadmap } from "./pages/GraduateRoadmap";
 import { GraduateApplications } from "./pages/GraduateApplications";
@@ -64,15 +71,20 @@ export default function App() {
         <Route path="/doctor/research" element={<DoctorResearch />} />
         <Route path="/research" element={<DoctorResearch />} />
 
-        {/* Graduate (all 8 sections + legacy aliases) */}
-        <Route path="/graduate" element={<GraduateOverview />} />
-        <Route path="/graduate/overview" element={<GraduateOverview />} />
-        <Route path="/graduate/cv" element={<GraduateCvStudio />} />
-        <Route path="/graduate/profile" element={<GraduateCvStudio />} />
+        {/* Graduate: career journey */}
+        <Route path="/graduate" element={<GraduateDashboard />} />
+        <Route path="/graduate/overview" element={<GraduateDashboard />} />
+        <Route path="/graduate/onboarding" element={<GraduateOnboarding />} />
+        <Route path="/graduate/profile" element={<GraduateCareerProfile />} />
+        <Route path="/graduate/cv" element={<GraduateCvAnalysis />} />
+        <Route path="/graduate/journey" element={<GraduateJourney />} />
+        <Route path="/graduate/skill-gap" element={<GraduateSkillGap />} />
+        <Route path="/graduate/skill-lab" element={<GraduateSkillLab />} />
+        <Route path="/graduate/portfolio" element={<GraduatePortfolio />} />
+        <Route path="/graduate/reports" element={<GraduateReports />} />
         <Route path="/graduate/jobs" element={<GraduateJobs />} />
         <Route path="/graduate/matches" element={<GraduateJobs />} />
         <Route path="/graduate/roadmap" element={<GraduateRoadmap />} />
-        <Route path="/graduate/skill-gap" element={<GraduateRoadmap />} />
         <Route path="/graduate/insights" element={<GraduateRoadmap />} />
         <Route path="/graduate/applications" element={<GraduateApplications />} />
         <Route path="/graduate/interview" element={<GraduateInterview />} />

@@ -453,12 +453,34 @@ public sealed class AiGroundingService : IAiGroundingService
         if (apps.Count > 0)
             sb.AppendLine("Applications: " + string.Join("; ", apps.Select(a => $"{a.JobTitle} at {a.CompanyName} ({a.Status})")) + ".");
 
+        var analysis = await _db.CvAnalyses.AsNoTracking()
+            .Where(a => a.CvDocument!.UserId == user.Id && a.ProviderName != "deterministic")
+            .OrderByDescending(a => a.CreatedAtUtc).FirstOrDefaultAsync(ct);
+        if (analysis is not null)
+            sb.AppendLine($"Latest CV analysis: {analysis.ScorePercent}/100. Weaknesses: {Cut(analysis.WeaknessesJson, 500)}");
+        var projects = await _db.PortfolioProjects.AsNoTracking().Where(p => p.UserId == user.Id).OrderByDescending(p => p.Id).Take(5).ToListAsync(ct);
+        if (projects.Count > 0)
+            sb.AppendLine("Portfolio: " + string.Join("; ", projects.Select(p => $"{p.Title} ({p.Technologies})")) + ".");
+        var challenges = await _db.SkillChallengeAttempts.AsNoTracking()
+            .Where(a => a.UserId == user.Id && a.SubmittedAtUtc != null).OrderByDescending(a => a.Id).Take(8).ToListAsync(ct);
+        if (challenges.Count > 0)
+            sb.AppendLine("Skill challenges: " + string.Join("; ", challenges.Select(c => $"{c.Skill} {c.Score}/100 {(c.Passed ? "passed" : "not passed")}")) + ".");
+        var scores = await _db.InterviewQuestions.AsNoTracking()
+            .Where(q => q.Session!.UserId == user.Id && q.FeedbackScore != null).Select(q => q.FeedbackScore!.Value).ToListAsync(ct);
+        if (scores.Count > 0)
+            sb.AppendLine($"Mock interview answers graded: {scores.Count}, average {scores.Average():0.0}/10.");
+        var missions = await _db.XpTransactions.AsNoTracking().Where(x => x.UserId == user.Id).Select(x => x.Reason).ToListAsync(ct);
+        sb.AppendLine("Completed career missions: " + (missions.Count == 0 ? "none yet" : string.Join(", ", missions)) + ".");
+        var open = await _db.RoadmapItems.AsNoTracking().Where(r => r.UserId == user.Id && r.Status != "Completed").OrderBy(r => r.SortOrder)
+            .Take(6).Select(r => r.Title).ToListAsync(ct);
+        if (open.Count > 0) sb.AppendLine("Open plan items: " + string.Join("; ", open) + ".");
+
         // Live job listings most relevant to the target roles / skills / question.
         var terms = Keywords(query)
             .Concat(Keywords(profile?.PreferredJobTitles ?? ""))
             .Concat(skills.Select(s => s.ToLowerInvariant()))
             .Distinct().Take(30).ToList();
-        var jobs = await _db.JobListings.AsNoTracking().Where(j => j.IsActive)
+        var jobs = await (await JobCatalogService.CurrentListingsAsync(_db))
             .OrderByDescending(j => j.PublishedAtUtc).Take(300).ToListAsync(ct);
         var top = jobs
             .Select(j => (Job: j, Score: terms.Count(t =>
@@ -469,7 +491,8 @@ public sealed class AiGroundingService : IAiGroundingService
         if (top.Count == 0) top = jobs.Take(3).ToList();
         if (top.Count > 0)
             sb.AppendLine("Job listings in the platform: " + string.Join("; ", top.Select(j =>
-                $"{j.Title} at {j.CompanyName} ({(j.Remote ? "remote" : j.Location)}; skills: {j.KeySkillsCsv})")) + ".");
+                $"{j.Title} at {j.CompanyName} ({(j.Remote ? "remote" : j.Location)}; skills: {j.KeySkillsCsv})"
+                + (j.Source == "Demo" ? " [sample listing, not a real vacancy]" : ""))) + ".");
         return sb.ToString();
     }
 
